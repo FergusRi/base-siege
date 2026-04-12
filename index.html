@@ -139,6 +139,15 @@
   .tool-btn.recruit:hover { background: rgba(100,160,220,0.12); color: #8ac0e8; }
   .tool-btn.recruit.active { background: rgba(100,160,220,0.18); border-color: rgba(100,160,220,0.4); color: #8ac0e8; }
   .tool-btn.recruit.active .tool-key { background: rgba(100,160,220,0.25); color: #8ac0e8; }
+
+  /* Upkeep indicator */
+  .upkeep-wrap { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+  .upkeep-label { opacity: 0.5; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .upkeep-val { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .upkeep-ok { color: #7aca7a; }
+  .upkeep-warn { color: #daa040; }
+  .upkeep-danger { color: #e87a6a; }
+  .upkeep-icon { font-size: 13px; }
 </style>
 </head>
 <body>
@@ -148,6 +157,11 @@
     <div class="resource r-stone"><span class="icon"></span><span class="val" id="res-stone">0</span></div>
     <div class="resource r-metal"><span class="icon"></span><span class="val" id="res-metal">0</span></div>
     <div class="resource r-food"><span class="icon"></span><span class="val" id="res-food">0</span></div>
+    <div class="upkeep-wrap" id="upkeep-wrap" style="display:none">
+      <span class="upkeep-icon">🍖</span>
+      <span class="upkeep-label">Upkeep</span>
+      <span class="upkeep-val" id="upkeep-val">0/0</span>
+    </div>
   </div>
   <div class="bar-section">
     <div class="hero-hp-wrap">
@@ -190,11 +204,12 @@
   <div class="ui-stat"><span class="ui-label">XP</span><span class="ui-val" id="ui-xp">—</span></div>
   <div class="ui-stat"><span class="ui-label">Rank</span><span class="ui-val" id="ui-rank">—</span></div>
   <div class="ui-stat"><span class="ui-label">Morale</span><span class="ui-val" id="ui-morale" style="color:#e8c56a">—</span></div>
+  <div class="ui-stat"><span class="ui-label">Upkeep</span><span class="ui-val" id="ui-upkeep" style="color:#d87aa0">—</span></div>
   <div class="ui-stat"><span class="ui-label">Formation</span><span class="ui-val" id="ui-formation" style="color:#8ad0ff">—</span></div>
 </div>
 <canvas id="game-canvas"></canvas>
 <canvas id="minimap" width="150" height="90"></canvas>
-<div id="hint">WASD move · Click to gather · Q/E/R/F/T units · 1-4 build · SPACE fight · Stay near troops for morale!</div>
+<div id="hint">WASD move · Click to gather · Q/E/R/F/T units · 1-4 build · SPACE fight · X disband · 🍖 Units cost food!</div>
 <div id="wave-banner"></div>
 <div id="aftermath-overlay">
   <div class="aftermath-panel" id="aftermath-panel"></div>
@@ -204,7 +219,7 @@
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════
-//  BASE SIEGE — Step 10: Veterancy & XP
+//  BASE SIEGE — Step 11: Upkeep & Economy
 // ═══════════════════════════════════════════════════
 
 // ─── CONSTANTS ───
@@ -237,15 +252,15 @@ const STRUCTS={
 
 // ─── UNIT DEFINITIONS ───
 const UNIT_TYPES={
-  MILITIA:{name:'Militia',hp:22,dmg:4,range:1.2,speed:0,cost:{wood:5,food:2},
+  MILITIA:{name:'Militia',hp:22,dmg:4,range:1.2,speed:0,cost:{wood:5,food:2},upkeep:1,
     color:[90,140,200],letter:'M',desc:'Sturdy melee fighter',melee:true},
-  ARCHER:{name:'Archer',hp:12,dmg:5,range:4,speed:0,cost:{wood:5,metal:3},
+  ARCHER:{name:'Archer',hp:12,dmg:5,range:4,speed:0,cost:{wood:5,metal:3},upkeep:1,
     color:[60,160,90],letter:'A',desc:'Ranged attacker',melee:false},
-  SPEARMAN:{name:'Spearman',hp:16,dmg:3,range:1.5,speed:0,cost:{wood:4,food:3},
+  SPEARMAN:{name:'Spearman',hp:16,dmg:3,range:1.5,speed:0,cost:{wood:4,food:3},upkeep:1,
     color:[180,160,60],letter:'S',desc:'Anti-fast, zone of control',melee:true},
-  CAVALRY:{name:'Cavalry',hp:18,dmg:6,range:1.3,speed:3.5,cost:{wood:8,food:5},
+  CAVALRY:{name:'Cavalry',hp:18,dmg:6,range:1.3,speed:3.5,cost:{wood:8,food:5},upkeep:2,
     color:[160,100,60],letter:'C',desc:'Mobile patrol, charge bonus',melee:true},
-  CATAPULT:{name:'Catapult',hp:8,dmg:12,range:6,speed:0,cost:{wood:12,stone:5,metal:4},
+  CATAPULT:{name:'Catapult',hp:8,dmg:12,range:6,speed:0,cost:{wood:12,stone:5,metal:4},upkeep:2,
     color:[120,90,70],letter:'K',desc:'AOE siege, slow fire, fragile',melee:false},
 };
 const RANK_NAMES=['Recruit','Veteran','Elite','Champion'];
@@ -493,8 +508,8 @@ function updateHint(){
   if(selectedTool==='gather')h.textContent='WASD to move · Click resources to gather · SPACE to start wave';
   else if(selectedTool==='DEMOLISH')h.textContent='Click a structure to demolish · ESC to cancel';
   else if(cavalryPendingUnit){h.textContent='Click a patrol target (2-8 tiles from cavalry) · ESC to cancel';return;}
-  else if(selectedTool==='CAVALRY'){const u=UNIT_TYPES.CAVALRY;h.textContent=`Click to place ${u.name}, then click patrol target · ESC/G to cancel`;}
-  else if(UNIT_TYPES[selectedTool]){const u=UNIT_TYPES[selectedTool];h.textContent=`Click to place ${u.name} · ESC/G to cancel`;}
+  else if(selectedTool==='CAVALRY'){const u=UNIT_TYPES.CAVALRY;h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave), then click patrol target · ESC/G to cancel`;}
+  else if(UNIT_TYPES[selectedTool]){const u=UNIT_TYPES[selectedTool];h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave) · ESC/G to cancel`;}
   else{const s=STRUCTS[selectedTool];h.textContent=`Click to place ${s.name} · ESC/G to cancel`;}
 }
 function canAfford(key){
@@ -623,14 +638,29 @@ function endWave(){
     u.morale=MORALE_MAX;
     u.moraleState='normal';
     u.fleeTimer=0;
+    u._starving=false;
     if(u.type==='CAVALRY')u.hasCharged=false;
     if(!u._lastRank) u._lastRank=unitRank(u.xp); // sync rank tracking
   }
 
-  // Bonus resources
+  // Bonus resources (awarded before upkeep)
   const bonus=2+game.wave;
   game.resources.wood+=bonus;
   game.resources.food+=bonus;
+
+  // ── UPKEEP: deduct food, penalize unfed ──
+  const totalUpkeep=getTotalUpkeep();
+  const foodBeforeUpkeep=game.resources.food;
+  const {fed,unfed}=payUpkeep();
+  const foodPaid=foodBeforeUpkeep-game.resources.food;
+  game._upkeepInfo={totalUpkeep,foodPaid,foodBefore:foodBeforeUpkeep,fed:fed.length,unfed:unfed.length,unfedUnits:unfed.map(u=>({type:u.type,name:UNIT_TYPES[u.type].name}))};
+
+  // Apply starvation penalty to unfed units
+  if(unfed.length>0) applyStarvation(unfed);
+
+  // ── RESOURCE REGROWTH ──
+  const regrown=regrowResources();
+  game._regrown=regrown;
 
   // Show aftermath screen
   showAftermathScreen();
@@ -726,6 +756,30 @@ function showAftermathScreen(){
   // Bonus resources
   html+=`<div style="margin-top:14px;font-size:13px;color:rgba(200,200,210,0.6)">+${bonus} Wood, +${bonus} Food wave bonus</div>`;
 
+  // ── UPKEEP & ECONOMY SECTION ──
+  const info=game._upkeepInfo;
+  if(info&&info.totalUpkeep>0){
+    html+=`<div class="aftermath-section"><h3>🍖 Army Upkeep</h3>`;
+    html+=`<div style="padding:6px 10px;font-size:13px;background:rgba(255,255,255,0.03);border-radius:8px;margin:3px 0;">`;
+    html+=`<span style="opacity:0.6">Food cost:</span> <span style="font-weight:700;color:#e8c56a">${info.foodPaid}/${info.totalUpkeep}</span> food paid`;
+    if(info.unfed>0){
+      html+=`<br><span style="color:#e87a6a;font-weight:700">⚠ ${info.unfed} unit${info.unfed>1?'s':''} unfed!</span> <span style="opacity:0.5">(-${STARVATION_MORALE_PENALTY} morale each)</span>`;
+      for(const u of info.unfedUnits){
+        html+=`<br><span style="opacity:0.5;margin-left:12px;">• ${u.name} — starving</span>`;
+      }
+    } else {
+      html+=`<br><span style="color:#7aca7a">✓ All units fed</span>`;
+    }
+    html+=`<br><span style="opacity:0.5">Remaining food: ${game.resources.food}</span>`;
+    html+=`</div></div>`;
+  }
+
+  // Resource regrowth
+  const regrown=game._regrown||0;
+  if(regrown>0){
+    html+=`<div style="margin-top:6px;font-size:12px;color:rgba(120,200,120,0.7)">🌱 ${regrown} resource${regrown>1?'s':''} regrew on the map</div>`;
+  }
+
   html+=`<button class="aftermath-btn" onclick="closeAftermath()">Continue to Build Phase →</button>`;
   panel.innerHTML=html;
   overlay.classList.add('show');
@@ -739,7 +793,10 @@ function closeAftermath(){
   document.getElementById('toolbar').classList.remove('combat-mode');
   document.getElementById('game-canvas').classList.remove('combat-cursor');
   selectTool('gather');
-  addFloat(`+${2+game.wave} Wood, +${2+game.wave} Food`, hero.x, hero.y-TILE_SIZE, '#e8c56a');
+  const info=game._upkeepInfo;
+  const upkeepText=info&&info.totalUpkeep>0?` | 🍖-${info.foodPaid} upkeep`:'';
+  addFloat(`+${2+game.wave} Wood, +${2+game.wave} Food${upkeepText}`, hero.x, hero.y-TILE_SIZE, '#e8c56a');
+  if(info&&info.unfed>0) addFloat(`⚠ ${info.unfed} starving unit${info.unfed>1?'s':''}!`, hero.x, hero.y, '#e87a6a');
   showBanner(`✅ WAVE ${game.wave} CLEARED`);
 }
 
@@ -1440,6 +1497,76 @@ const SHIELD_WALL_DR=0.3;       // 30% damage reduction
 const PROTECTED_FIRE_RATE=0.2;  // 20% faster fire rate
 const SHIELD_WALL_MIN=3;        // 3+ melee in a line for Shield Wall
 
+// ─── UPKEEP & ECONOMY ───
+const STARVATION_MORALE_PENALTY=30;   // morale penalty for unfed units at wave start
+const RESOURCE_REGROWTH_CHANCE=0.12;  // chance per cleared tile to regrow per wave
+
+// Calculate total food upkeep for all units
+function getTotalUpkeep(){
+  let total=0;
+  for(const u of units) total+=(UNIT_TYPES[u.type].upkeep||0);
+  return total;
+}
+
+// Pay upkeep — returns array of unfed units (starving)
+function payUpkeep(){
+  // Sort units by value: highest upkeep / highest rank first get fed
+  const sorted=[...units].sort((a,b)=>{
+    const rA=unitRank(a.xp), rB=unitRank(b.xp);
+    if(rB!==rA) return rB-rA; // higher rank fed first
+    return (UNIT_TYPES[b.type].upkeep||0)-(UNIT_TYPES[a.type].upkeep||0);
+  });
+  let available=game.resources.food;
+  const unfed=[];
+  const fed=[];
+  for(const u of sorted){
+    const cost=UNIT_TYPES[u.type].upkeep||0;
+    if(available>=cost){
+      available-=cost;
+      fed.push(u);
+    } else {
+      unfed.push(u);
+    }
+  }
+  game.resources.food=available;
+  return {fed,unfed};
+}
+
+// Apply starvation penalty to unfed units
+function applyStarvation(unfedUnits){
+  for(const u of unfedUnits){
+    u.morale=Math.max(0,u.morale-STARVATION_MORALE_PENALTY);
+    u._starving=true; // flag for UI display
+    const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
+    addFloat('🍖 Starving! -30 Morale',ux,uy-TILE_SIZE,'#e87a6a');
+    addParticles(ux,uy,'rgba(220,100,60,0.6)',4);
+  }
+}
+
+// Resource regrowth — some cleared tiles grow back between waves
+function regrowResources(){
+  let regrown=0;
+  for(let c=0;c<COLS;c++){
+    for(let r=0;r<ROWS;r++){
+      if(map[c][r]!==T.GRASS) continue;
+      if(structures[c+','+r]) continue;
+      if(unitAt(c,r)) continue;
+      const dist=distC(c,r);
+      if(dist<BASE_CLEAR_RADIUS) continue; // don't regrow near base
+      if(Math.random()>RESOURCE_REGROWTH_CHANCE) continue;
+      // Decide what to regrow based on original noise values
+      const forest=fbm(c+100,r+100,3,0.12,2,0.55);
+      if(forest>0.42&&hash(c+500,r+500)>0.65){
+        map[c][r]=T.BERRY; regrown++; rebuildTile(c,r); continue;
+      }
+      if(forest>0.50){
+        map[c][r]=T.TREE; regrown++; rebuildTile(c,r); continue;
+      }
+    }
+  }
+  return regrown;
+}
+
 // ─── MORALE CONSTANTS ───
 const MORALE_MAX=100;
 const MORALE_BREAK_THRESHOLD=0;  // morale at which unit breaks
@@ -1850,8 +1977,12 @@ function handleDemolish(col,row){
   if(uIdx>=0){
     const u=units[uIdx];const def=UNIT_TYPES[u.type];
     for(const[r,a]of Object.entries(def.cost))game.resources[r]+=Math.floor(a*0.5);
+    const upkeepSaved=def.upkeep||0;
     units.splice(uIdx,1);
-    addFloat(`${def.name} dismissed`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ffaa44');
+    const ux=col*TILE_SIZE+TILE_SIZE/2, uy=row*TILE_SIZE;
+    addFloat(`${def.name} disbanded`,ux,uy,'#ffaa44');
+    if(upkeepSaved>0) addFloat(`-${upkeepSaved} upkeep/wave`,ux,uy+TILE_SIZE*0.5,'#7aca7a');
+    addParticles(ux,uy+TILE_SIZE/2,'rgba(200,160,60,0.5)',6);
     return;
   }
   const s=structures[sk];if(!s)return;const def=STRUCTS[s.type];
@@ -2202,6 +2333,15 @@ function drawUnits(now){
       ctx.fillText('FLEE',sx+sw/2,sy+sw+z*6);
     }
 
+    // Starving indicator
+    if(u._starving){
+      const starvePulse=Math.sin(now*0.008)*0.2+0.8;
+      ctx.globalAlpha=starvePulse;
+      ctx.fillStyle='rgba(220,80,50,0.85)';ctx.font=`bold ${9*z}px system-ui`;
+      ctx.fillText('🍖',sx+sw*0.85,sy+sw*0.15);
+      ctx.globalAlpha=moraleAlpha;
+    }
+
     // Formation bonus icon (tiny indicator below HP bar)
     if(u.shieldWall&&!isBroken){
       ctx.fillStyle='rgba(80,150,255,0.85)';ctx.font=`bold ${8*z}px system-ui`;
@@ -2528,7 +2668,7 @@ function drawHoverTile(){
   ctx.strokeStyle=isDem?'rgba(255,100,60,0.5)':hoverUnit?'rgba(100,160,220,0.5)':isRes?'rgba(120,200,120,0.4)':'rgba(255,255,255,0.2)';
   ctx.lineWidth=z*1.5;ctx.strokeRect(sx+z,sy+z,sw-z*2,sw-z*2);
   let label;
-  if(hoverUnit){const def=UNIT_TYPES[hoverUnit.type];label=`${def.name} (${hoverUnit.hp}/${hoverUnit.maxHP} HP)`;}
+  if(hoverUnit){const def=UNIT_TYPES[hoverUnit.type];label=`${def.name} (${hoverUnit.hp}/${hoverUnit.maxHP} HP) 🍖${def.upkeep||0}/wave`;}
   else if(structures[sk])label=STRUCTS[structures[sk].type].name;
   else label=TILE_NAMES[tile];
   if(isRes&&selectedTool==='gather'){const h=HARVEST[tile];label+=` (+${h.amt} ${h.res})`;}
@@ -2565,6 +2705,14 @@ function updateUnitInfoPanel(){
     const mLabel=u.moraleState==='broken'?`🏳️ BROKEN (${Math.ceil(u.fleeTimer)}s)`:mPct>=70?`${mPct}% Steady`:mPct>=30?`${mPct}% Shaken`:`${mPct}% Wavering`;
     moraleEl.textContent=mLabel;
     moraleEl.style.color=u.moraleState==='broken'?'#ff6644':mPct>=70?'#e8c56a':mPct>=30?'#daa040':'#e87a6a';
+  }
+  // Upkeep display
+  const upkeepEl=document.getElementById('ui-upkeep');
+  if(upkeepEl){
+    const upkeepCost=def.upkeep||0;
+    upkeepEl.textContent=`🍖 ${upkeepCost} food/wave`;
+    upkeepEl.style.color=u._starving?'#e87a6a':'#d87aa0';
+    if(u._starving) upkeepEl.textContent+=` ⚠ STARVING`;
   }
   // Formation bonus display + special abilities
   const bonusParts=[];
@@ -2676,6 +2824,18 @@ function updateUI(){
   document.getElementById('hero-hp-text').textContent=heroHPText;
   document.getElementById('wave-num').textContent=game.wave;
   document.querySelectorAll('.tool-btn[data-tool]').forEach(btn=>{const t=btn.dataset.tool;if(STRUCTS[t]||UNIT_TYPES[t])btn.style.opacity=canAfford(t)?'1':'0.5';});
+  // Upkeep indicator — show during BUILD phase when units exist
+  const upkeepWrap=document.getElementById('upkeep-wrap');
+  const upkeepVal=document.getElementById('upkeep-val');
+  if(units.length>0){
+    upkeepWrap.style.display='flex';
+    const totalUpkeep=getTotalUpkeep();
+    const food=game.resources.food;
+    upkeepVal.textContent=`${totalUpkeep}/${food}`;
+    upkeepVal.className='upkeep-val '+(food>=totalUpkeep?'upkeep-ok':food>=totalUpkeep*0.5?'upkeep-warn':'upkeep-danger');
+  } else {
+    upkeepWrap.style.display='none';
+  }
 }
 
 
@@ -2740,7 +2900,7 @@ function draw(now){
     ctx.fillRect(0,0,canvas.width,canvas.height);
   }
 
-  // Pulsing SPACE prompt during BUILD phase
+  // Pulsing SPACE prompt during BUILD phase — with upkeep warning
   if(game.phase==='BUILD'){
     const pulse=Math.sin(now*0.004)*0.3+0.7;
     ctx.save();
@@ -2748,6 +2908,24 @@ function draw(now){
     ctx.font='bold 22px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
     ctx.shadowColor='rgba(220,180,60,0.6)';ctx.shadowBlur=15;
     ctx.fillText('⚔️  Press SPACE to Fight!  ⚔️', canvas.width/2, canvas.height-70);
+    // Upkeep warning below prompt
+    if(units.length>0){
+      const totalUp=getTotalUpkeep();
+      const food=game.resources.food;
+      const canFeed=food>=totalUp;
+      ctx.font='bold 14px system-ui';
+      ctx.shadowBlur=8;
+      if(canFeed){
+        ctx.fillStyle=`rgba(120,200,120,${pulse*0.7})`;
+        ctx.shadowColor='rgba(90,180,90,0.4)';
+        ctx.fillText(`🍖 Upkeep: ${totalUp} food (${food} available) ✓`, canvas.width/2, canvas.height-45);
+      } else {
+        ctx.fillStyle=`rgba(232,100,80,${pulse*0.9})`;
+        ctx.shadowColor='rgba(220,60,40,0.5)';
+        const deficit=totalUp-food;
+        ctx.fillText(`⚠ Upkeep: ${totalUp} food — ${deficit} short! Units will starve!`, canvas.width/2, canvas.height-45);
+      }
+    }
     ctx.restore();
   }
   // Enemy count during COMBAT
