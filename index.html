@@ -321,7 +321,7 @@
   <div class="ui-stat"><span class="ui-label">Formation</span><span class="ui-val" id="ui-formation" style="color:#8ad0ff">—</span></div>
 </div>
 <canvas id="game-canvas"></canvas>
-<canvas id="minimap" width="150" height="90"></canvas>
+<canvas id="minimap" width="160" height="100"></canvas>
 <div id="hint">WASD move · Click gather · Q/E/R/F/T units · 1-4 build · SPACE fight · Tab cycle · X disband · 🍖 Units cost food!</div>
 <div id="wave-banner"></div>
 <div id="wave-preview-overlay"></div>
@@ -370,17 +370,17 @@
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════
-//  BASE SIEGE — Step 13: Polish & Game Feel
+//  BASE SIEGE — Step 13b: Larger Map (80×50)
 // ═══════════════════════════════════════════════════
 
 // ─── CONSTANTS ───
-const COLS=50, ROWS=30, TILE_SIZE=32;
+const COLS=80, ROWS=50, TILE_SIZE=32;
 const MAP_PX_W=COLS*TILE_SIZE, MAP_PX_H=ROWS*TILE_SIZE;
 const BASE_CX=Math.floor(COLS/2), BASE_CY=Math.floor(ROWS/2);
-const BASE_CLEAR_RADIUS=6;
-const CAM_LERP=0.1, MIN_ZOOM=0.5, MAX_ZOOM=2.0;
-const HERO_SPEED=4*TILE_SIZE;
-const HARVEST_RANGE=3, BUILD_RANGE=5;
+const BASE_CLEAR_RADIUS=8;
+const CAM_LERP=0.1, MIN_ZOOM=0.35, MAX_ZOOM=2.0;
+const HERO_SPEED=5*TILE_SIZE;
+const HARVEST_RANGE=4, BUILD_RANGE=7;
 const HERO_ATK_DMG=8, HERO_ATK_RATE=0.4, HERO_ATK_RANGE=1.2*TILE_SIZE;
 const HERO_KNOCKDOWN_TIME=10, HERO_REVIVE_PCT=0.25;
 
@@ -396,7 +396,7 @@ const TILE_NAMES=['Grass','Forest','Stone','Iron Ore','Berry Bush','Water','Base
 const HARVEST={[T.TREE]:{res:'wood',amt:5},[T.STONE]:{res:'stone',amt:5},[T.ORE]:{res:'metal',amt:3},[T.BERRY]:{res:'food',amt:4}};
 const STRUCTS={
   WALL:{name:'Wall',cost:{stone:5},hp:60,color:[110,100,88],letter:'W'},
-  TOWER:{name:'Tower',cost:{wood:10,stone:5,metal:3},hp:40,color:[80,70,62],letter:'T',range:5,dmg:4,rate:0.8},
+  TOWER:{name:'Tower',cost:{wood:10,stone:5,metal:3},hp:40,color:[80,70,62],letter:'T',range:6,dmg:4,rate:0.8},
   TRAP:{name:'Spike Trap',cost:{wood:3,metal:1},hp:1,color:[55,50,45],letter:'X',dmg:8,slow:0.5},
   GATE:{name:'Gate',cost:{wood:5,stone:2},hp:30,color:[90,75,55],letter:'G',dmg:3,slow:0.6},
 };
@@ -409,7 +409,7 @@ const UNIT_TYPES={
     color:[60,160,90],letter:'A',desc:'Ranged attacker',melee:false},
   SPEARMAN:{name:'Spearman',hp:16,dmg:3,range:1.5,speed:0,cost:{wood:4,food:3},upkeep:1,
     color:[180,160,60],letter:'S',desc:'Anti-fast, zone of control',melee:true},
-  CAVALRY:{name:'Cavalry',hp:18,dmg:6,range:1.3,speed:3.5,cost:{wood:8,food:5},upkeep:2,
+  CAVALRY:{name:'Cavalry',hp:18,dmg:6,range:1.3,speed:4.5,cost:{wood:8,food:5},upkeep:2,
     color:[160,100,60],letter:'C',desc:'Mobile patrol, charge bonus',melee:true},
   CATAPULT:{name:'Catapult',hp:8,dmg:12,range:6,speed:0,cost:{wood:12,stone:5,metal:4},upkeep:2,
     color:[120,90,70],letter:'K',desc:'AOE siege, slow fire, fragile',melee:false},
@@ -483,13 +483,13 @@ function showRankUpEffect(u,newRank){
 
 // ─── ENEMY DEFINITIONS ───
 const ENEMY_TYPES={
-  raider:      {name:'Raider',       hp:10, dmg:5,  speed:3,   color:[180,50,50],  attackRate:1.0, baseDmg:5,  letter:'E'},
-  runner:      {name:'Runner',       hp:5,  dmg:3,  speed:6,   color:[200,100,60], attackRate:0.8, baseDmg:3,  letter:'R'},
-  brute:       {name:'Brute',        hp:45, dmg:8,  speed:1.5, color:[140,40,40],  attackRate:1.5, baseDmg:10, letter:'B', smashWalls:true},
-  enemyArcher: {name:'Enemy Archer', hp:8,  dmg:6,  speed:2,   color:[160,80,130], attackRate:1.2, baseDmg:3,  letter:'A', ranged:true, range:4},
-  warchief:    {name:'Warchief',     hp:30, dmg:6,  speed:2.5, color:[200,40,80],  attackRate:1.0, baseDmg:7,  letter:'W', buffAura:true, buffRadius:3, buffDmgMult:1.3, buffSpeedMult:1.2},
-  siegeRam:    {name:'Siege Ram',    hp:60, dmg:3,  speed:1.2, color:[100,70,50],  attackRate:2.0, baseDmg:15, letter:'S', targetsStructures:true, structDmg:20},
-  swarm:       {name:'Swarm',        hp:3,  dmg:2,  speed:4.5, color:[170,120,70], attackRate:0.5, baseDmg:2,  letter:'z'},
+  raider:      {name:'Raider',       hp:10, dmg:5,  speed:4,   color:[180,50,50],  attackRate:1.0, baseDmg:5,  letter:'E'},
+  runner:      {name:'Runner',       hp:5,  dmg:3,  speed:7.5, color:[200,100,60], attackRate:0.8, baseDmg:3,  letter:'R'},
+  brute:       {name:'Brute',        hp:45, dmg:8,  speed:2,   color:[140,40,40],  attackRate:1.5, baseDmg:10, letter:'B', smashWalls:true},
+  enemyArcher: {name:'Enemy Archer', hp:8,  dmg:6,  speed:2.5, color:[160,80,130], attackRate:1.2, baseDmg:3,  letter:'A', ranged:true, range:4},
+  warchief:    {name:'Warchief',     hp:30, dmg:6,  speed:3,   color:[200,40,80],  attackRate:1.0, baseDmg:7,  letter:'W', buffAura:true, buffRadius:3, buffDmgMult:1.3, buffSpeedMult:1.2},
+  siegeRam:    {name:'Siege Ram',    hp:60, dmg:3,  speed:1.6, color:[100,70,50],  attackRate:2.0, baseDmg:15, letter:'S', targetsStructures:true, structDmg:20},
+  swarm:       {name:'Swarm',        hp:3,  dmg:2,  speed:5.5, color:[170,120,70], attackRate:0.5, baseDmg:2,  letter:'z'},
 };
 
 // ─── NOISE ───
@@ -586,7 +586,7 @@ function findPath(sc,sr,tc,tr){
   const dirs=[[0,-1],[0,1],[-1,0],[1,0]]; // 4-directional
 
   let iterations=0;
-  while(open.size>0 && iterations<3000){
+  while(open.size>0 && iterations<8000){
     iterations++;
     const cur=open.pop();
     const ck=cur.c+','+cur.r;
@@ -625,11 +625,11 @@ function findPath(sc,sr,tc,tr){
 // ═══════════════════════════════════════════
 
 const WIN_WAVE=20; // survive this many waves to win
-const INITIAL_RESOURCES={wood:60,stone:35,metal:20,food:25};
+const INITIAL_RESOURCES={wood:80,stone:45,metal:25,food:35};
 
 const game={
   phase:'MENU', wave:0, baseHP:100, baseMaxHP:100,
-  resources:{wood:60,stone:35,metal:20,food:25},
+  resources:{wood:80,stone:45,metal:25,food:35},
   waveCountdown:-1, // -1 = not counting
   enemiesKilled:0,
   killsByTower:0,
@@ -669,7 +669,7 @@ function updateHint(){
   if(game.phase==='COMBAT'){h.textContent='⚔️ COMBAT — WASD to move · Click to attack · Tab cycle units · Defend the base!';return;}
   if(selectedTool==='gather')h.textContent='WASD to move · Click resources to gather · SPACE to start wave';
   else if(selectedTool==='DEMOLISH')h.textContent='Click a structure to demolish · ESC to cancel';
-  else if(cavalryPendingUnit){h.textContent='Click a patrol target (2-8 tiles from cavalry) · ESC to cancel';return;}
+  else if(cavalryPendingUnit){h.textContent='Click a patrol target (2-12 tiles from cavalry) · ESC to cancel';return;}
   else if(selectedTool==='CAVALRY'){const u=UNIT_TYPES.CAVALRY;h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave), then click patrol target · ESC/G to cancel`;}
   else if(UNIT_TYPES[selectedTool]){const u=UNIT_TYPES[selectedTool];h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave) · ESC/G to cancel`;}
   else{const s=STRUCTS[selectedTool];h.textContent=`Click to place ${s.name} · ESC/G to cancel`;}
@@ -725,18 +725,18 @@ function getWaveComposition(waveNum){
   const isSiege=waveNum>0&&waveNum%5===0; // every 5th wave is a siege wave
 
   // Base raiders scale with wave
-  const raiders=Math.min(3+waveNum*2, 20);
+  const raiders=Math.min(4+waveNum*3, 28);
   for(let i=0;i<raiders;i++) composition.push('raider');
 
   // Runners from wave 1+
   if(waveNum>=1){
-    const runners=Math.min(waveNum*2, 15);
+    const runners=Math.min(waveNum*2, 20);
     for(let i=0;i<runners;i++) composition.push('runner');
   }
 
   // Swarm from wave 2+ — packs of weak enemies
   if(waveNum>=2){
-    const swarmSize=Math.min(8+waveNum*2, 20);
+    const swarmSize=Math.min(10+waveNum*2, 28);
     for(let i=0;i<swarmSize;i++) composition.push('swarm');
   }
 
@@ -770,7 +770,7 @@ function getWaveComposition(waveNum){
     for(let i=0;i<bonusBrutes;i++) composition.push('brute');
     if(waveNum>=5){composition.push('warchief');composition.push('warchief');}
     if(waveNum>=6){composition.push('siegeRam');composition.push('siegeRam');}
-    const bonusSwarm=Math.min(10+waveNum*2, 30);
+    const bonusSwarm=Math.min(12+waveNum*3, 40);
     for(let i=0;i<bonusSwarm;i++) composition.push('swarm');
   }
 
@@ -2420,7 +2420,7 @@ function handleRecruit(col,row){
     // Validate waypoint: must be walkable grass, not too far from origin
     if(map[col][row]===T.GRASS&&!structures[col+','+row]){
       const wDist=Math.abs(col-u.col)+Math.abs(row-u.row);
-      if(wDist>=2&&wDist<=8){
+      if(wDist>=2&&wDist<=12){
         u.patrol=[{col:u.col,row:u.row},{col,row}];
         u.patrolIdx=0;
         u.hasCharged=false;
@@ -2429,7 +2429,7 @@ function handleRecruit(col,row){
         addParticles(col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE+TILE_SIZE/2,'rgba(160,100,60,0.7)',6);
         return;
       } else {
-        addFloat('2-8 tiles away!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');
+        addFloat('2-12 tiles away!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');
         return;
       }
     } else {
@@ -3068,7 +3068,7 @@ function drawGhostPreview(){
     const sx=(col*TILE_SIZE-cam.x)*z,sy=(row*TILE_SIZE-cam.y)*z,sw=TILE_SIZE*z;
     const pu=cavalryPendingUnit;
     const wDist=Math.abs(col-pu.col)+Math.abs(row-pu.row);
-    const valid=map[col][row]===T.GRASS&&!structures[col+','+row]&&wDist>=2&&wDist<=8;
+    const valid=map[col][row]===T.GRASS&&!structures[col+','+row]&&wDist>=2&&wDist<=12;
     // Draw patrol line
     const pux=(pu.col*TILE_SIZE+TILE_SIZE/2-cam.x)*z, puy=(pu.row*TILE_SIZE+TILE_SIZE/2-cam.y)*z;
     ctx.strokeStyle=valid?'rgba(160,100,60,0.5)':'rgba(200,50,50,0.4)';ctx.lineWidth=z*2;ctx.setLineDash([4*z,4*z]);
@@ -3079,7 +3079,7 @@ function drawGhostPreview(){
     ctx.strokeStyle=valid?'rgba(160,100,60,0.6)':'rgba(200,50,50,0.5)';ctx.lineWidth=z;ctx.strokeRect(sx+z,sy+z,sw-2*z,sw-2*z);
     // Distance label
     ctx.fillStyle='rgba(10,10,18,0.8)';ctx.font=`bold ${10*z}px system-ui`;ctx.textAlign='center';
-    const distLabel=valid?`🐎 ${wDist} tiles`:`${wDist<2?'Too close':'Too far'} (2-8)`;
+    const distLabel=valid?`🐎 ${wDist} tiles`:`${wDist<2?'Too close':'Too far'} (2-12)`;
     const tw2=ctx.measureText(distLabel).width+12;
     ctx.fillRect(sx+sw/2-tw2/2,sy+sw+z*2,tw2,14*z);
     ctx.fillStyle=valid?'rgba(200,160,80,0.9)':'rgba(255,100,80,0.9)';
