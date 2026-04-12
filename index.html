@@ -77,6 +77,40 @@
   }
   #wave-banner.show { opacity: 1; }
 
+  /* Wave preview overlay */
+  #wave-preview-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 22;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(5,5,12,0.85); backdrop-filter: blur(4px);
+  }
+  #wave-preview-overlay.show { display: flex; }
+  .wave-preview-panel {
+    background: rgba(15,15,25,0.95); border: 1px solid rgba(220,180,60,0.3);
+    border-radius: 16px; padding: 24px 32px; max-width: 380px; width: 90%;
+    text-align: center; box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  }
+  .wave-preview-panel h2 { font-size: 22px; color: #e8c56a; margin-bottom: 6px; letter-spacing: 1px; }
+  .wp-subtitle { font-size: 12px; color: rgba(200,200,210,0.5); margin-bottom: 14px; }
+  .wp-enemies { text-align: left; margin: 10px 0; }
+  .wp-enemy-row {
+    display: flex; align-items: center; gap: 10px; padding: 5px 8px;
+    border-radius: 6px; margin: 3px 0; background: rgba(255,255,255,0.03);
+  }
+  .wp-icon {
+    width: 24px; height: 24px; border-radius: 4px; display: flex;
+    align-items: center; justify-content: center; font-size: 12px;
+    font-weight: 700; color: rgba(255,255,255,0.7);
+  }
+  .wp-name { font-size: 13px; font-weight: 600; flex: 1; }
+  .wp-count { font-size: 13px; font-weight: 700; color: #e8c56a; min-width: 30px; }
+  .wp-tag { font-size: 9px; padding: 2px 6px; border-radius: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+  .wp-tag-danger { background: rgba(220,60,40,0.2); color: #e87a6a; }
+  .wp-tag-warn { background: rgba(200,160,60,0.2); color: #daa040; }
+  .wp-tag-buff { background: rgba(200,40,80,0.2); color: #e060a0; }
+  .wp-pincer { margin-top: 10px; font-size: 13px; color: #e87a6a; font-weight: 700; }
+  .wp-siege { margin-top: 6px; font-size: 13px; color: #ff8844; font-weight: 700; }
+  .wp-timer { margin-top: 14px; font-size: 14px; color: rgba(232,197,106,0.8); font-weight: 600; }
+
   /* Unit info panel */
   #unit-info {
     position: fixed; bottom: 52px; left: 50%; transform: translateX(-50%); z-index: 15;
@@ -211,6 +245,7 @@
 <canvas id="minimap" width="150" height="90"></canvas>
 <div id="hint">WASD move · Click to gather · Q/E/R/F/T units · 1-4 build · SPACE fight · X disband · 🍖 Units cost food!</div>
 <div id="wave-banner"></div>
+<div id="wave-preview-overlay"></div>
 <div id="aftermath-overlay">
   <div class="aftermath-panel" id="aftermath-panel"></div>
 </div>
@@ -219,7 +254,7 @@
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════
-//  BASE SIEGE — Step 11: Upkeep & Economy
+//  BASE SIEGE — Step 12: Advanced Enemies & Wave Design
 // ═══════════════════════════════════════════════════
 
 // ─── CONSTANTS ───
@@ -332,8 +367,13 @@ function showRankUpEffect(u,newRank){
 
 // ─── ENEMY DEFINITIONS ───
 const ENEMY_TYPES={
-  raider: {name:'Raider', hp:10, dmg:5, speed:3, color:[180,50,50], attackRate:1.0, baseDmg:5},
-  runner: {name:'Runner', hp:5,  dmg:3, speed:6, color:[200,100,60], attackRate:0.8, baseDmg:3},
+  raider:      {name:'Raider',       hp:10, dmg:5,  speed:3,   color:[180,50,50],  attackRate:1.0, baseDmg:5,  letter:'E'},
+  runner:      {name:'Runner',       hp:5,  dmg:3,  speed:6,   color:[200,100,60], attackRate:0.8, baseDmg:3,  letter:'R'},
+  brute:       {name:'Brute',        hp:45, dmg:8,  speed:1.5, color:[140,40,40],  attackRate:1.5, baseDmg:10, letter:'B', smashWalls:true},
+  enemyArcher: {name:'Enemy Archer', hp:8,  dmg:6,  speed:2,   color:[160,80,130], attackRate:1.2, baseDmg:3,  letter:'A', ranged:true, range:4},
+  warchief:    {name:'Warchief',     hp:30, dmg:6,  speed:2.5, color:[200,40,80],  attackRate:1.0, baseDmg:7,  letter:'W', buffAura:true, buffRadius:3, buffDmgMult:1.3, buffSpeedMult:1.2},
+  siegeRam:    {name:'Siege Ram',    hp:60, dmg:3,  speed:1.2, color:[100,70,50],  attackRate:2.0, baseDmg:15, letter:'S', targetsStructures:true, structDmg:20},
+  swarm:       {name:'Swarm',        hp:3,  dmg:2,  speed:4.5, color:[170,120,70], attackRate:0.5, baseDmg:2,  letter:'z'},
 };
 
 // ─── NOISE ───
@@ -560,18 +600,86 @@ function updateCamera(){
 
 function getWaveComposition(waveNum){
   const composition=[];
-  // Scale difficulty with wave
-  const raiders = Math.min(3 + waveNum * 2, 20);
-  const runners = waveNum >= 1 ? Math.min(waveNum * 2, 15) : 0;
+  const isSiege=waveNum>0&&waveNum%5===0; // every 5th wave is a siege wave
+
+  // Base raiders scale with wave
+  const raiders=Math.min(3+waveNum*2, 20);
   for(let i=0;i<raiders;i++) composition.push('raider');
-  for(let i=0;i<runners;i++) composition.push('runner');
+
+  // Runners from wave 1+
+  if(waveNum>=1){
+    const runners=Math.min(waveNum*2, 15);
+    for(let i=0;i<runners;i++) composition.push('runner');
+  }
+
+  // Swarm from wave 2+ — packs of weak enemies
+  if(waveNum>=2){
+    const swarmSize=Math.min(8+waveNum*2, 20);
+    for(let i=0;i<swarmSize;i++) composition.push('swarm');
+  }
+
+  // Brutes from wave 3+ — slow tanks that smash walls
+  if(waveNum>=3){
+    const brutes=Math.min(1+Math.floor((waveNum-2)/2), 5);
+    for(let i=0;i<brutes;i++) composition.push('brute');
+  }
+
+  // Enemy Archers from wave 4+ — ranged threats
+  if(waveNum>=4){
+    const archers=Math.min(1+Math.floor((waveNum-3)/2), 6);
+    for(let i=0;i<archers;i++) composition.push('enemyArcher');
+  }
+
+  // Warchiefs from wave 5+ — buff nearby enemies, high priority
+  if(waveNum>=5){
+    const chiefs=Math.min(1+Math.floor((waveNum-4)/3), 3);
+    for(let i=0;i<chiefs;i++) composition.push('warchief');
+  }
+
+  // Siege Rams from wave 6+ — targets structures
+  if(waveNum>=6){
+    const rams=Math.min(1+Math.floor((waveNum-5)/3), 3);
+    for(let i=0;i<rams;i++) composition.push('siegeRam');
+  }
+
+  // Siege wave bonus: extra heavies + swarm flood
+  if(isSiege){
+    const bonusBrutes=Math.min(2+Math.floor(waveNum/5), 5);
+    for(let i=0;i<bonusBrutes;i++) composition.push('brute');
+    if(waveNum>=5){composition.push('warchief');composition.push('warchief');}
+    if(waveNum>=6){composition.push('siegeRam');composition.push('siegeRam');}
+    const bonusSwarm=Math.min(10+waveNum*2, 30);
+    for(let i=0;i<bonusSwarm;i++) composition.push('swarm');
+  }
+
   return composition;
 }
 
-function getSpawnEdgePosition(){
-  // Try up to 10 times to find a walkable edge tile
+// Pincer attack: choose which sides enemies spawn from this wave
+let waveSpawnSides=[0,1,2,3]; // 0=top,1=bottom,2=left,3=right
+function chooseSpawnSides(waveNum){
+  if(waveNum>=7){
+    // Wave 7+: always 2-4 sides (true pincer)
+    const numSides=Math.min(2+Math.floor((waveNum-5)/3), 4);
+    const all=[0,1,2,3];
+    for(let i=all.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[all[i],all[j]]=[all[j],all[i]];}
+    return all.slice(0,numSides);
+  } else if(waveNum>=4){
+    // Wave 4-6: 50% chance of 2 sides
+    if(Math.random()<0.5){
+      const pairs=[[0,1],[2,3],[0,2],[1,3],[0,3],[1,2]];
+      return pairs[Math.floor(Math.random()*pairs.length)];
+    }
+  }
+  // Default: all sides
+  return [0,1,2,3];
+}
+
+function getSpawnEdgePosition(forceSide){
+  const sides=forceSide!==undefined?[forceSide]:waveSpawnSides;
+  // Try up to 10 times to find a walkable edge tile on allowed sides
   for(let attempt=0;attempt<10;attempt++){
-    const side=Math.floor(Math.random()*4);
+    const side=sides[Math.floor(Math.random()*sides.length)];
     let c,r;
     switch(side){
       case 0: c=Math.floor(Math.random()*COLS); r=0; break; // top
@@ -579,19 +687,86 @@ function getSpawnEdgePosition(){
       case 2: c=0; r=Math.floor(Math.random()*ROWS); break; // left
       case 3: c=COLS-1; r=Math.floor(Math.random()*ROWS); break; // right
     }
-    if(isWalkable(c,r)) return{c,r};
+    if(isWalkable(c,r)) return{c,r,side};
   }
   // Fallback: guaranteed walkable carved path positions
   const fallbacks=[[BASE_CX,0],[BASE_CX,ROWS-1],[0,BASE_CY],[COLS-1,BASE_CY]];
-  const fb=fallbacks[Math.floor(Math.random()*4)];
-  return{c:fb[0],r:fb[1]};
+  const fb=fallbacks[sides[0]||0];
+  return{c:fb[0],r:fb[1],side:sides[0]||0};
 }
 
 let spawnQueue=[], spawnTimer=0, spawnInterval=0.25;
 
+// ── WAVE PREVIEW ──
+let wavePreviewActive=false, wavePreviewTimer=0;
+const WAVE_PREVIEW_DURATION=3.5; // seconds to show preview
+
+function showWavePreview(waveNum){
+  const comp=getWaveComposition(waveNum);
+  const counts={};
+  for(const t of comp){
+    const name=ENEMY_TYPES[t]?ENEMY_TYPES[t].name:t;
+    counts[name]=(counts[name]||0)+1;
+  }
+  const isSiege=waveNum>0&&waveNum%5===0;
+  const sides=chooseSpawnSides(waveNum);
+  waveSpawnSides=sides;
+  const sideNames=['North','South','West','East'];
+  const sideText=sides.length<4?sides.map(s=>sideNames[s]).join(' & '):'All sides';
+
+  let html=`<div class="wave-preview-panel">`;
+  html+=`<h2>${isSiege?'🔥 SIEGE WAVE':'⚔️ WAVE'} ${waveNum}</h2>`;
+  html+=`<div class="wp-subtitle">${comp.length} enemies incoming · ${sideText}</div>`;
+  html+=`<div class="wp-enemies">`;
+  for(const[name,count] of Object.entries(counts).sort((a,b)=>b[1]-a[1])){
+    const typeKey=Object.keys(ENEMY_TYPES).find(k=>ENEMY_TYPES[k].name===name);
+    const def=typeKey?ENEMY_TYPES[typeKey]:null;
+    const color=def?`rgb(${def.color[0]},${def.color[1]},${def.color[2]})`:'#c88';
+    const letter=def?def.letter:'?';
+    let tag='';
+    if(def&&def.smashWalls) tag='<span class="wp-tag wp-tag-danger">Smashes Walls</span>';
+    else if(def&&def.ranged) tag='<span class="wp-tag wp-tag-warn">Ranged</span>';
+    else if(def&&def.buffAura) tag='<span class="wp-tag wp-tag-buff">Buffs Allies</span>';
+    else if(def&&def.targetsStructures) tag='<span class="wp-tag wp-tag-danger">Targets Structures</span>';
+    html+=`<div class="wp-enemy-row">
+      <div class="wp-icon" style="background:${color}">${letter}</div>
+      <span class="wp-name">${name}</span>
+      <span class="wp-count">×${count}</span>${tag}
+    </div>`;
+  }
+  html+=`</div>`;
+  if(sides.length>=2&&sides.length<4) html+=`<div class="wp-pincer">⚠ PINCER ATTACK from ${sideText}!</div>`;
+  if(isSiege) html+=`<div class="wp-siege">🔥 Siege wave — extra heavies incoming!</div>`;
+  html+=`<div class="wp-timer" id="wp-timer">Preparing...</div>`;
+  html+=`</div>`;
+
+  const overlay=document.getElementById('wave-preview-overlay');
+  overlay.innerHTML=html;
+  overlay.classList.add('show');
+  wavePreviewActive=true;
+  wavePreviewTimer=WAVE_PREVIEW_DURATION;
+}
+
+function updateWavePreview(dt){
+  if(!wavePreviewActive)return;
+  wavePreviewTimer-=dt;
+  const timerEl=document.getElementById('wp-timer');
+  if(timerEl) timerEl.textContent=`Starting in ${Math.ceil(wavePreviewTimer)}s...`;
+  if(wavePreviewTimer<=0){
+    wavePreviewActive=false;
+    document.getElementById('wave-preview-overlay').classList.remove('show');
+    launchWave();
+  }
+}
+
 function startWave(){
   if(game.phase!=='BUILD')return;
   game.wave++;
+  game.phase='PREVIEW';
+  showWavePreview(game.wave);
+}
+
+function launchWave(){
   game.phase='COMBAT';
 
   // Phase UI
@@ -617,7 +792,8 @@ function startWave(){
   spawnTimer=0;
 
   // Banner
-  showBanner(`⚔️ WAVE ${game.wave}`);
+  const isSiege=game.wave>0&&game.wave%5===0;
+  showBanner(isSiege?`🔥 SIEGE WAVE ${game.wave}`:`⚔️ WAVE ${game.wave}`);
 }
 
 function endWave(){
@@ -837,23 +1013,58 @@ function spawnEnemy(typeKey){
     path:finalPath, pathIdx:1,
     slowTimer:0,
     hitFlash:0,
+    buffed:false,
   });
   // Spawn flash effect
   addParticles(spawnX, spawnY, `rgba(${def.color[0]},${def.color[1]},${def.color[2]},0.9)`, 8);
 }
 
-// ── Step 9: Wall-attacking for Brutes/Siege Rams (disabled for basic enemies) ──
-// function findNearestWall(ec,er){ ... }
-// function destroyStructure(key){ ... }
-// Will be re-enabled when Brute enemy type is added in Step 9.
+// ── Wall/Structure attacking for Brutes & Siege Rams ──
+function findNearestStructure(ec,er,targetsStructuresOnly){
+  let nearest=null, nearDist=Infinity;
+  for(const[key,s] of Object.entries(structures)){
+    // Siege Rams target any structure; Brutes only smash walls and gates
+    if(targetsStructuresOnly || s.type==='WALL' || s.type==='GATE'){
+      const[c,r]=key.split(',').map(Number);
+      const dx=c-ec, dy=r-er, d=Math.sqrt(dx*dx+dy*dy);
+      if(d<nearDist){nearDist=d;nearest={key,c,r,dist:d,struct:s};}
+    }
+  }
+  return nearest;
+}
+function destroyStructure(key){
+  const[c,r]=key.split(',').map(Number);
+  const s=structures[key];
+  if(!s)return;
+  const def=STRUCTS[s.type];
+  addFloat(`${def.name} destroyed!`,c*TILE_SIZE+TILE_SIZE/2,r*TILE_SIZE,'#ff4444');
+  addParticles(c*TILE_SIZE+TILE_SIZE/2,r*TILE_SIZE+TILE_SIZE/2,'rgba(160,120,80,0.8)',12);
+  addParticles(c*TILE_SIZE+TILE_SIZE/2,r*TILE_SIZE+TILE_SIZE/2,'rgba(255,100,50,0.6)',8);
+  cam.shake=Math.max(cam.shake,5);
+  delete structures[key];
+}
 
 function killEnemy(e,i,source,sourceUnit){
-  addParticles(e.x,e.y,`rgba(${e.color[0]},${e.color[1]},${e.color[2]},0.8)`,12);
+  const eDef=ENEMY_TYPES[e.type];
+  // Tougher enemies give more XP and bigger death effects
+  const xpReward=e.type==='swarm'?3:e.type==='brute'?20:e.type==='warchief'?25:e.type==='siegeRam'?20:e.type==='enemyArcher'?12:10;
+  const particleCount=e.type==='brute'||e.type==='siegeRam'?20:e.type==='warchief'?18:12;
+  addParticles(e.x,e.y,`rgba(${e.color[0]},${e.color[1]},${e.color[2]},0.8)`,particleCount);
+  if(e.type==='warchief'){
+    // Dramatic warchief death — gold burst
+    addParticles(e.x,e.y,'rgba(255,200,60,0.8)',10);
+    addFloat('👑 Warchief slain!',e.x,e.y-TILE_SIZE,'#ffd700');
+    cam.shake=Math.max(cam.shake,5);
+  }
+  if(e.type==='brute'){
+    addFloat('💥 Brute down!',e.x,e.y-TILE_SIZE,'#ff8844');
+    cam.shake=Math.max(cam.shake,4);
+  }
   game.enemiesKilled++;
   if(source==='tower')game.killsByTower++;
   if(source==='trap')game.killsByTrap++;
   if(source==='unit'&&sourceUnit){
-    sourceUnit.xp+=10; // bonus XP for kill
+    sourceUnit.xp+=xpReward;
     game.killsByUnit=(game.killsByUnit||0)+1;
     // Check for rank-up
     const newRank=checkRankUp(sourceUnit);
@@ -929,6 +1140,61 @@ function damageHero(dmg){
   }
 }
 
+// ── WARCHIEF BUFF AURA: buff nearby enemies ──
+function updateWarchiefAuras(){
+  // Reset buff flags
+  for(const e of enemies) e.buffed=false;
+  // Apply auras from warchiefs
+  for(const wc of enemies){
+    if(wc.type!=='warchief'||wc.hp<=0) continue;
+    const def=ENEMY_TYPES.warchief;
+    for(const e of enemies){
+      if(e===wc||e.hp<=0) continue;
+      const dx=e.x-wc.x, dy=e.y-wc.y;
+      if(Math.sqrt(dx*dx+dy*dy)<=def.buffRadius*TILE_SIZE){
+        e.buffed=true;
+      }
+    }
+  }
+}
+
+// ── ENEMY ARCHER RANGED AI ──
+function updateEnemyArcherRanged(e,eCol,eRow,dt){
+  const def=ENEMY_TYPES.enemyArcher;
+  const rangePx=def.range*TILE_SIZE;
+  // Find nearest player unit or hero in range
+  let target=null, targetDist=Infinity, targetX=0, targetY=0;
+
+  // Check hero
+  if(hero.stunTimer<=0){
+    const hdx=hero.x-e.x, hdy=hero.y-e.y, hd=Math.sqrt(hdx*hdx+hdy*hdy);
+    if(hd<=rangePx&&hd<targetDist){targetDist=hd;targetX=hero.x;targetY=hero.y;target='hero';}
+  }
+  // Check player units
+  for(const u of units){
+    if(u.hp<=0)continue;
+    const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
+    const dx=ux-e.x, dy=uy-e.y, d=Math.sqrt(dx*dx+dy*dy);
+    if(d<=rangePx&&d<targetDist){targetDist=d;targetX=ux;targetY=uy;target=u;}
+  }
+
+  if(target&&e.attackCooldown<=0){
+    e.attackCooldown=e.attackRate;
+    const eDmg=e.buffed?Math.round(ENEMY_TYPES.enemyArcher.dmg*ENEMY_TYPES.warchief.buffDmgMult):ENEMY_TYPES.enemyArcher.dmg;
+    // Fire enemy arrow projectile
+    projectiles.push({
+      x:e.x, y:e.y, tx:targetX, ty:targetY,
+      speed:220, dmg:eDmg, age:0,
+      target:target==='hero'?null:target,
+      isEnemyProjectile:true,
+      heroTarget:target==='hero',
+      color:'rgba(200,80,160,0.9)', trailColor:'rgba(200,80,160,0.3)',
+    });
+    return true; // signal: don't move this tick (standing and shooting)
+  }
+  return target!==null; // if target in range, stop moving
+}
+
 function updateEnemies(dt){
   // Spawn from queue
   if(spawnQueue.length>0){
@@ -939,31 +1205,94 @@ function updateEnemies(dt){
     }
   }
 
+  // Update warchief auras
+  updateWarchiefAuras();
+
   for(let i=enemies.length-1;i>=0;i--){
     const e=enemies[i];
     e.hitFlash=Math.max(0,e.hitFlash-dt*4);
     e.slowTimer=Math.max(0,e.slowTimer-dt);
     e.attackCooldown=Math.max(0,e.attackCooldown-dt);
+    const eDef=ENEMY_TYPES[e.type];
 
     const eCol=Math.floor(e.x/TILE_SIZE), eRow=Math.floor(e.y/TILE_SIZE);
 
+    // ── ENEMY ARCHER: ranged AI — stop and shoot when targets in range ──
+    if(e.type==='enemyArcher'){
+      const shooting=updateEnemyArcherRanged(e,eCol,eRow,dt);
+      if(shooting){
+        // Still allow path movement below but skip if we have a target in range
+        // (archer stops to fire)
+        // Check if on base first
+        const onBase=eCol>=BASE_CX-1&&eCol<=BASE_CX+1&&eRow>=BASE_CY-1&&eRow<=BASE_CY+1;
+        if(onBase&&e.attackCooldown<=0){
+          game.baseHP=Math.max(0,game.baseHP-eDef.baseDmg);
+          e.attackCooldown=e.attackRate;
+          cam.shake=Math.max(cam.shake,2);
+          addFloat(`-${eDef.baseDmg}`,e.x,e.y-10,'#ff4444');
+          if(game.baseHP<=0){showBanner('\u{1F480} BASE DESTROYED \u2014 GAME OVER');game.phase='GAMEOVER';}
+        }
+        continue; // skip movement — standing and shooting
+      }
+    }
+
+    // ── SIEGE RAM: target nearest structure instead of base ──
+    if(e.type==='siegeRam'&&e.attackCooldown<=0){
+      const nearStruct=findNearestStructure(eCol,eRow,true);
+      if(nearStruct&&nearStruct.dist<=1.5){
+        // Smash the structure
+        const sDmg=eDef.structDmg||20;
+        nearStruct.struct.hp-=sDmg;
+        e.attackCooldown=e.attackRate;
+        const sx=nearStruct.c*TILE_SIZE+TILE_SIZE/2, sy=nearStruct.r*TILE_SIZE+TILE_SIZE/2;
+        addFloat(`-${sDmg}`,sx,sy-10,'#ff6644');
+        addParticles(sx,sy,'rgba(160,120,80,0.8)',8);
+        cam.shake=Math.max(cam.shake,5);
+        if(nearStruct.struct.hp<=0) destroyStructure(nearStruct.key);
+        continue;
+      }
+      // Path to nearest structure if one exists
+      if(nearStruct&&(!e._structTarget||Math.random()<0.05)){
+        const structPath=findPath(eCol,eRow,nearStruct.c,nearStruct.r);
+        if(structPath){e.path=structPath;e.pathIdx=1;e._structTarget=nearStruct.key;}
+      }
+    }
+
+    // ── BRUTE: smash walls when path is blocked ──
+    if(e.type==='brute'&&e.attackCooldown<=0){
+      const nearWall=findNearestStructure(eCol,eRow,false);
+      if(nearWall&&nearWall.dist<=1.5&&(nearWall.struct.type==='WALL'||nearWall.struct.type==='GATE')){
+        const sDmg=eDef.dmg*2; // brutes do double damage to structures
+        nearWall.struct.hp-=sDmg;
+        e.attackCooldown=e.attackRate;
+        const sx=nearWall.c*TILE_SIZE+TILE_SIZE/2, sy=nearWall.r*TILE_SIZE+TILE_SIZE/2;
+        addFloat(`💥 -${sDmg}`,sx,sy-10,'#ff6644');
+        addParticles(sx,sy,'rgba(160,80,40,0.8)',8);
+        cam.shake=Math.max(cam.shake,4);
+        if(nearWall.struct.hp<=0) destroyStructure(nearWall.key);
+        // Don't continue — brute may also be on base path
+      }
+    }
+
     // Enemy attacks hero if adjacent (within 1.2 tiles) and hero is alive
-    if(hero.stunTimer<=0){
+    if(hero.stunTimer<=0&&e.type!=='siegeRam'){
       const hdx=hero.x-e.x, hdy=hero.y-e.y;
       const heroDist=Math.sqrt(hdx*hdx+hdy*hdy);
       if(heroDist<TILE_SIZE*1.3&&e.attackCooldown<=0){
-        // Prioritize attacking hero over moving
-        const eDmg=ENEMY_TYPES[e.type].dmg;
+        let eDmg=eDef.dmg;
+        if(e.buffed) eDmg=Math.round(eDmg*ENEMY_TYPES.warchief.buffDmgMult);
         damageHero(eDmg);
         e.attackCooldown=e.attackRate;
       }
     }
 
     // Enemy retargeting: attack adjacent units (30% chance per tick when cooldown ready)
-    if(e.attackCooldown<=0){
+    // Siege Rams skip — they only hit structures
+    if(e.attackCooldown<=0&&e.type!=='siegeRam'){
       const adjacentUnit=findAdjacentUnit(eCol,eRow);
       if(adjacentUnit&&Math.random()<0.3){
-        const eDmg=ENEMY_TYPES[e.type].dmg;
+        let eDmg=eDef.dmg;
+        if(e.buffed) eDmg=Math.round(eDmg*ENEMY_TYPES.warchief.buffDmgMult);
         damageUnit(adjacentUnit,eDmg,e);
         e.attackCooldown=e.attackRate;
       }
@@ -975,10 +1304,11 @@ function updateEnemies(dt){
     if(onBase){
       // ON the base — attack it
       if(e.attackCooldown<=0){
-        game.baseHP=Math.max(0,game.baseHP-e.dmg);
+        const baseDmg=eDef.baseDmg||e.dmg;
+        game.baseHP=Math.max(0,game.baseHP-baseDmg);
         e.attackCooldown=e.attackRate;
         cam.shake=Math.max(cam.shake,4);
-        addFloat(`-${e.dmg}`,e.x,e.y-10,'#ff4444');
+        addFloat(`-${baseDmg}`,e.x,e.y-10,'#ff4444');
         addParticles(e.x, e.y, 'rgba(220,180,60,0.8)', 3);
         if(game.baseHP<=0){
           showBanner('\u{1F480} BASE DESTROYED \u2014 GAME OVER');
@@ -994,13 +1324,24 @@ function updateEnemies(dt){
       if(newPath){
         e.path=newPath; e.pathIdx=1;
       } else {
-        // No path — idle/wander (basic enemies don't attack walls; Step 9 Brutes will)
-        // Shouldn't happen due to wall placement validation, but just in case
+        // No path — Brutes attack nearest wall, others idle
+        if(e.type==='brute'){
+          const nearWall=findNearestStructure(eCol,eRow,false);
+          if(nearWall&&nearWall.dist<=2.5){
+            // Move toward the wall
+            const wx=nearWall.c*TILE_SIZE+TILE_SIZE/2, wy=nearWall.r*TILE_SIZE+TILE_SIZE/2;
+            const ddx=wx-e.x, ddy=wy-e.y, dist=Math.sqrt(ddx*ddx+ddy*ddy);
+            if(dist>TILE_SIZE*0.8){
+              const speed=e.speed*(e.slowTimer>0?0.4:1)*dt;
+              e.x+=ddx/dist*speed; e.y+=ddy/dist*speed;
+            }
+          }
+        }
       }
       continue;
     }
 
-    // Move along path
+    // Move along path (with warchief speed buff)
     const target=e.path[e.pathIdx];
     const tx=target.c*TILE_SIZE+TILE_SIZE/2, ty=target.r*TILE_SIZE+TILE_SIZE/2;
     const ddx=tx-e.x, ddy=ty-e.y;
@@ -1040,7 +1381,9 @@ function updateEnemies(dt){
         if(e.hp<=0){killEnemy(e,i,'gate');continue;}
       }
     } else {
-      const speed=e.speed*(e.slowTimer>0?0.4:1)*dt;
+      let speedMult=e.slowTimer>0?0.4:1;
+      if(e.buffed) speedMult*=ENEMY_TYPES.warchief.buffSpeedMult;
+      const speed=e.speed*speedMult*dt;
       e.x+=ddx/dist*speed;
       e.y+=ddy/dist*speed;
     }
@@ -1097,6 +1440,19 @@ function updateProjectiles(dt){
     const dx=p.tx-p.x, dy=p.ty-p.y;
     const dist=Math.sqrt(dx*dx+dy*dy);
     if(dist<6){
+      // ── ENEMY PROJECTILES (enemy archer arrows) ──
+      if(p.isEnemyProjectile){
+        if(p.heroTarget){
+          // Hit the hero
+          if(hero.stunTimer<=0) damageHero(p.dmg);
+        } else if(p.target&&p.target.hp>0){
+          // Hit a player unit
+          damageUnit(p.target,p.dmg,null);
+        }
+        addParticles(p.tx,p.ty,'rgba(200,80,160,0.7)',4);
+        projectiles.splice(i,1);
+        continue;
+      }
       // Hit — check for AOE (catapult boulders)
       if(p.aoe){
         // AOE damage: hit all enemies within radius of impact point
@@ -1153,7 +1509,12 @@ function updateProjectiles(dt){
     }
     const speed=p.speed*dt;
     // Track target if alive
-    if(p.target&&p.target.hp>0){p.tx=p.target.x;p.ty=p.target.y;}
+    if(p.heroTarget&&hero.stunTimer<=0){p.tx=hero.x;p.ty=hero.y;}
+    else if(p.isEnemyProjectile&&p.target&&p.target.hp>0){
+      // Enemy projectile targeting a player unit (uses col/row)
+      p.tx=p.target.col*TILE_SIZE+TILE_SIZE/2;p.ty=p.target.row*TILE_SIZE+TILE_SIZE/2;
+    }
+    else if(p.target&&p.target.hp>0){p.tx=p.target.x;p.ty=p.target.y;}
     p.x+=dx/dist*speed;
     p.y+=dy/dist*speed;
   }
@@ -1854,7 +2215,7 @@ function heroCanWalkTo(wx,wy){
 }
 
 function updateHero(dt){
-  if(game.phase==='GAMEOVER')return;
+  if(game.phase==='GAMEOVER'||game.phase==='PREVIEW')return;
   if(hero.stunTimer>0)return; // knocked down — can't move
   let dx=0,dy=0;
   if(keys['w']||keys['W'])dy=-1;
@@ -2364,10 +2725,30 @@ function drawEnemies(now){
   const z=cam.zoom;
   for(const e of enemies){
     const ex=(e.x-TILE_SIZE/2-cam.x)*z, ey=(e.y-TILE_SIZE/2-cam.y)*z;
-    const sw=TILE_SIZE*z*0.9;
+    const eDef=ENEMY_TYPES[e.type];
+    // Brutes and Siege Rams are bigger
+    const sizeMult=e.type==='brute'?1.0:e.type==='siegeRam'?1.1:e.type==='swarm'?0.65:0.9;
+    const sw=TILE_SIZE*z*sizeMult;
     if(ex+sw<0||ex>canvas.width||ey+sw<0||ey>canvas.height)continue;
 
     const off=(TILE_SIZE*z-sw)/2;
+
+    // Warchief buff aura glow
+    if(e.type==='warchief'){
+      const auraPulse=Math.sin(now*0.004)*0.1+0.2;
+      const auraR=eDef.buffRadius*TILE_SIZE*z;
+      const grad=ctx.createRadialGradient(ex+TILE_SIZE*z/2,ey+TILE_SIZE*z/2,0,ex+TILE_SIZE*z/2,ey+TILE_SIZE*z/2,auraR);
+      grad.addColorStop(0,`rgba(200,40,80,${auraPulse*0.3})`);
+      grad.addColorStop(1,`rgba(200,40,80,0)`);
+      ctx.fillStyle=grad;
+      ctx.fillRect(ex+TILE_SIZE*z/2-auraR,ey+TILE_SIZE*z/2-auraR,auraR*2,auraR*2);
+    }
+
+    // Buff indicator (buffed by warchief — red glow ring)
+    if(e.buffed&&e.type!=='warchief'){
+      ctx.strokeStyle='rgba(255,60,80,0.5)';ctx.lineWidth=z*2;
+      ctx.strokeRect(ex+off-z,ey+off-z,sw+z*2,sw+z*2);
+    }
 
     // Hit flash
     if(e.hitFlash>0){
@@ -2379,10 +2760,33 @@ function drawEnemies(now){
     ctx.fillStyle=`rgb(${e.color[0]},${e.color[1]},${e.color[2]})`;
     ctx.fillRect(ex+off,ey+off,sw,sw);
 
-    // Enemy type indicator
-    ctx.fillStyle='rgba(255,255,255,0.4)';
-    ctx.font=`bold ${10*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText(e.type==='runner'?'R':'E', ex+TILE_SIZE*z/2, ey+TILE_SIZE*z/2);
+    // Brute: stone block pattern
+    if(e.type==='brute'){
+      ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=z;
+      ctx.beginPath();
+      ctx.moveTo(ex+off,ey+off+sw*0.33);ctx.lineTo(ex+off+sw,ey+off+sw*0.33);
+      ctx.moveTo(ex+off,ey+off+sw*0.66);ctx.lineTo(ex+off+sw,ey+off+sw*0.66);
+      ctx.stroke();
+    }
+    // Siege Ram: horizontal bars
+    if(e.type==='siegeRam'){
+      ctx.strokeStyle='rgba(200,160,80,0.4)';ctx.lineWidth=z*2;
+      ctx.beginPath();
+      ctx.moveTo(ex+off+sw*0.15,ey+off+sw*0.5);ctx.lineTo(ex+off+sw*0.85,ey+off+sw*0.5);
+      ctx.stroke();
+      ctx.fillStyle='rgba(180,140,60,0.5)';
+      ctx.beginPath();ctx.arc(ex+off+sw*0.85,ey+off+sw*0.5,3*z,0,Math.PI*2);ctx.fill();
+    }
+    // Warchief: crown
+    if(e.type==='warchief'){
+      ctx.fillStyle='rgba(255,200,60,0.8)';ctx.font=`bold ${8*z}px system-ui`;ctx.textAlign='center';
+      ctx.fillText('👑',ex+TILE_SIZE*z/2,ey+off-z*2);
+    }
+
+    // Enemy type letter
+    ctx.fillStyle='rgba(255,255,255,0.5)';
+    ctx.font=`bold ${(e.type==='swarm'?8:10)*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(eDef.letter||'E', ex+TILE_SIZE*z/2, ey+TILE_SIZE*z/2);
 
     // HP bar
     const bw=sw,bh=3*z;
@@ -2395,6 +2799,12 @@ function drawEnemies(now){
     if(e.slowTimer>0){
       ctx.strokeStyle='rgba(80,140,220,0.4)';ctx.lineWidth=z;
       ctx.strokeRect(ex+off-z,ey+off-z,sw+z*2,sw+z*2);
+    }
+
+    // Enemy Archer range ring
+    if(e.type==='enemyArcher'){
+      ctx.strokeStyle='rgba(160,80,130,0.1)';ctx.lineWidth=z;
+      ctx.beginPath();ctx.arc(ex+TILE_SIZE*z/2,ey+TILE_SIZE*z/2,eDef.range*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
     }
   }
   ctx.textAlign='start';ctx.textBaseline='alphabetic';
@@ -2510,7 +2920,7 @@ function cachedWouldSeal(col,row,tool){
 }
 
 function drawGhostPreview(){
-  if(game.phase!=='BUILD'||isTouching)return;
+  if(game.phase!=='BUILD'||game.phase==='PREVIEW'||isTouching)return;
   // Cavalry waypoint mode: show the patrol line preview instead of normal ghost
   if(cavalryPendingUnit){
     const z=cam.zoom;
@@ -2853,6 +3263,9 @@ function draw(now){
   updateHero(dt);
   updateHeroCombat(dt);
   checkFormations(); // Update formation bonuses every frame
+  if(game.phase==='PREVIEW'){
+    updateWavePreview(dt);
+  }
   if(game.phase==='COMBAT'){
     updateEnemies(dt);
     updateTowers(dt);
@@ -2901,7 +3314,7 @@ function draw(now){
   }
 
   // Pulsing SPACE prompt during BUILD phase — with upkeep warning
-  if(game.phase==='BUILD'){
+  if(game.phase==='BUILD'&&!wavePreviewActive){
     const pulse=Math.sin(now*0.004)*0.3+0.7;
     ctx.save();
     ctx.fillStyle=`rgba(232,197,106,${pulse*0.9})`;
@@ -2928,12 +3341,20 @@ function draw(now){
     }
     ctx.restore();
   }
-  // Enemy count during COMBAT
+  // Enemy count during COMBAT — show type breakdown
   if(game.phase==='COMBAT'&&(enemies.length>0||spawnQueue.length>0)){
     ctx.save();
     ctx.fillStyle='rgba(220,80,60,0.85)';
     ctx.font='bold 14px system-ui';ctx.textAlign='right';
     ctx.fillText(`👹 ${enemies.length} enemies (${spawnQueue.length} incoming)`, canvas.width-170, 34);
+    // Type breakdown
+    if(enemies.length>0){
+      const typeCounts={};
+      for(const e of enemies){const name=ENEMY_TYPES[e.type]?ENEMY_TYPES[e.type].name:e.type;typeCounts[name]=(typeCounts[name]||0)+1;}
+      const breakdown=Object.entries(typeCounts).map(([n,c])=>`${c}${n[0]}`).join(' ');
+      ctx.font='10px system-ui';ctx.fillStyle='rgba(200,180,160,0.6)';
+      ctx.fillText(breakdown, canvas.width-170, 48);
+    }
     ctx.restore();
   }
 
