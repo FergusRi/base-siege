@@ -413,7 +413,7 @@ const FIRST_BUILD_TIME=300; // 5 minutes first wave
 const BUILD_TIME=120;      // 2 minutes subsequent waves
 const CAM_LERP=0.1, MAX_ZOOM=2.0;
 function getMinZoom(){const c=document.getElementById('game-canvas');if(!c)return 0.1;return Math.max(c.width/MAP_PX_W,c.height/MAP_PX_H);}
-const HERO_SPEED=24*TILE_SIZE;
+const HERO_SPEED=8*TILE_SIZE;
 const HARVEST_RANGE=14, BUILD_RANGE=30;
 const HERO_ATK_DMG=8, HERO_ATK_RATE=0.4, HERO_ATK_RANGE=1.2*TILE_SIZE;
 const HERO_KNOCKDOWN_TIME=10, HERO_REVIVE_PCT=0.25;
@@ -461,7 +461,7 @@ const UNIT_TYPES={
     color:[60,160,90],letter:'A',desc:'Ranged attacker',melee:false},
   SPEARMAN:{name:'Spearman',hp:16,dmg:3,range:1.5,speed:0,cost:{wood:4,food:3},upkeep:1,
     color:[180,160,60],letter:'S',desc:'Anti-fast, zone of control',melee:true},
-  CAVALRY:{name:'Cavalry',hp:18,dmg:6,range:1.3,speed:9,cost:{wood:8,food:5},upkeep:2,
+  CAVALRY:{name:'Cavalry',hp:18,dmg:6,range:1.3,speed:4.5,cost:{wood:8,food:5},upkeep:2,
     color:[160,100,60],letter:'C',desc:'Mobile patrol, charge bonus',melee:true},
   CATAPULT:{name:'Catapult',hp:8,dmg:12,range:6,speed:0,cost:{wood:12,stone:5,metal:4},upkeep:2,
     color:[120,90,70],letter:'K',desc:'AOE siege, slow fire, fragile',melee:false},
@@ -535,13 +535,13 @@ function showRankUpEffect(u,newRank){
 
 // ─── ENEMY DEFINITIONS ───
 const ENEMY_TYPES={
-  raider:      {name:'Raider',       hp:10, dmg:5,  speed:20,  color:[180,50,50],  attackRate:1.0, baseDmg:5,  letter:'E'},
-  runner:      {name:'Runner',       hp:5,  dmg:3,  speed:36,  color:[200,100,60], attackRate:0.8, baseDmg:3,  letter:'R'},
-  brute:       {name:'Brute',        hp:45, dmg:8,  speed:10,   color:[140,40,40],  attackRate:1.5, baseDmg:10, letter:'B', smashWalls:true},
-  enemyArcher: {name:'Enemy Archer', hp:8,  dmg:6,  speed:12,   color:[160,80,130], attackRate:1.2, baseDmg:3,  letter:'A', ranged:true, range:5},
-  warchief:    {name:'Warchief',     hp:30, dmg:6,  speed:14,   color:[200,40,80],  attackRate:1.0, baseDmg:7,  letter:'W', buffAura:true, buffRadius:4, buffDmgMult:1.3, buffSpeedMult:1.2},
-  siegeRam:    {name:'Siege Ram',    hp:60, dmg:3,  speed:8,   color:[100,70,50],  attackRate:2.0, baseDmg:15, letter:'S', targetsStructures:true, structDmg:20},
-  swarm:       {name:'Swarm',        hp:3,  dmg:2,  speed:28,  color:[170,120,70], attackRate:0.5, baseDmg:2,  letter:'z'},
+  raider:      {name:'Raider',       hp:10, dmg:5,  speed:6,   color:[180,50,50],  attackRate:1.0, baseDmg:5,  letter:'E'},
+  runner:      {name:'Runner',       hp:5,  dmg:3,  speed:12,  color:[200,100,60], attackRate:0.8, baseDmg:3,  letter:'R'},
+  brute:       {name:'Brute',        hp:45, dmg:8,  speed:4,   color:[140,40,40],  attackRate:1.5, baseDmg:10, letter:'B', smashWalls:true},
+  enemyArcher: {name:'Enemy Archer', hp:8,  dmg:6,  speed:5,   color:[160,80,130], attackRate:1.2, baseDmg:3,  letter:'A', ranged:true, range:5},
+  warchief:    {name:'Warchief',     hp:30, dmg:6,  speed:6,   color:[200,40,80],  attackRate:1.0, baseDmg:7,  letter:'W', buffAura:true, buffRadius:4, buffDmgMult:1.3, buffSpeedMult:1.2},
+  siegeRam:    {name:'Siege Ram',    hp:60, dmg:3,  speed:3,   color:[100,70,50],  attackRate:2.0, baseDmg:15, letter:'S', targetsStructures:true, structDmg:20},
+  swarm:       {name:'Swarm',        hp:3,  dmg:2,  speed:11,  color:[170,120,70], attackRate:0.5, baseDmg:2,  letter:'z'},
 };
 
 // ─── NOISE ───
