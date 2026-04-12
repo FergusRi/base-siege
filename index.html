@@ -196,7 +196,7 @@ function isWalkable(c,r){
   if(map[c][r]===T.WATER) return false;
   const sk=c+','+r;
   if(structures[sk]&&structures[sk].type==='WALL') return false;
-  return true;
+  return true;  // BASE tiles ARE walkable — enemies must reach them to attack
 }
 
 // Binary min-heap for A*
@@ -467,19 +467,30 @@ function updateEnemies(dt){
     e.slowTimer=Math.max(0,e.slowTimer-dt);
     e.attackCooldown=Math.max(0,e.attackCooldown-dt);
 
-    if(!e.path||e.pathIdx>=e.path.length){
-      // At base — attack it
+    // Check if enemy is standing on a base tile
+    const eCol=Math.floor(e.x/TILE_SIZE), eRow=Math.floor(e.y/TILE_SIZE);
+    const onBase=eCol>=BASE_CX-1&&eCol<=BASE_CX+1&&eRow>=BASE_CY-1&&eRow<=BASE_CY+1;
+
+    if(onBase){
+      // ON the base — attack it
       if(e.attackCooldown<=0){
         game.baseHP=Math.max(0,game.baseHP-e.dmg);
         e.attackCooldown=e.attackRate;
         cam.shake=Math.max(cam.shake,4);
-        addFloat(`-${e.dmg}`,BASE_CX*TILE_SIZE+TILE_SIZE/2,BASE_CY*TILE_SIZE,'#ff4444');
-        addParticles(BASE_CX*TILE_SIZE+TILE_SIZE*1.5, BASE_CY*TILE_SIZE+TILE_SIZE*1.5, 'rgba(220,180,60,0.8)', 3);
+        addFloat(`-${e.dmg}`,e.x,e.y-10,'#ff4444');
+        addParticles(e.x, e.y, 'rgba(220,180,60,0.8)', 3);
         if(game.baseHP<=0){
           showBanner('💀 BASE DESTROYED — GAME OVER');
           game.phase='GAMEOVER';
         }
       }
+      continue;
+    }
+
+    if(!e.path||e.pathIdx>=e.path.length){
+      // Path ended but not on base — repath
+      e.path=findPath(eCol,eRow,BASE_CX,BASE_CY);
+      e.pathIdx=1;
       continue;
     }
 
