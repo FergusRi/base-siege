@@ -168,6 +168,85 @@
   .promo-flash { animation: promoGlow 1.5s ease-in-out infinite; }
   @keyframes promoGlow { 0%,100% { box-shadow: 0 0 0 rgba(255,215,0,0); } 50% { box-shadow: 0 0 12px rgba(255,215,0,0.3); } }
 
+  /* Start screen overlay */
+  #start-screen {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 30;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(15,15,25,0.92) 0%, rgba(5,5,12,0.98) 100%);
+    backdrop-filter: blur(6px); transition: opacity 0.6s;
+  }
+  #start-screen.hidden { opacity: 0; pointer-events: none; }
+  .start-title { font-size: 52px; font-weight: 900; letter-spacing: 4px; color: #e8c56a;
+    text-shadow: 0 0 40px rgba(220,180,60,0.4), 0 2px 12px rgba(0,0,0,0.8); margin-bottom: 8px; }
+  .start-subtitle { font-size: 16px; color: rgba(200,200,210,0.5); letter-spacing: 2px;
+    text-transform: uppercase; margin-bottom: 40px; }
+  .start-prompt { font-size: 20px; font-weight: 700; color: rgba(232,197,106,0.85);
+    animation: startPulse 2s ease-in-out infinite; }
+  @keyframes startPulse { 0%,100% { opacity: 0.6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.05); } }
+  .start-tips { margin-top: 32px; font-size: 12px; color: rgba(200,200,210,0.35); max-width: 400px; text-align: center; line-height: 1.8; }
+
+  /* Game over overlay */
+  #gameover-screen {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 30;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(40,10,10,0.92) 0%, rgba(10,5,5,0.98) 100%);
+    backdrop-filter: blur(6px);
+  }
+  #gameover-screen.show { display: flex; }
+  .go-title { font-size: 48px; font-weight: 900; letter-spacing: 3px; color: #e85a4a;
+    text-shadow: 0 0 40px rgba(220,60,40,0.5), 0 2px 12px rgba(0,0,0,0.8); margin-bottom: 6px; }
+  .go-subtitle { font-size: 15px; color: rgba(200,200,210,0.45); margin-bottom: 24px; }
+  .go-stats { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-bottom: 28px; max-width: 400px; }
+  .go-stat { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px; padding: 10px 18px; text-align: center; min-width: 100px; }
+  .go-stat-val { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .go-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; opacity: 0.45; margin-top: 2px; }
+  .go-btn { padding: 12px 36px; border-radius: 12px; background: rgba(220,80,60,0.15);
+    border: 1px solid rgba(220,80,60,0.35); color: #e87a6a; font-size: 16px; font-weight: 700;
+    cursor: pointer; font-family: inherit; letter-spacing: 0.5px; transition: all 0.15s; }
+  .go-btn:hover { background: rgba(220,80,60,0.25); }
+
+  /* Win screen overlay */
+  #win-screen {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 30;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(20,20,10,0.92) 0%, rgba(8,8,5,0.98) 100%);
+    backdrop-filter: blur(6px);
+  }
+  #win-screen.show { display: flex; }
+  .win-title { font-size: 48px; font-weight: 900; letter-spacing: 3px; color: #ffd700;
+    text-shadow: 0 0 40px rgba(255,215,0,0.5), 0 2px 12px rgba(0,0,0,0.8); margin-bottom: 6px; }
+  .win-subtitle { font-size: 15px; color: rgba(200,200,210,0.5); margin-bottom: 24px; }
+  .win-stats { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-bottom: 28px; max-width: 450px; }
+  .win-stat { background: rgba(255,215,0,0.04); border: 1px solid rgba(255,215,0,0.1);
+    border-radius: 10px; padding: 10px 18px; text-align: center; min-width: 100px; }
+  .win-stat-val { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; color: #ffd700; }
+  .win-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; opacity: 0.45; margin-top: 2px; }
+  .win-btn { padding: 12px 36px; border-radius: 12px; background: rgba(255,215,0,0.12);
+    border: 1px solid rgba(255,215,0,0.3); color: #ffd700; font-size: 16px; font-weight: 700;
+    cursor: pointer; font-family: inherit; letter-spacing: 0.5px; transition: all 0.15s; }
+  .win-btn:hover { background: rgba(255,215,0,0.22); }
+
+  /* Kill counter HUD */
+  #kill-hud {
+    position: fixed; top: 50px; right: 16px; z-index: 12;
+    display: none; flex-direction: column; gap: 2px;
+    padding: 6px 10px; border-radius: 8px;
+    background: rgba(10,10,18,0.7); border: 1px solid rgba(120,120,160,0.1);
+    font-size: 11px; font-variant-numeric: tabular-nums;
+    backdrop-filter: blur(4px);
+  }
+  #kill-hud.show { display: flex; }
+  .kh-row { display: flex; align-items: center; gap: 5px; }
+  .kh-icon { font-size: 12px; width: 16px; text-align: center; }
+  .kh-label { opacity: 0.45; font-size: 10px; min-width: 40px; }
+  .kh-val { font-weight: 700; min-width: 20px; }
+  .kh-hero { color: #ffe066; }
+  .kh-unit { color: #8ac0e8; }
+  .kh-tower { color: #ffaa44; }
+  .kh-trap { color: #e87a6a; }
+  .kh-total { color: #e8c56a; font-weight: 800; border-top: 1px solid rgba(120,120,160,0.1); padding-top: 3px; margin-top: 1px; }
+
   /* Recruit toolbar styling */
   .tool-btn.recruit { border-color: rgba(100,160,220,0.25); }
   .tool-btn.recruit:hover { background: rgba(100,160,220,0.12); color: #8ac0e8; }
@@ -243,18 +322,55 @@
 </div>
 <canvas id="game-canvas"></canvas>
 <canvas id="minimap" width="150" height="90"></canvas>
-<div id="hint">WASD move · Click to gather · Q/E/R/F/T units · 1-4 build · SPACE fight · X disband · 🍖 Units cost food!</div>
+<div id="hint">WASD move · Click gather · Q/E/R/F/T units · 1-4 build · SPACE fight · Tab cycle · X disband · 🍖 Units cost food!</div>
 <div id="wave-banner"></div>
 <div id="wave-preview-overlay"></div>
 <div id="aftermath-overlay">
   <div class="aftermath-panel" id="aftermath-panel"></div>
 </div>
 
+<!-- Start Screen -->
+<div id="start-screen">
+  <div class="start-title">⚔️ BASE SIEGE</div>
+  <div class="start-subtitle">Place your army like a Roman general, then fight alongside them</div>
+  <div class="start-prompt">Press SPACE to Begin</div>
+  <div class="start-tips">
+    WASD move · G gather resources · 1-4 build structures · Q/E/R/F/T recruit units<br>
+    SPACE starts each wave · Click to attack in combat · Tab cycles units<br>
+    Survive 20 waves to win!
+  </div>
+</div>
+
+<!-- Game Over Screen -->
+<div id="gameover-screen">
+  <div class="go-title">💀 BASE DESTROYED</div>
+  <div class="go-subtitle">Your defenses have fallen...</div>
+  <div class="go-stats" id="go-stats"></div>
+  <button class="go-btn" onclick="restartGame()">⚔️ Try Again</button>
+</div>
+
+<!-- Win Screen -->
+<div id="win-screen">
+  <div class="win-title">🏆 VICTORY!</div>
+  <div class="win-subtitle">You survived all 20 waves!</div>
+  <div class="win-stats" id="win-stats"></div>
+  <button class="win-btn" onclick="restartGame()">🎮 Play Again</button>
+</div>
+
+<!-- Kill Counter HUD -->
+<div id="kill-hud">
+  <div class="kh-row kh-hero"><span class="kh-icon">⚔️</span><span class="kh-label">Hero</span><span class="kh-val" id="kh-hero">0</span></div>
+  <div class="kh-row kh-unit"><span class="kh-icon">🛡️</span><span class="kh-label">Units</span><span class="kh-val" id="kh-unit">0</span></div>
+  <div class="kh-row kh-tower"><span class="kh-icon">🏗️</span><span class="kh-label">Tower</span><span class="kh-val" id="kh-tower">0</span></div>
+  <div class="kh-row kh-trap"><span class="kh-icon">🪤</span><span class="kh-label">Trap</span><span class="kh-val" id="kh-trap">0</span></div>
+  <div class="kh-row kh-total"><span class="kh-icon">💀</span><span class="kh-label">Total</span><span class="kh-val" id="kh-total">0</span></div>
+</div>
+
 <script async src="https://vibej.am/2026/widget.js"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════
-//  BASE SIEGE — Step 12: Advanced Enemies & Wave Design
+//  BASE SIEGE — Step 13: Polish & Game Feel
 // ═══════════════════════════════════════════════════
 
 // ─── CONSTANTS ───
@@ -508,13 +624,18 @@ function findPath(sc,sr,tc,tr){
 //  GAME STATE & ENTITIES
 // ═══════════════════════════════════════════
 
+const WIN_WAVE=20; // survive this many waves to win
+const INITIAL_RESOURCES={wood:60,stone:35,metal:20,food:25};
+
 const game={
-  phase:'BUILD', wave:0, baseHP:100, baseMaxHP:100,
+  phase:'MENU', wave:0, baseHP:100, baseMaxHP:100,
   resources:{wood:60,stone:35,metal:20,food:25},
   waveCountdown:-1, // -1 = not counting
   enemiesKilled:0,
   killsByTower:0,
   killsByTrap:0,
+  killsByUnit:0,
+  selectedUnitIdx:-1, // for Tab cycling
 };
 
 const hero={
@@ -544,7 +665,8 @@ function selectTool(tool){
 }
 function updateHint(){
   const h=document.getElementById('hint');
-  if(game.phase==='COMBAT'){h.textContent='⚔️ COMBAT — WASD to move · Click to attack enemies · Defend the base!';return;}
+  if(game.phase==='MENU')return;
+  if(game.phase==='COMBAT'){h.textContent='⚔️ COMBAT — WASD to move · Click to attack · Tab cycle units · Defend the base!';return;}
   if(selectedTool==='gather')h.textContent='WASD to move · Click resources to gather · SPACE to start wave';
   else if(selectedTool==='DEMOLISH')h.textContent='Click a structure to demolish · ESC to cancel';
   else if(cavalryPendingUnit){h.textContent='Click a patrol target (2-8 tiles from cavalry) · ESC to cancel';return;}
@@ -797,6 +919,13 @@ function launchWave(){
 }
 
 function endWave(){
+  // ── WIN CHECK: survived the final wave! ──
+  if(game.wave>=WIN_WAVE){
+    game.phase='WIN';
+    showWinScreen();
+    return;
+  }
+
   game.phase='AFTERMATH';
 
   // Base regen
@@ -1230,7 +1359,7 @@ function updateEnemies(dt){
           e.attackCooldown=e.attackRate;
           cam.shake=Math.max(cam.shake,2);
           addFloat(`-${eDef.baseDmg}`,e.x,e.y-10,'#ff4444');
-          if(game.baseHP<=0){showBanner('\u{1F480} BASE DESTROYED \u2014 GAME OVER');game.phase='GAMEOVER';}
+          if(game.baseHP<=0){game.phase='GAMEOVER';showGameOverScreen();}
         }
         continue; // skip movement — standing and shooting
       }
@@ -1311,8 +1440,7 @@ function updateEnemies(dt){
         addFloat(`-${baseDmg}`,e.x,e.y-10,'#ff4444');
         addParticles(e.x, e.y, 'rgba(220,180,60,0.8)', 3);
         if(game.baseHP<=0){
-          showBanner('\u{1F480} BASE DESTROYED \u2014 GAME OVER');
-          game.phase='GAMEOVER';
+          game.phase='GAMEOVER';showGameOverScreen();
         }
       }
       continue;
@@ -2168,7 +2296,16 @@ window.addEventListener('keydown',e=>{
   keys[e.key]=true;
   if(e.key===' '||e.code==='Space'){
     e.preventDefault();
+    if(game.phase==='MENU'){dismissStartScreen();return;}
     if(game.phase==='BUILD')startWave();
+  }
+  // Tab: cycle through units
+  if(e.key==='Tab'){
+    e.preventDefault();
+    if(game.phase==='BUILD'||game.phase==='COMBAT'){
+      cycleUnit(e.shiftKey);
+    }
+    return;
   }
   if(game.phase==='BUILD'){
     if(e.key==='g'||e.key==='G')selectTool('gather');
@@ -2215,7 +2352,7 @@ function heroCanWalkTo(wx,wy){
 }
 
 function updateHero(dt){
-  if(game.phase==='GAMEOVER'||game.phase==='PREVIEW')return;
+  if(game.phase==='GAMEOVER'||game.phase==='PREVIEW'||game.phase==='MENU'||game.phase==='WIN')return;
   if(hero.stunTimer>0)return; // knocked down — can't move
   let dx=0,dy=0;
   if(keys['w']||keys['W'])dy=-1;
@@ -2353,6 +2490,8 @@ function handleDemolish(col,row){
 }
 
 document.getElementById('game-canvas').addEventListener('click',e=>{
+  // Start screen click
+  if(game.phase==='MENU'){dismissStartScreen();return;}
   // Hero attack during combat
   if(game.phase==='COMBAT'){heroAttack();return;}
   if(game.phase!=='BUILD')return;
@@ -3250,6 +3389,121 @@ function updateUI(){
 
 
 // ═══════════════════════════════════════════
+//  START / GAME OVER / WIN SCREENS
+// ═══════════════════════════════════════════
+
+function dismissStartScreen(){
+  if(game.phase!=='MENU')return;
+  document.getElementById('start-screen').classList.add('hidden');
+  game.phase='BUILD';
+  // Hide start screen completely after fade
+  setTimeout(()=>{document.getElementById('start-screen').style.display='none';},600);
+}
+
+function showGameOverScreen(){
+  const el=document.getElementById('gameover-screen');
+  const stats=document.getElementById('go-stats');
+  const unitKills=game.killsByUnit||0;
+  stats.innerHTML=`
+    <div class="go-stat"><div class="go-stat-val" style="color:#e87a6a">${game.wave}</div><div class="go-stat-label">Waves Survived</div></div>
+    <div class="go-stat"><div class="go-stat-val" style="color:#e8c56a">${game.enemiesKilled}</div><div class="go-stat-label">Enemies Killed</div></div>
+    <div class="go-stat"><div class="go-stat-val" style="color:#ffe066">${hero.kills}</div><div class="go-stat-label">Hero Kills</div></div>
+    <div class="go-stat"><div class="go-stat-val" style="color:#8ac0e8">${unitKills}</div><div class="go-stat-label">Unit Kills</div></div>
+    <div class="go-stat"><div class="go-stat-val" style="color:#ffaa44">${game.killsByTower}</div><div class="go-stat-label">Tower Kills</div></div>
+    <div class="go-stat"><div class="go-stat-val" style="color:#7aca7a">${units.length}</div><div class="go-stat-label">Units Surviving</div></div>
+  `;
+  el.classList.add('show');
+}
+
+function showWinScreen(){
+  const el=document.getElementById('win-screen');
+  const stats=document.getElementById('win-stats');
+  const unitKills=game.killsByUnit||0;
+  // Calculate final score: kills + wave bonus + surviving units bonus
+  const score=game.enemiesKilled*10 + game.wave*100 + units.length*50 + Math.round(game.baseHP/game.baseMaxHP*200);
+  stats.innerHTML=`
+    <div class="win-stat"><div class="win-stat-val">${score}</div><div class="win-stat-label">Final Score</div></div>
+    <div class="win-stat"><div class="win-stat-val" style="color:#e8c56a">${game.enemiesKilled}</div><div class="win-stat-label">Enemies Killed</div></div>
+    <div class="win-stat"><div class="win-stat-val" style="color:#ffe066">${hero.kills}</div><div class="win-stat-label">Hero Kills</div></div>
+    <div class="win-stat"><div class="win-stat-val" style="color:#8ac0e8">${unitKills}</div><div class="win-stat-label">Unit Kills</div></div>
+    <div class="win-stat"><div class="win-stat-val" style="color:#ffaa44">${game.killsByTower}</div><div class="win-stat-label">Tower Kills</div></div>
+    <div class="win-stat"><div class="win-stat-val" style="color:#7aca7a">${units.length}</div><div class="win-stat-label">Units Surviving</div></div>
+    <div class="win-stat"><div class="win-stat-val" style="color:#e87a6a">${game.baseHP}/${game.baseMaxHP}</div><div class="win-stat-label">Base HP</div></div>
+  `;
+  el.classList.add('show');
+}
+
+function restartGame(){
+  // Reset game state
+  game.phase='BUILD'; game.wave=0; game.baseHP=100; game.baseMaxHP=100;
+  game.resources={...INITIAL_RESOURCES}; game.waveCountdown=-1;
+  game.enemiesKilled=0; game.killsByTower=0; game.killsByTrap=0; game.killsByUnit=0;
+  game.selectedUnitIdx=-1;
+  // Reset hero
+  hero.x=BASE_CX*TILE_SIZE+TILE_SIZE/2; hero.y=(BASE_CY-3)*TILE_SIZE+TILE_SIZE/2;
+  hero.hp=50; hero.maxHP=50; hero.atkCooldown=0; hero.atkAnim=0;
+  hero.stunTimer=0; hero.hitFlash=0; hero.kills=0;
+  // Clear entities
+  enemies.length=0; units.length=0; projectiles.length=0;
+  floats.length=0; particles.length=0; spawnQueue.length=0;
+  for(const k in structures) delete structures[k];
+  cavalryPendingUnit=null;
+  // Regen map
+  generateMap(); buildTileCache();
+  // Reset cam
+  cam.x=hero.x-canvas.width/2; cam.y=hero.y-canvas.height/2;
+  cam.tx=cam.x; cam.ty=cam.y; cam.shake=0; cam.zoom=1; cam.tZoom=1;
+  // Hide overlays
+  document.getElementById('gameover-screen').classList.remove('show');
+  document.getElementById('win-screen').classList.remove('show');
+  document.getElementById('aftermath-overlay').classList.remove('show');
+  document.getElementById('wave-preview-overlay').classList.remove('show');
+  // Reset UI
+  const badge=document.getElementById('phase-badge');
+  badge.textContent='BUILD'; badge.className='phase-badge phase-build';
+  document.getElementById('toolbar').classList.remove('combat-mode');
+  document.getElementById('game-canvas').classList.remove('combat-cursor');
+  selectTool('gather');
+}
+
+// ─── TAB: Cycle through units ───
+function cycleUnit(reverse){
+  if(units.length===0)return;
+  if(reverse){
+    game.selectedUnitIdx--;
+    if(game.selectedUnitIdx<0) game.selectedUnitIdx=units.length-1;
+  } else {
+    game.selectedUnitIdx++;
+    if(game.selectedUnitIdx>=units.length) game.selectedUnitIdx=0;
+  }
+  const u=units[game.selectedUnitIdx];
+  if(!u)return;
+  // Snap camera to the selected unit
+  const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
+  cam.tx=ux-canvas.width/(2*cam.tZoom);
+  cam.ty=uy-canvas.height/(2*cam.tZoom);
+  clampCam();
+  // Show ring effect around selected unit
+  addFloat(`▸ ${UNIT_TYPES[u.type].name} ◂`,ux,uy-TILE_SIZE*1.5,'#8ac0e8');
+}
+
+// ─── Kill HUD update ───
+function updateKillHUD(){
+  const hudEl=document.getElementById('kill-hud');
+  if(game.phase==='COMBAT'||game.phase==='AFTERMATH'){
+    hudEl.classList.add('show');
+    document.getElementById('kh-hero').textContent=hero.kills;
+    document.getElementById('kh-unit').textContent=game.killsByUnit||0;
+    document.getElementById('kh-tower').textContent=game.killsByTower;
+    document.getElementById('kh-trap').textContent=game.killsByTrap;
+    document.getElementById('kh-total').textContent=game.enemiesKilled;
+  } else {
+    hudEl.classList.remove('show');
+  }
+}
+
+
+// ═══════════════════════════════════════════
 //  MAIN GAME LOOP
 // ═══════════════════════════════════════════
 
@@ -3313,7 +3567,7 @@ function draw(now){
     ctx.fillRect(0,0,canvas.width,canvas.height);
   }
 
-  // Pulsing SPACE prompt during BUILD phase — with upkeep warning
+  // Pulsing SPACE prompt during BUILD phase — with upkeep warning (not on MENU)
   if(game.phase==='BUILD'&&!wavePreviewActive){
     const pulse=Math.sin(now*0.004)*0.3+0.7;
     ctx.save();
@@ -3358,7 +3612,27 @@ function draw(now){
     ctx.restore();
   }
 
+  // Draw Tab-selected unit highlight ring
+  if(game.selectedUnitIdx>=0&&game.selectedUnitIdx<units.length){
+    const su=units[game.selectedUnitIdx];
+    const sz=cam.zoom;
+    const sux=(su.col*TILE_SIZE-cam.x)*sz, suy=(su.row*TILE_SIZE-cam.y)*sz, ssw=TILE_SIZE*sz;
+    const selPulse=Math.sin(now*0.006)*0.2+0.6;
+    ctx.strokeStyle=`rgba(140,200,240,${selPulse})`;ctx.lineWidth=sz*2;
+    ctx.strokeRect(sux-sz*2,suy-sz*2,ssw+sz*4,ssw+sz*4);
+    // Corner accents
+    const cl=6*sz;
+    ctx.strokeStyle=`rgba(200,230,255,${selPulse*0.8})`;ctx.lineWidth=sz*2.5;
+    ctx.beginPath();
+    ctx.moveTo(sux-sz*2,suy-sz*2+cl);ctx.lineTo(sux-sz*2,suy-sz*2);ctx.lineTo(sux-sz*2+cl,suy-sz*2);
+    ctx.moveTo(sux+ssw+sz*2-cl,suy-sz*2);ctx.lineTo(sux+ssw+sz*2,suy-sz*2);ctx.lineTo(sux+ssw+sz*2,suy-sz*2+cl);
+    ctx.moveTo(sux+ssw+sz*2,suy+ssw+sz*2-cl);ctx.lineTo(sux+ssw+sz*2,suy+ssw+sz*2);ctx.lineTo(sux+ssw+sz*2-cl,suy+ssw+sz*2);
+    ctx.moveTo(sux-sz*2+cl,suy+ssw+sz*2);ctx.lineTo(sux-sz*2,suy+ssw+sz*2);ctx.lineTo(sux-sz*2,suy+ssw+sz*2-cl);
+    ctx.stroke();
+  }
+
   updateUI();
+  updateKillHUD();
   drawMinimap();
   requestAnimationFrame(draw);
 }
@@ -3369,8 +3643,24 @@ function init(){
   buildTileCache();
   cam.x=hero.x-canvas.width/2;cam.y=hero.y-canvas.height/2;
   cam.tx=cam.x;cam.ty=cam.y;
+  // Start in MENU phase — hide game UI until dismissed
+  document.getElementById('top-bar').style.opacity='0';
+  document.getElementById('toolbar').style.opacity='0';
+  document.getElementById('hint').style.opacity='0';
+  document.getElementById('minimap').style.opacity='0';
   requestAnimationFrame(draw);
 }
+
+// Show game UI when start screen is dismissed
+const _origDismiss=dismissStartScreen;
+dismissStartScreen=function(){
+  _origDismiss();
+  // Fade in game UI
+  ['top-bar','toolbar','hint','minimap'].forEach(id=>{
+    const el=document.getElementById(id);
+    el.style.transition='opacity 0.5s';el.style.opacity='1';
+  });
+};
 
 init();
 
