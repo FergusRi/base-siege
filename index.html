@@ -559,85 +559,39 @@ function generateMap(){
   placeResourceClusters();
 }
 
-// Cluster-based resource generation
+// Random edge-weighted resource generation
+// Each tile independently rolls for resources; probability scales with centerDist
+// (0 at center, 1 at edges). Trees/berries spawn everywhere, stone/ore/gold favor edges.
 function placeResourceClusters(){
-  const maxDist=Math.max(COLS,ROWS)/2;
-  // Generate cluster seed points for each resource type
-  // Trees: everywhere, dense mid (0.15-0.7) — 4× clusters
-  placeClusters(T.TREE, {
-    count:960, minSize:3, maxSize:8,
-    minDist:0.05, maxDist:0.85,
-    densityPeak:0.4, densityWidth:0.35,
-    noiseOctaves:3, noiseFreq:0.015, noiseThresh:0.42
-  });
-  // Berry groves: scattered mid (0.15-0.6) — 4× clusters
-  placeClusters(T.BERRY, {
-    count:320, minSize:2, maxSize:5,
-    minDist:0.1, maxDist:0.6,
-    densityPeak:0.35, densityWidth:0.25,
-    noiseOctaves:2, noiseFreq:0.02, noiseThresh:0.42
-  });
-  // Stone quarries: clustered outer (0.45-0.85) — 4× clusters
-  placeClusters(T.STONE, {
-    count:800, minSize:3, maxSize:7,
-    minDist:0.4, maxDist:0.85,
-    densityPeak:0.65, densityWidth:0.2,
-    noiseOctaves:2, noiseFreq:0.0175, noiseThresh:0.48
-  });
-  // Iron veins: rare outer near edges (0.65-0.92) — 4× clusters
-  placeClusters(T.ORE, {
-    count:400, minSize:2, maxSize:5,
-    minDist:0.55, maxDist:0.92,
-    densityPeak:0.75, densityWidth:0.18,
-    noiseOctaves:2, noiseFreq:0.025, noiseThresh:0.43
-  });
-  // Gold deposits: very rare, edge strip only (0.80-1.0) — 4× clusters
-  placeClusters(T.GOLD, {
-    count:200, minSize:2, maxSize:4,
-    minDist:0.78, maxDist:0.99,
-    densityPeak:0.90, densityWidth:0.12,
-    noiseOctaves:1, noiseFreq:0.035, noiseThresh:0.43
-  });
+  // Resource configs: tileType, baseProb (at dist=0), edgeMult (extra prob at dist=1), minDist (no spawn below)
+  const RES_CFG=[
+    {tile:T.TREE,  baseProb:0.025, edgeMult:0.04,  minDist:0.0},  // trees everywhere, denser at edges
+    {tile:T.BERRY, baseProb:0.008, edgeMult:0.012, minDist:0.0},  // berries everywhere, moderate
+    {tile:T.STONE, baseProb:0.003, edgeMult:0.025, minDist:0.15}, // stone sparse center, dense edges
+    {tile:T.ORE,   baseProb:0.001, edgeMult:0.018, minDist:0.25}, // ore mostly outer half
+    {tile:T.GOLD,  baseProb:0.0,   edgeMult:0.012, minDist:0.5},  // gold only outer half, edges rich
+  ];
+  for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
+    if(map[c][r]!==T.GRASS) continue;
+    const cd=centerDist(c,r);
+    const rng=hash(c*131+7,r*173+13); // deterministic per-tile roll
+    for(let i=0;i<RES_CFG.length;i++){
+      const cfg=RES_CFG[i];
+      if(cd<cfg.minDist) continue;
+      // Probability ramps linearly: baseProb at center → baseProb+edgeMult at edges
+      const prob=cfg.baseProb + cfg.edgeMult * cd;
+      // Use a different hash channel per resource so they don't overlap
+      const roll=hash(c*131+i*997+7, r*173+i*853+13);
+      if(roll<prob){
+        map[c][r]=cfg.tile;
+        break; // one resource per tile, priority order (tree>berry>stone>ore>gold)
+      }
+    }
+  }
   // Initialize depositHP for all resource tiles
   for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
     const dep=DEPOSITS[map[c][r]];
     if(dep) depositHP[c][r]=dep.maxHP;
-  }
-}
-
-function placeClusters(tileType, cfg){
-  const {count,minSize,maxSize,minDist,maxDist,densityPeak,densityWidth,noiseOctaves,noiseFreq,noiseThresh}=cfg;
-  let placed=0;
-  for(let attempt=0;attempt<count*8&&placed<count;attempt++){
-    // Random seed point
-    const sc=Math.floor(hash(attempt*73+tileType*137,attempt*31+17)*COLS);
-    const sr=Math.floor(hash(attempt*59+tileType*211,attempt*43+23)*ROWS);
-    if(sc<1||sc>=COLS-1||sr<1||sr>=ROWS-1) continue;
-    if(map[sc][sr]===T.WATER) continue;
-    // Check distance band
-    const cd=centerDist(sc,sr);
-    if(cd<minDist||cd>maxDist) continue;
-    // Gaussian density falloff from peak
-    const distFromPeak=Math.abs(cd-densityPeak)/densityWidth;
-    const density=Math.exp(-distFromPeak*distFromPeak);
-    if(hash(attempt*97+tileType*53,attempt*67+11)<(1-density*0.8)) continue;
-    // Noise check for natural shape
-    const nv=fbm(sc+tileType*200,sr+tileType*200,noiseOctaves,noiseFreq,2,0.5);
-    if(nv<noiseThresh) continue;
-    // Place cluster using random walk from seed
-    const clusterSize=minSize+Math.floor(hash(attempt*41+tileType,attempt*29)*(maxSize-minSize+1));
-    let cx=sc, cy=sr;
-    for(let i=0;i<clusterSize;i++){
-      if(cx>=0&&cx<COLS&&cy>=0&&cy<ROWS&&map[cx][cy]===T.GRASS){
-        map[cx][cy]=tileType;
-      }
-      // Random walk to next tile in cluster
-      const dir=Math.floor(hash(attempt*13+i*7+tileType,i*19+attempt)*4);
-      if(dir===0)cx++;else if(dir===1)cx--;else if(dir===2)cy++;else cy--;
-      cx=Math.max(0,Math.min(COLS-1,cx));
-      cy=Math.max(0,Math.min(ROWS-1,cy));
-    }
-    placed++;
   }
 }
 // Place HQ — clear area around it, set BASE_CX/CY, carve spawn paths
@@ -782,7 +736,7 @@ const INITIAL_RESOURCES={wood:80,stone:45,metal:25,food:35,gold:0};
 
 const game={
   phase:'MENU', wave:0, baseHP:HQ_HP, baseMaxHP:HQ_HP,
-  resources:{wood:320,stone:180,metal:100,food:140,gold:0},
+  resources:{...INITIAL_RESOURCES},
   waveCountdown:-1, // -1 = not counting
   enemiesKilled:0,
   killsByTower:0,
