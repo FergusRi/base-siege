@@ -76,6 +76,27 @@
     opacity: 0; pointer-events: none; transition: opacity 0.4s;
   }
   #wave-banner.show { opacity: 1; }
+
+  /* Unit info panel */
+  #unit-info {
+    position: fixed; bottom: 52px; left: 50%; transform: translateX(-50%); z-index: 15;
+    display: none; align-items: center; gap: 14px;
+    padding: 8px 20px; border-radius: 12px;
+    background: rgba(10,10,18,0.92); border: 1px solid rgba(120,120,160,0.2);
+    backdrop-filter: blur(8px); font-size: 12px; white-space: nowrap;
+  }
+  #unit-info.show { display: flex; }
+  .ui-stat { display: flex; align-items: center; gap: 4px; }
+  .ui-label { opacity: 0.5; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .ui-val { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .ui-name { font-weight: 700; font-size: 14px; }
+  .ui-hp { color: #7aca7a; } .ui-dmg { color: #e87a6a; } .ui-range { color: #7ab0d8; }
+
+  /* Recruit toolbar styling */
+  .tool-btn.recruit { border-color: rgba(100,160,220,0.25); }
+  .tool-btn.recruit:hover { background: rgba(100,160,220,0.12); color: #8ac0e8; }
+  .tool-btn.recruit.active { background: rgba(100,160,220,0.18); border-color: rgba(100,160,220,0.4); color: #8ac0e8; }
+  .tool-btn.recruit.active .tool-key { background: rgba(100,160,220,0.25); color: #8ac0e8; }
 </style>
 </head>
 <body>
@@ -111,7 +132,18 @@
   <button class="tool-btn" data-tool="TRAP" onclick="selectTool('TRAP')"><span class="tool-key">3</span> Trap <span class="tool-cost">3W 1M</span></button>
   <button class="tool-btn" data-tool="GATE" onclick="selectTool('GATE')"><span class="tool-key">4</span> Gate <span class="tool-cost">5W 2S</span></button>
   <span class="tb-sep">│</span>
+  <button class="tool-btn recruit" data-tool="MILITIA" onclick="selectTool('MILITIA')"><span class="tool-key">Q</span> Militia <span class="tool-cost">5W 2F</span></button>
+  <button class="tool-btn recruit" data-tool="ARCHER" onclick="selectTool('ARCHER')"><span class="tool-key">E</span> Archer <span class="tool-cost">5W 3M</span></button>
+  <span class="tb-sep">│</span>
   <button class="tool-btn" data-tool="DEMOLISH" onclick="selectTool('DEMOLISH')"><span class="tool-key">X</span> Demolish</button>
+</div>
+<div id="unit-info">
+  <span class="ui-name" id="ui-name">—</span>
+  <div class="ui-stat"><span class="ui-label">HP</span><span class="ui-val ui-hp" id="ui-hp">—</span></div>
+  <div class="ui-stat"><span class="ui-label">DMG</span><span class="ui-val ui-dmg" id="ui-dmg">—</span></div>
+  <div class="ui-stat"><span class="ui-label">Range</span><span class="ui-val ui-range" id="ui-range">—</span></div>
+  <div class="ui-stat"><span class="ui-label">XP</span><span class="ui-val" id="ui-xp">—</span></div>
+  <div class="ui-stat"><span class="ui-label">Rank</span><span class="ui-val" id="ui-rank">—</span></div>
 </div>
 <canvas id="game-canvas"></canvas>
 <canvas id="minimap" width="150" height="90"></canvas>
@@ -122,7 +154,7 @@
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════
-//  BASE SIEGE — Step 4: Hero Combat
+//  BASE SIEGE — Step 5: Unit Recruitment & Placement
 // ═══════════════════════════════════════════════════
 
 // ─── CONSTANTS ───
@@ -152,6 +184,16 @@ const STRUCTS={
   TRAP:{name:'Spike Trap',cost:{wood:3,metal:1},hp:1,color:[55,50,45],letter:'X',dmg:8,slow:0.5},
   GATE:{name:'Gate',cost:{wood:5,stone:2},hp:30,color:[90,75,55],letter:'G',dmg:3,slow:0.6},
 };
+
+// ─── UNIT DEFINITIONS ───
+const UNIT_TYPES={
+  MILITIA:{name:'Militia',hp:20,dmg:4,range:1.2,speed:0,cost:{wood:5,food:2},
+    color:[90,140,200],letter:'M',desc:'Sturdy melee fighter'},
+  ARCHER:{name:'Archer',hp:12,dmg:5,range:4,speed:0,cost:{wood:5,metal:3},
+    color:[60,160,90],letter:'A',desc:'Ranged attacker'},
+};
+const RANK_NAMES=['Recruit','Veteran','Elite','Champion'];
+function unitRank(xp){if(xp>=100)return 3;if(xp>=50)return 2;if(xp>=20)return 1;return 0;}
 
 // ─── ENEMY DEFINITIONS ───
 const ENEMY_TYPES={
@@ -314,6 +356,7 @@ const hero={
 const structures={}; // "c,r" => { type, hp, maxHP, cooldown }
 const enemies=[];    // array of enemy objects
 const projectiles=[]; // tower projectiles
+const units=[];      // placed army units: {type, col, row, hp, maxHP, dmg, range, xp, morale, state}
 
 // ─── BUILD / TOOL STATE ───
 let selectedTool='gather';
@@ -329,9 +372,15 @@ function updateHint(){
   if(game.phase==='COMBAT'){h.textContent='⚔️ COMBAT — WASD to move · Click to attack enemies · Defend the base!';return;}
   if(selectedTool==='gather')h.textContent='WASD to move · Click resources to gather · SPACE to start wave';
   else if(selectedTool==='DEMOLISH')h.textContent='Click a structure to demolish · ESC to cancel';
+  else if(UNIT_TYPES[selectedTool]){const u=UNIT_TYPES[selectedTool];h.textContent=`Click to place ${u.name} · ESC/G to cancel`;}
   else{const s=STRUCTS[selectedTool];h.textContent=`Click to place ${s.name} · ESC/G to cancel`;}
 }
-function canAfford(key){const s=STRUCTS[key];if(!s)return false;for(const[r,a]of Object.entries(s.cost)){if(game.resources[r]<a)return false;}return true;}
+function canAfford(key){
+  const def=STRUCTS[key]||UNIT_TYPES[key];
+  if(!def)return false;
+  for(const[r,a]of Object.entries(def.cost)){if(game.resources[r]<a)return false;}
+  return true;
+}
 
 // ─── FLOATING TEXT ───
 const floats=[];
@@ -773,6 +822,8 @@ window.addEventListener('keydown',e=>{
     if(e.key==='2')selectTool('TOWER');
     if(e.key==='3')selectTool('TRAP');
     if(e.key==='4')selectTool('GATE');
+    if(e.key==='q'||e.key==='Q')selectTool('MILITIA');
+    if(e.key==='e'||e.key==='E')selectTool('ARCHER');
     if(e.key==='x'||e.key==='X')selectTool('DEMOLISH');
     if(e.key==='Escape')selectTool('gather');
   }
@@ -865,8 +916,40 @@ function handleBuild(col,row){
   structures[sk]={type:selectedTool,hp:def.hp,maxHP:def.hp,cooldown:0,active:true};
   addFloat(`${def.name} built!`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#7aca7a');
 }
+function handleRecruit(col,row){
+  const def=UNIT_TYPES[selectedTool];if(!def)return;
+  const sk=col+','+row;
+  // Must be grass, no structure, no existing unit, not on base
+  if(map[col][row]!==T.GRASS||structures[sk]){addFloat('Invalid!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+  if(unitAt(col,row)){addFloat('Occupied!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+  const dist=Math.abs(col-heroCol())+Math.abs(row-heroRow());
+  if(dist>BUILD_RANGE){addFloat('Too far!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+  if(!canAfford(selectedTool)){addFloat('Can\'t afford!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+  for(const[r,a]of Object.entries(def.cost))game.resources[r]-=a;
+  units.push({
+    type:selectedTool, col, row,
+    hp:def.hp, maxHP:def.hp, dmg:def.dmg, range:def.range,
+    xp:0, morale:100, state:'idle',
+    atkCooldown:0,
+  });
+  addFloat(`${def.name} recruited!`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#8ac0e8');
+  addParticles(col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE+TILE_SIZE/2,'rgba(100,160,220,0.7)',6);
+}
+
+function unitAt(col,row){return units.find(u=>u.col===col&&u.row===row);}
+
 function handleDemolish(col,row){
-  const sk=col+','+row;const s=structures[sk];if(!s)return;const def=STRUCTS[s.type];
+  const sk=col+','+row;
+  // Check for unit first
+  const uIdx=units.findIndex(u=>u.col===col&&u.row===row);
+  if(uIdx>=0){
+    const u=units[uIdx];const def=UNIT_TYPES[u.type];
+    for(const[r,a]of Object.entries(def.cost))game.resources[r]+=Math.floor(a*0.5);
+    units.splice(uIdx,1);
+    addFloat(`${def.name} dismissed`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ffaa44');
+    return;
+  }
+  const s=structures[sk];if(!s)return;const def=STRUCTS[s.type];
   for(const[r,a]of Object.entries(def.cost))game.resources[r]+=Math.floor(a*0.5);
   delete structures[sk];
   addFloat(`${def.name} demolished`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ffaa44');
@@ -883,6 +966,7 @@ document.getElementById('game-canvas').addEventListener('click',e=>{
   if(col<0||col>=COLS||row<0||row>=ROWS)return;
   if(selectedTool==='gather')handleGather(col,row);
   else if(selectedTool==='DEMOLISH')handleDemolish(col,row);
+  else if(UNIT_TYPES[selectedTool])handleRecruit(col,row);
   else handleBuild(col,row);
 });
 
@@ -1016,6 +1100,59 @@ function drawStructures(){
     }
 
     ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.lineWidth=z;ctx.strokeRect(sx+z,sy+z,sw-2*z,sw-2*z);
+  }
+  ctx.textAlign='start';ctx.textBaseline='alphabetic';
+}
+
+// ─── DRAW UNITS ───
+function drawUnits(now){
+  const z=cam.zoom;
+  for(const u of units){
+    const sx=(u.col*TILE_SIZE-cam.x)*z, sy=(u.row*TILE_SIZE-cam.y)*z, sw=TILE_SIZE*z;
+    if(sx+sw<0||sx>canvas.width||sy+sw<0||sy>canvas.height)continue;
+    const def=UNIT_TYPES[u.type];
+    const[cr,cg,cb]=def.color;
+    const rank=unitRank(u.xp);
+
+    // Body tile
+    ctx.fillStyle=`rgb(${cr},${cg},${cb})`;
+    ctx.fillRect(sx+z*1.5,sy+z*1.5,sw-z*3,sw-z*3);
+
+    // Rank border glow
+    if(rank>0){
+      const rankColors=['','rgba(180,180,100,0.3)','rgba(200,160,60,0.4)','rgba(255,200,80,0.5)'];
+      ctx.strokeStyle=rankColors[rank];ctx.lineWidth=z*2;
+      ctx.strokeRect(sx+z,sy+z,sw-z*2,sw-z*2);
+    } else {
+      ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=z;
+      ctx.strokeRect(sx+z*1.5,sy+z*1.5,sw-z*3,sw-z*3);
+    }
+
+    // Letter icon
+    ctx.fillStyle='rgba(255,255,255,0.85)';ctx.font=`bold ${14*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(def.letter,sx+sw/2,sy+sw/2);
+
+    // Range indicator for archers (subtle ring)
+    if(def.range>1.5&&game.phase==='COMBAT'){
+      ctx.strokeStyle=`rgba(${cr},${cg},${cb},0.1)`;ctx.lineWidth=z;
+      ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,def.range*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+    }
+
+    // HP bar (show if damaged)
+    if(u.hp<u.maxHP){
+      const bw=sw*0.8,bh=3*z;
+      ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(sx+(sw-bw)/2,sy-bh-z*2,bw,bh);
+      const hpPct=u.hp/u.maxHP;
+      ctx.fillStyle=hpPct>0.5?'#4a4':hpPct>0.25?'#da4':'#d44';
+      ctx.fillRect(sx+(sw-bw)/2,sy-bh-z*2,bw*hpPct,bh);
+    }
+
+    // Rank stars
+    if(rank>0){
+      ctx.fillStyle='rgba(255,220,80,0.7)';ctx.font=`${8*z}px system-ui`;
+      const stars='★'.repeat(rank);
+      ctx.fillText(stars,sx+sw/2,sy+sw-z*3);
+    }
   }
   ctx.textAlign='start';ctx.textBaseline='alphabetic';
 }
@@ -1170,13 +1307,30 @@ function drawGhostPreview(){
   if(col<0||col>=COLS||row<0||row>=ROWS)return;
   const sx=(col*TILE_SIZE-cam.x)*z,sy=(row*TILE_SIZE-cam.y)*z,sw=TILE_SIZE*z;
   const sk=col+','+row;
-  const basicValid=map[col][row]===T.GRASS&&!structures[sk]&&(Math.abs(col-heroCol())+Math.abs(row-heroRow()))<=BUILD_RANGE&&canAfford(selectedTool);
-  const valid=basicValid&&!cachedWouldSeal(col,row,selectedTool);
-  const def=STRUCTS[selectedTool];const[cr,cg,cb]=def.color;
+  const isUnit=!!UNIT_TYPES[selectedTool];
+  const def=isUnit?UNIT_TYPES[selectedTool]:STRUCTS[selectedTool];
+  if(!def)return;
+  const[cr,cg,cb]=def.color;
+
+  let valid;
+  if(isUnit){
+    valid=map[col][row]===T.GRASS&&!structures[sk]&&!unitAt(col,row)&&(Math.abs(col-heroCol())+Math.abs(row-heroRow()))<=BUILD_RANGE&&canAfford(selectedTool);
+  } else {
+    const basicValid=map[col][row]===T.GRASS&&!structures[sk]&&(Math.abs(col-heroCol())+Math.abs(row-heroRow()))<=BUILD_RANGE&&canAfford(selectedTool);
+    valid=basicValid&&!cachedWouldSeal(col,row,selectedTool);
+  }
+
   ctx.fillStyle=valid?`rgba(${cr},${cg},${cb},0.45)`:'rgba(200,50,50,0.25)';ctx.fillRect(sx,sy,sw,sw);
-  ctx.fillStyle=`rgba(255,255,255,${valid?0.3:0.15})`;ctx.font=`bold ${12*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle=`rgba(255,255,255,${valid?0.3:0.15})`;ctx.font=`bold ${(isUnit?14:12)*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
   ctx.fillText(def.letter,sx+sw/2,sy+sw/2);
-  ctx.strokeStyle=valid?'rgba(90,180,90,0.4)':'rgba(200,50,50,0.4)';ctx.lineWidth=z*1.5;ctx.strokeRect(sx+z,sy+z,sw-2*z,sw-2*z);
+  const borderColor=isUnit?(valid?'rgba(100,160,220,0.5)':'rgba(200,50,50,0.4)'):(valid?'rgba(90,180,90,0.4)':'rgba(200,50,50,0.4)');
+  ctx.strokeStyle=borderColor;ctx.lineWidth=z*1.5;ctx.strokeRect(sx+z,sy+z,sw-2*z,sw-2*z);
+
+  // Show range preview for archers
+  if(isUnit&&valid&&def.range>1.5){
+    ctx.strokeStyle=`rgba(${cr},${cg},${cb},0.15)`;ctx.lineWidth=z;
+    ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,def.range*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+  }
   ctx.textAlign='start';ctx.textBaseline='alphabetic';
 }
 
@@ -1189,15 +1343,40 @@ function drawHoverTile(){
   if(col<0||col>=COLS||row<0||row>=ROWS)return;
   const sx=(col*TILE_SIZE-cam.x)*z,sy=(row*TILE_SIZE-cam.y)*z,sw=TILE_SIZE*z;
   const sk=col+','+row;const tile=map[col][row];
-  const isRes=!!HARVEST[tile], isDem=selectedTool==='DEMOLISH'&&structures[sk];
-  ctx.strokeStyle=isDem?'rgba(255,100,60,0.5)':isRes?'rgba(120,200,120,0.4)':'rgba(255,255,255,0.2)';
+  const hoverUnit=unitAt(col,row);
+  const isDem=selectedTool==='DEMOLISH'&&(structures[sk]||hoverUnit);
+  const isRes=!!HARVEST[tile]&&!hoverUnit;
+  ctx.strokeStyle=isDem?'rgba(255,100,60,0.5)':hoverUnit?'rgba(100,160,220,0.5)':isRes?'rgba(120,200,120,0.4)':'rgba(255,255,255,0.2)';
   ctx.lineWidth=z*1.5;ctx.strokeRect(sx+z,sy+z,sw-z*2,sw-z*2);
-  let label=structures[sk]?STRUCTS[structures[sk].type].name:TILE_NAMES[tile];
+  let label;
+  if(hoverUnit){const def=UNIT_TYPES[hoverUnit.type];label=`${def.name} (${hoverUnit.hp}/${hoverUnit.maxHP} HP)`;}
+  else if(structures[sk])label=STRUCTS[structures[sk].type].name;
+  else label=TILE_NAMES[tile];
   if(isRes&&selectedTool==='gather'){const h=HARVEST[tile];label+=` (+${h.amt} ${h.res})`;}
   ctx.font='11px system-ui';ctx.textAlign='center';
   const tw=ctx.measureText(label).width+16;
   ctx.fillStyle='rgba(10,10,18,0.75)';ctx.fillRect(sx+sw/2-tw/2,sy-20,tw,18);
-  ctx.fillStyle=isRes?'#aadcaa':'#c8c8d0';ctx.fillText(label,sx+sw/2,sy-6);ctx.textAlign='start';
+  ctx.fillStyle=hoverUnit?'#8ac0e8':isRes?'#aadcaa':'#c8c8d0';ctx.fillText(label,sx+sw/2,sy-6);ctx.textAlign='start';
+}
+
+// ─── UNIT INFO PANEL ───
+function updateUnitInfoPanel(){
+  const panel=document.getElementById('unit-info');
+  if(isTouching||game.phase==='COMBAT'){panel.classList.remove('show');return;}
+  const z=cam.zoom;
+  const col=Math.floor((cam.x+mouseX/z)/TILE_SIZE),row=Math.floor((cam.y+mouseY/z)/TILE_SIZE);
+  if(col<0||col>=COLS||row<0||row>=ROWS){panel.classList.remove('show');return;}
+  const u=unitAt(col,row);
+  if(!u){panel.classList.remove('show');return;}
+  const def=UNIT_TYPES[u.type];
+  const rank=unitRank(u.xp);
+  document.getElementById('ui-name').textContent=def.name;
+  document.getElementById('ui-hp').textContent=`${u.hp}/${u.maxHP}`;
+  document.getElementById('ui-dmg').textContent=u.dmg;
+  document.getElementById('ui-range').textContent=def.range>1.5?def.range+' tiles':'Melee';
+  document.getElementById('ui-xp').textContent=u.xp;
+  document.getElementById('ui-rank').textContent=RANK_NAMES[rank]+(rank>0?' '+'★'.repeat(rank):'');
+  panel.classList.add('show');
 }
 
 // ─── DRAW FLOATING TEXT ───
@@ -1237,6 +1416,12 @@ function drawMinimap(){
     mmCtx.fillStyle=`rgb(${def.color[0]+30},${def.color[1]+30},${def.color[2]+30})`;
     mmCtx.fillRect(c*sx,r*sy,sx+0.5,sy+0.5);
   }
+  // Units on minimap
+  for(const u of units){
+    const def=UNIT_TYPES[u.type];
+    mmCtx.fillStyle=`rgb(${def.color[0]},${def.color[1]},${def.color[2]})`;
+    mmCtx.fillRect(u.col*sx,u.row*sy,sx+0.5,sy+0.5);
+  }
   // Enemies on minimap
   mmCtx.fillStyle='rgba(220,60,50,0.9)';
   for(const e of enemies){
@@ -1274,7 +1459,7 @@ function updateUI(){
   const heroHPText=hero.stunTimer>0?`💀 ${Math.ceil(hero.stunTimer)}s`:`${hero.hp}/${hero.maxHP}`;
   document.getElementById('hero-hp-text').textContent=heroHPText;
   document.getElementById('wave-num').textContent=game.wave;
-  document.querySelectorAll('.tool-btn[data-tool]').forEach(btn=>{const t=btn.dataset.tool;if(STRUCTS[t])btn.style.opacity=canAfford(t)?'1':'0.5';});
+  document.querySelectorAll('.tool-btn[data-tool]').forEach(btn=>{const t=btn.dataset.tool;if(STRUCTS[t]||UNIT_TYPES[t])btn.style.opacity=canAfford(t)?'1':'0.5';});
 }
 
 
@@ -1314,11 +1499,13 @@ function draw(now){
   drawWaterOverlay(now);
   drawBaseGlow(now);
   drawStructures();
+  drawUnits(now);
   drawEnemies(now);
   drawProjectiles();
   drawHero(now);
   drawGhostPreview();
   drawHoverTile();
+  updateUnitInfoPanel();
   drawFloatingTexts();
   drawParticles();
 
