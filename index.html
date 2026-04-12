@@ -35,6 +35,9 @@
   .phase-badge { padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; transition: all 0.3s; }
   .phase-build { background: rgba(90,180,90,0.2); color: #7aca7a; border: 1px solid rgba(90,180,90,0.3); }
   .phase-combat { background: rgba(220,80,60,0.2); color: #e87a6a; border: 1px solid rgba(220,80,60,0.3); }
+  .build-timer { font-size: 13px; font-weight: 700; color: #e8c56a; padding: 2px 8px; background: rgba(200,160,60,0.15); border-radius: 8px; border: 1px solid rgba(200,160,60,0.25); margin-left: 6px; letter-spacing: 0.5px; }
+  .build-timer.urgent { color: #e87a6a; background: rgba(220,80,60,0.2); border-color: rgba(220,80,60,0.3); animation: pulse-urgent 0.8s ease-in-out infinite; }
+  @keyframes pulse-urgent { 0%,100% { opacity:1; } 50% { opacity:0.6; } }
 
   #toolbar {
     position: fixed; top: 44px; left: 0; right: 0; z-index: 10;
@@ -308,6 +311,7 @@
   <div class="bar-section">
     <div class="wave-info">Wave <span class="wave-num" id="wave-num">0</span></div>
     <div class="phase-badge phase-build" id="phase-badge">BUILD</div>
+    <div class="build-timer" id="build-timer" style="display:none">⏱️ <span id="build-timer-text">5:00</span></div>
   </div>
 </div>
 <div id="toolbar">
@@ -405,6 +409,8 @@ let BASE_CX=Math.floor(COLS/2), BASE_CY=Math.floor(ROWS/2);
 const BASE_CLEAR_RADIUS=40;
 const HQ_VISION_RADIUS=6;
 const HQ_HP=200;
+const FIRST_BUILD_TIME=300; // 5 minutes first wave
+const BUILD_TIME=120;      // 2 minutes subsequent waves
 const CAM_LERP=0.1, MAX_ZOOM=2.0;
 function getMinZoom(){const c=document.getElementById('game-canvas');if(!c)return 0.1;return Math.max(c.width/MAP_PX_W,c.height/MAP_PX_H);}
 const HERO_SPEED=24*TILE_SIZE;
@@ -550,8 +556,8 @@ let hqPlaced=false; // HQ placement state
 
 // ─── FOG OF WAR ───
 const FOG_UNEXPLORED=0, FOG_EXPLORED=1, FOG_VISIBLE=2;
-const HERO_FOG_RADIUS=12;  // hero reveals VISIBLE in this radius while moving
-const HERO_EXPLORE_RADIUS=14; // hero permanently reveals EXPLORED in this radius
+const HERO_FOG_RADIUS=3;   // hero reveals VISIBLE in tight radius (scout feel)
+const HERO_EXPLORE_RADIUS=10; // hero permanently reveals EXPLORED in wider radius
 let fogMap=[];  // fogMap[col][row] = FOG_UNEXPLORED | FOG_EXPLORED | FOG_VISIBLE
 function initFogMap(){
   fogMap=[];
@@ -837,6 +843,7 @@ const game={
   phase:'MENU', wave:0, baseHP:HQ_HP, baseMaxHP:HQ_HP,
   resources:{...INITIAL_RESOURCES},
   waveCountdown:-1, // -1 = not counting
+  buildTimer:-1, // countdown timer in BUILD phase (-1 = not active)
   enemiesKilled:0,
   killsByTower:0,
   killsByTrap:0,
@@ -1108,6 +1115,9 @@ function updateWavePreview(dt){
 
 function startWave(){
   if(game.phase!=='BUILD')return;
+  game.buildTimer=-1;
+  document.getElementById('build-timer').style.display='none';
+  document.getElementById('build-timer').classList.remove('urgent');
   game.wave++;
   game.phase='PREVIEW';
   showWavePreview(game.wave);
@@ -1313,6 +1323,8 @@ function showAftermathScreen(){
 function closeAftermath(){
   document.getElementById('aftermath-overlay').classList.remove('show');
   game.phase='BUILD';
+  game.buildTimer=BUILD_TIME; // 2 min subsequent build phases
+  document.getElementById('build-timer').style.display='';
   const badge=document.getElementById('phase-badge');
   badge.textContent='BUILD';badge.className='phase-badge phase-build';
   document.getElementById('toolbar').classList.remove('combat-mode');
@@ -1758,9 +1770,11 @@ function updateTowers(dt){
     const tx=c*TILE_SIZE+TILE_SIZE/2, ty=r*TILE_SIZE+TILE_SIZE/2;
     const range=STRUCTS.TOWER.range*TILE_SIZE;
 
-    // Find nearest enemy in range
+    // Find nearest VISIBLE enemy in range (fog-gated targeting)
     let nearest=null, nearDist=Infinity;
     for(const e of enemies){
+      const ec=Math.floor(e.x/TILE_SIZE), er=Math.floor(e.y/TILE_SIZE);
+      if(ec<0||ec>=COLS||er<0||er>=ROWS||fogMap[ec][er]!==FOG_VISIBLE) continue;
       const dx=e.x-tx, dy=e.y-ty, d=Math.sqrt(dx*dx+dy*dy);
       if(d<range&&d<nearDist){nearDist=d;nearest=e;}
     }
@@ -1903,10 +1917,12 @@ function updateUnits(dt){
       const tx=wp.col*TILE_SIZE+TILE_SIZE/2, ty=wp.row*TILE_SIZE+TILE_SIZE/2;
       const ddx=tx-ux, ddy=ty-uy, dist=Math.sqrt(ddx*ddx+ddy*ddy);
 
-      // Check for enemies to attack while moving
+      // Check for VISIBLE enemies to attack while moving (fog-gated)
       const rangePx=u.range*TILE_SIZE;
       let nearest=null, nearDist=Infinity;
       for(const e of enemies){
+        const ec=Math.floor(e.x/TILE_SIZE), er=Math.floor(e.y/TILE_SIZE);
+        if(ec<0||ec>=COLS||er<0||er>=ROWS||fogMap[ec][er]!==FOG_VISIBLE) continue;
         const edx=e.x-ux, edy=e.y-uy, ed=Math.sqrt(edx*edx+edy*edy);
         if(ed<=rangePx&&ed<nearDist){nearDist=ed;nearest=e;}
       }
@@ -1969,9 +1985,11 @@ function updateUnits(dt){
     const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
     const rangePx=u.range*TILE_SIZE;
 
-    // Find nearest enemy in range
+    // Find nearest VISIBLE enemy in range (fog-gated targeting)
     let nearest=null, nearDist=Infinity;
     for(const e of enemies){
+      const ec=Math.floor(e.x/TILE_SIZE), er=Math.floor(e.y/TILE_SIZE);
+      if(ec<0||ec>=COLS||er<0||er>=ROWS||fogMap[ec][er]!==FOG_VISIBLE) continue;
       const dx=e.x-ux, dy=e.y-uy, d=Math.sqrt(dx*dx+dy*dy);
       if(d<=rangePx&&d<nearDist){nearDist=d;nearest=e;}
     }
@@ -3912,7 +3930,9 @@ function showWinScreen(){
 function restartGame(){
   // Reset game state
   game.phase='MENU'; game.wave=0; game.baseHP=HQ_HP; game.baseMaxHP=HQ_HP;
-  game.resources={...INITIAL_RESOURCES}; game.waveCountdown=-1;
+  game.resources={...INITIAL_RESOURCES}; game.waveCountdown=-1; game.buildTimer=-1;
+  document.getElementById('build-timer').style.display='none';
+  document.getElementById('build-timer').classList.remove('urgent');
   game.enemiesKilled=0; game.killsByTower=0; game.killsByTrap=0; game.killsByUnit=0;
   game.selectedUnitIdx=-1;
   // Reset HQ placement
@@ -3997,11 +4017,37 @@ function updateKillHUD(){
 
 let lastTime=0;
 
+// ─── BUILD TIMER ───
+function updateBuildTimer(dt){
+  if(game.phase!=='BUILD'||game.buildTimer<0) return;
+  game.buildTimer-=dt;
+  const timerEl=document.getElementById('build-timer');
+  const textEl=document.getElementById('build-timer-text');
+  if(game.buildTimer<=0){
+    game.buildTimer=-1;
+    timerEl.style.display='none';
+    timerEl.classList.remove('urgent');
+    startWave();
+    return;
+  }
+  // Format as M:SS
+  const mins=Math.floor(game.buildTimer/60);
+  const secs=Math.floor(game.buildTimer%60);
+  textEl.textContent=mins+':'+(secs<10?'0':'')+secs;
+  // Urgent pulse when under 30 seconds
+  if(game.buildTimer<=30){
+    timerEl.classList.add('urgent');
+  } else {
+    timerEl.classList.remove('urgent');
+  }
+}
+
 function draw(now){
   const dt=Math.min((now-lastTime)/1000,0.1);
   lastTime=now;
 
   // Update
+  updateBuildTimer(dt);
   updateHero(dt);
   updateHeroCombat(dt);
   checkFormations(); // Update formation bonuses every frame
@@ -4176,6 +4222,8 @@ dismissStartScreen=function(){
 // Transition from PLACE_HQ to BUILD after HQ is placed
 function enterBuildPhase(){
   game.phase='BUILD';
+  game.buildTimer=FIRST_BUILD_TIME; // 5 min first build phase
+  document.getElementById('build-timer').style.display='';
   document.getElementById('hq-placement-bar').classList.remove('show');
   ['top-bar','toolbar','hint'].forEach(id=>{
     const el=document.getElementById(id);
