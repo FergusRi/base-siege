@@ -525,6 +525,77 @@ function fbm(x,y,oct,freq,lac,gain){let v=0,a=1,f=freq,ta=0;for(let i=0;i<oct;i+
 // ─── MAP GENERATION ───
 let map=[], tileVariant=[];
 let hqPlaced=false; // HQ placement state
+
+// ─── FOG OF WAR ───
+const FOG_UNEXPLORED=0, FOG_EXPLORED=1, FOG_VISIBLE=2;
+const HERO_FOG_RADIUS=12;  // hero reveals VISIBLE in this radius while moving
+const HERO_EXPLORE_RADIUS=14; // hero permanently reveals EXPLORED in this radius
+let fogMap=[];  // fogMap[col][row] = FOG_UNEXPLORED | FOG_EXPLORED | FOG_VISIBLE
+function initFogMap(){
+  fogMap=[];
+  for(let c=0;c<COLS;c++){fogMap[c]=[];for(let r=0;r<ROWS;r++) fogMap[c][r]=FOG_UNEXPLORED;}
+}
+function revealFog(cx,cy,visRadius,expRadius){
+  // Reveal tiles: VISIBLE within visRadius, EXPLORED within expRadius
+  const r2=Math.max(visRadius,expRadius);
+  for(let dc=-r2;dc<=r2;dc++){
+    for(let dr=-r2;dr<=r2;dr++){
+      const nc=cx+dc,nr=cy+dr;
+      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
+      const dist=Math.sqrt(dc*dc+dr*dr);
+      if(dist<=visRadius){
+        fogMap[nc][nr]=FOG_VISIBLE;
+      } else if(dist<=expRadius&&fogMap[nc][nr]<FOG_EXPLORED){
+        fogMap[nc][nr]=FOG_EXPLORED;
+      }
+    }
+  }
+}
+// Track which tiles are currently VISIBLE so we can efficiently decay them
+let visibleTiles=[]; // array of [c,r] pairs
+// Downgrade VISIBLE tiles to EXPLORED using tracked list (O(n) where n=visible count)
+function decayFogVisible(){
+  for(let i=0;i<visibleTiles.length;i++){
+    const[c,r]=visibleTiles[i];
+    if(fogMap[c][r]===FOG_VISIBLE) fogMap[c][r]=FOG_EXPLORED;
+  }
+  visibleTiles=[];
+}
+function revealFogTracked(cx,cy,visRadius,expRadius){
+  // Same as revealFog but also tracks newly VISIBLE tiles
+  const r2=Math.max(visRadius,expRadius);
+  for(let dc=-r2;dc<=r2;dc++){
+    for(let dr=-r2;dr<=r2;dr++){
+      const nc=cx+dc,nr=cy+dr;
+      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
+      const dist=Math.sqrt(dc*dc+dr*dr);
+      if(dist<=visRadius){
+        if(fogMap[nc][nr]!==FOG_VISIBLE) visibleTiles.push([nc,nr]);
+        fogMap[nc][nr]=FOG_VISIBLE;
+      } else if(dist<=expRadius&&fogMap[nc][nr]<FOG_EXPLORED){
+        fogMap[nc][nr]=FOG_EXPLORED;
+      }
+    }
+  }
+}
+// Refresh all vision sources (HQ + hero + structures) — call each frame
+let fogFrameCounter=0;
+function refreshFogVision(){
+  decayFogVisible();
+  // HQ vision
+  if(hqPlaced) revealFogTracked(BASE_CX,BASE_CY,HQ_VISION_RADIUS,HQ_VISION_RADIUS+2);
+  // Hero vision
+  const hc=heroCol(),hr=heroRow();
+  revealFogTracked(hc,hr,HERO_FOG_RADIUS,HERO_EXPLORE_RADIUS);
+  // Structures give small vision — only recalculate every 30 frames for perf
+  fogFrameCounter++;
+  if(fogFrameCounter%30===0){
+    for(const[key]of Object.entries(structures)){
+      const[sc,sr]=key.split(',').map(Number);
+      revealFogTracked(sc,sr,3,4);
+    }
+  }
+}
 function distC(c,r){return Math.sqrt((c-BASE_CX)**2+(r-BASE_CY)**2);}
 // Distance from nearest map edge
 function edgeDist(c,r){return Math.min(c,r,COLS-1-c,ROWS-1-r);}
@@ -537,6 +608,7 @@ function centerDist(c,r){
 
 function generateMap(){
   map=[];tileVariant=[];depositHP=[];
+  initFogMap();
   // Pass 1: terrain (water + grass base)
   for(let c=0;c<COLS;c++){map[c]=[];tileVariant[c]=[];depositHP[c]=[];
     for(let r=0;r<ROWS;r++){
@@ -623,6 +695,11 @@ function placeHQ(col,row){
   // Position hero near HQ
   hero.x=col*TILE_SIZE+TILE_SIZE/2;
   hero.y=(row-2)*TILE_SIZE+TILE_SIZE/2;
+  // Reveal fog around HQ
+  revealFog(col,row,HQ_VISION_RADIUS,HQ_VISION_RADIUS+2);
+  // Reveal fog around hero starting position
+  const hc=Math.floor(hero.x/TILE_SIZE), hr_=Math.floor(hero.y/TILE_SIZE);
+  revealFog(hc,hr_,HERO_FOG_RADIUS,HERO_EXPLORE_RADIUS);
   // Rebuild tile cache
   buildTileCache();
   // Center camera on HQ
@@ -2806,10 +2883,38 @@ function drawBaseGlow(now){
   }
 }
 
+// ─── FOG OF WAR OVERLAY ───
+function drawFogOverlay(){
+  if(!hqPlaced) return; // no fog before HQ placed
+  const z=cam.zoom;
+  const sc=Math.max(0,Math.floor(cam.x/TILE_SIZE)),sr=Math.max(0,Math.floor(cam.y/TILE_SIZE));
+  const ec=Math.min(COLS-1,Math.ceil((cam.x+canvas.width/z)/TILE_SIZE));
+  const er=Math.min(ROWS-1,Math.ceil((cam.y+canvas.height/z)/TILE_SIZE));
+  const ts=TILE_SIZE*z;
+  for(let c=sc;c<=ec;c++){
+    for(let r=sr;r<=er;r++){
+      const fog=fogMap[c]?fogMap[c][r]:FOG_UNEXPLORED;
+      if(fog===FOG_VISIBLE) continue; // fully visible — no overlay
+      const sx=(c*TILE_SIZE-cam.x)*z,sy=(r*TILE_SIZE-cam.y)*z;
+      if(fog===FOG_UNEXPLORED){
+        // Solid black
+        ctx.fillStyle='rgba(5,5,12,0.97)';
+        ctx.fillRect(sx,sy,ts+1,ts+1);
+      } else {
+        // EXPLORED: dark desaturated overlay — you can see terrain but dimmed
+        ctx.fillStyle='rgba(5,5,12,0.6)';
+        ctx.fillRect(sx,sy,ts+1,ts+1);
+      }
+    }
+  }
+}
+
 function drawStructures(){
   const z=cam.zoom;
   for(const[key,s]of Object.entries(structures)){
     const[c,r]=key.split(',').map(Number);
+    // Fog gate: only render on VISIBLE or EXPLORED tiles
+    if(hqPlaced&&fogMap[c]&&fogMap[c][r]===FOG_UNEXPLORED) continue;
     const sx=(c*TILE_SIZE-cam.x)*z,sy=(r*TILE_SIZE-cam.y)*z,sw=TILE_SIZE*z;
     if(sx+sw<0||sx>canvas.width||sy+sw<0||sy>canvas.height)continue;
     const def=STRUCTS[s.type];const[cr,cg,cb]=def.color;
@@ -2865,6 +2970,8 @@ function drawStructures(){
 function drawUnits(now){
   const z=cam.zoom;
   for(const u of units){
+    // Fog gate: only render on VISIBLE tiles
+    if(hqPlaced&&fogMap[u.col]&&fogMap[u.col][u.row]!==FOG_VISIBLE) continue;
     const sx=(u.col*TILE_SIZE-cam.x)*z, sy=(u.row*TILE_SIZE-cam.y)*z, sw=TILE_SIZE*z;
     if(sx+sw<0||sx>canvas.width||sy+sw<0||sy>canvas.height)continue;
     const def=UNIT_TYPES[u.type];
@@ -3083,6 +3190,9 @@ function drawUnits(now){
 function drawEnemies(now){
   const z=cam.zoom;
   for(const e of enemies){
+    // Fog gate: only render enemies on VISIBLE tiles
+    const eCol=Math.floor(e.x/TILE_SIZE),eRow=Math.floor(e.y/TILE_SIZE);
+    if(hqPlaced&&eCol>=0&&eCol<COLS&&eRow>=0&&eRow<ROWS&&fogMap[eCol][eRow]!==FOG_VISIBLE) continue;
     const ex=(e.x-TILE_SIZE/2-cam.x)*z, ey=(e.y-TILE_SIZE/2-cam.y)*z;
     const eDef=ENEMY_TYPES[e.type];
     // Brutes and Siege Rams are bigger
@@ -3173,6 +3283,9 @@ function drawEnemies(now){
 function drawProjectiles(){
   const z=cam.zoom;
   for(const p of projectiles){
+    // Fog gate: only render projectiles on VISIBLE tiles
+    const pCol=Math.floor(p.x/TILE_SIZE),pRow=Math.floor(p.y/TILE_SIZE);
+    if(hqPlaced&&pCol>=0&&pCol<COLS&&pRow>=0&&pRow<ROWS&&fogMap[pCol][pRow]!==FOG_VISIBLE) continue;
     const px=(p.x-cam.x)*z, py=(p.y-cam.y)*z;
     // Use unit projectile color if available, else tower gold
     const pSize=p.size||3;
@@ -3557,9 +3670,20 @@ function buildMinimapTerrain(){
     const r=Math.floor(py*ROWS/mh);
     for(let px=0;px<mw;px++){
       const c=Math.floor(px*COLS/mw);
+      const fog=hqPlaced&&fogMap[c]?fogMap[c][r]:FOG_VISIBLE;
       const pal=TILE_COLORS[map[c][r]];
       const off=(py*mw+px)*4;
-      d[off]=pal.base[0];d[off+1]=pal.base[1];d[off+2]=pal.base[2];d[off+3]=255;
+      if(fog===FOG_UNEXPLORED){
+        // Black on minimap
+        d[off]=5;d[off+1]=5;d[off+2]=12;d[off+3]=255;
+      } else if(fog===FOG_EXPLORED){
+        // Desaturated/darkened terrain
+        const avg=Math.floor((pal.base[0]+pal.base[1]+pal.base[2])/3);
+        d[off]=Math.floor(avg*0.4);d[off+1]=Math.floor(avg*0.4);d[off+2]=Math.floor(avg*0.45);d[off+3]=255;
+      } else {
+        // Full color
+        d[off]=pal.base[0];d[off+1]=pal.base[1];d[off+2]=pal.base[2];d[off+3]=255;
+      }
     }
   }
   tc.putImageData(id,0,0);
@@ -3583,9 +3707,11 @@ function drawMinimap(){
     mmCtx.fillStyle=`rgb(${def.color[0]},${def.color[1]},${def.color[2]})`;
     mmCtx.fillRect(u.col*sx,u.row*sy,Math.max(sx,1.5),Math.max(sy,1.5));
   }
-  // Enemies on minimap
+  // Enemies on minimap (only if on VISIBLE tiles)
   mmCtx.fillStyle='rgba(220,60,50,0.9)';
   for(const e of enemies){
+    const eCol=Math.floor(e.x/TILE_SIZE),eRow=Math.floor(e.y/TILE_SIZE);
+    if(hqPlaced&&eCol>=0&&eCol<COLS&&eRow>=0&&eRow<ROWS&&fogMap[eCol][eRow]!==FOG_VISIBLE) continue;
     const ec=(e.x/TILE_SIZE)*sx,er=(e.y/TILE_SIZE)*sy;
     mmCtx.fillRect(ec-1,er-1,2.5,2.5);
   }
@@ -3701,7 +3827,7 @@ function restartGame(){
   for(const k in structures) delete structures[k];
   cavalryPendingUnit=null;
   regrowthQueue=[];
-  // Regen map
+  // Regen map (also resets fogMap via initFogMap() inside generateMap)
   generateMap(); buildTileCache();
   // Reset cam — center on map
   cam.x=hero.x-canvas.width/2; cam.y=hero.y-canvas.height/2;
@@ -3782,6 +3908,8 @@ function draw(now){
     updateProjectiles(dt);
   }
   updateCamera();
+  // Refresh fog of war vision (only when HQ is placed)
+  if(hqPlaced){refreshFogVision();if(fogFrameCounter%10===0)mmTerrainDirty=true;}
   updateFloats(dt);
   updateParticles(dt);
 
@@ -3820,6 +3948,8 @@ function draw(now){
   drawEnemies(now);
   drawProjectiles();
   drawHero(now);
+  // Fog of war overlay (drawn over terrain + entities, but hero always visible)
+  drawFogOverlay();
   drawGhostPreview();
   drawHoverTile();
   updateUnitInfoPanel();
