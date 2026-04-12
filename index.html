@@ -186,6 +186,21 @@
   @keyframes startPulse { 0%,100% { opacity: 0.6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.05); } }
   .start-tips { margin-top: 32px; font-size: 12px; color: rgba(200,200,210,0.35); max-width: 400px; text-align: center; line-height: 1.8; }
 
+  /* HQ Placement overlay */
+  #hq-placement-bar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 25;
+    display: none; align-items: center; justify-content: center;
+    height: 56px; gap: 16px;
+    background: linear-gradient(180deg, rgba(10,10,18,0.95) 0%, rgba(10,10,18,0.8) 100%);
+    border-bottom: 2px solid rgba(232,197,106,0.3);
+    backdrop-filter: blur(8px);
+  }
+  #hq-placement-bar.show { display: flex; }
+  .hq-bar-icon { font-size: 28px; animation: hqPulse 2s ease-in-out infinite; }
+  .hq-bar-text { font-size: 18px; font-weight: 700; color: #e8c56a; letter-spacing: 1px; }
+  .hq-bar-hint { font-size: 12px; color: rgba(200,200,210,0.45); }
+  @keyframes hqPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.15); } }
+
   /* Game over overlay */
   #gameover-screen {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 30;
@@ -334,13 +349,20 @@
 <!-- Start Screen -->
 <div id="start-screen">
   <div class="start-title">⚔️ BASE SIEGE</div>
-  <div class="start-subtitle">Place your army like a Roman general, then fight alongside them</div>
+  <div class="start-subtitle">Expand, defend, survive — how long can you last?</div>
   <div class="start-prompt">Press SPACE to Begin</div>
   <div class="start-tips">
-    WASD move · G gather resources · 1-4 build structures · Q/E/R/F/T recruit units<br>
-    SPACE starts each wave · Click to attack in combat · Tab cycles units<br>
-    Survive 20 waves to win!
+    Place your HQ · Gather resources · Build walls &amp; towers · Recruit an army<br>
+    WASD move · G gather · 1-4 build · Q/E/R/F/T recruit · SPACE starts each wave<br>
+    Endless waves — there is no winning, only surviving longer
   </div>
+</div>
+
+<!-- HQ Placement Bar -->
+<div id="hq-placement-bar">
+  <span class="hq-bar-icon">🏰</span>
+  <span class="hq-bar-text">PLACE YOUR HQ</span>
+  <span class="hq-bar-hint">— Click anywhere on the map —</span>
 </div>
 
 <!-- Game Over Screen -->
@@ -808,7 +830,7 @@ function findPath(sc,sr,tc,tr){
 //  GAME STATE & ENTITIES
 // ═══════════════════════════════════════════
 
-const WIN_WAVE=20; // survive this many waves to win
+// No win condition — infinite survival (CoD Zombies style)
 const INITIAL_RESOURCES={wood:80,stone:45,metal:25,food:35,gold:0};
 
 const game={
@@ -892,6 +914,23 @@ function clampCam(){
 }
 function updateCamera(){
   const c=document.getElementById('game-canvas');
+  // During HQ placement — free WASD camera pan (no hero tracking)
+  if(game.phase==='PLACE_HQ'){
+    const panSpeed=800; // pixels per second (fast enough for huge map)
+    const dt=1/60; // approximate frame dt
+    let pdx=0,pdy=0;
+    if(keys['w']||keys['W'])pdy=-1;
+    if(keys['s']||keys['S'])pdy=1;
+    if(keys['a']||keys['A'])pdx=-1;
+    if(keys['d']||keys['D'])pdx=1;
+    cam.tx+=pdx*panSpeed*dt;
+    cam.ty+=pdy*panSpeed*dt;
+    clampCam();
+    cam.x+=(cam.tx-cam.x)*CAM_LERP;
+    cam.y+=(cam.ty-cam.y)*CAM_LERP;
+    cam.zoom+=(cam.tZoom-cam.zoom)*CAM_LERP;
+    return;
+  }
   cam.tx=hero.x-c.width/(2*cam.tZoom);
   cam.ty=hero.y-c.height/(2*cam.tZoom);
   clampCam();
@@ -1105,12 +1144,7 @@ function launchWave(){
 }
 
 function endWave(){
-  // ── WIN CHECK: survived the final wave! ──
-  if(game.wave>=WIN_WAVE){
-    game.phase='WIN';
-    showWinScreen();
-    return;
-  }
+  // No win check — infinite survival mode
 
   game.phase='AFTERMATH';
 
@@ -2486,6 +2520,7 @@ window.addEventListener('keydown',e=>{
   if(e.key===' '||e.code==='Space'){
     e.preventDefault();
     if(game.phase==='MENU'){dismissStartScreen();return;}
+    if(game.phase==='PLACE_HQ')return; // can't start wave before HQ placed
     if(game.phase==='BUILD')startWave();
   }
   // Tab: cycle through units
@@ -2541,7 +2576,7 @@ function heroCanWalkTo(wx,wy){
 }
 
 function updateHero(dt){
-  if(game.phase==='GAMEOVER'||game.phase==='PREVIEW'||game.phase==='MENU'||game.phase==='WIN')return;
+  if(game.phase==='GAMEOVER'||game.phase==='PREVIEW'||game.phase==='MENU'||game.phase==='WIN'||game.phase==='PLACE_HQ')return;
   if(hero.stunTimer>0)return; // knocked down — can't move
   let dx=0,dy=0;
   if(keys['w']||keys['W'])dy=-1;
@@ -2700,6 +2735,21 @@ function handleDemolish(col,row){
 document.getElementById('game-canvas').addEventListener('click',e=>{
   // Start screen click
   if(game.phase==='MENU'){dismissStartScreen();return;}
+  // HQ Placement click
+  if(game.phase==='PLACE_HQ'){
+    const z=cam.zoom;
+    const col=Math.floor((cam.x+e.clientX/z)/TILE_SIZE);
+    const row=Math.floor((cam.y+e.clientY/z)/TILE_SIZE);
+    if(col<0||col>=COLS||row<0||row>=ROWS)return;
+    if(!isValidHQLocation(col,row)){
+      addFloat('❌ Cannot place HQ here!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#e87a6a');
+      return;
+    }
+    placeHQ(col,row);
+    enterBuildPhase();
+    addFloat('🏰 HQ Established!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE-TILE_SIZE,'#e8c56a');
+    return;
+  }
   // Hero attack during combat
   if(game.phase==='COMBAT'){heroAttack();return;}
   if(game.phase!=='BUILD')return;
@@ -3301,6 +3351,7 @@ function drawProjectiles(){
 
 // ─── DRAW HERO ───
 function drawHero(now){
+  if(!hqPlaced) return; // hero not visible until HQ placed
   const z=cam.zoom;
   const hx=(hero.x-TILE_SIZE/2-cam.x)*z,hy=(hero.y-TILE_SIZE/2-cam.y)*z;
   const sw=TILE_SIZE*z;
@@ -3389,6 +3440,55 @@ function cachedWouldSeal(col,row,tool){
   if(_sealCache.col===col&&_sealCache.row===row&&_sealCache.tool===tool)return _sealCache.result;
   _sealCache={col,row,tool,result:wouldSealBase(col,row,tool)};
   return _sealCache.result;
+}
+
+// ─── HQ PLACEMENT GHOST PREVIEW ───
+function isValidHQLocation(col,row){
+  // Must be on grass, not water, not too close to edges
+  const edgeMargin=30; // at least 30 tiles from any edge
+  if(col<edgeMargin||col>=COLS-edgeMargin||row<edgeMargin||row>=ROWS-edgeMargin) return false;
+  // Must be on a walkable non-water tile
+  if(map[col][row]===T.WATER) return false;
+  return true;
+}
+
+function drawHQGhostPreview(){
+  if(game.phase!=='PLACE_HQ'||isTouching) return;
+  const z=cam.zoom;
+  const col=Math.floor((cam.x+mouseX/z)/TILE_SIZE);
+  const row=Math.floor((cam.y+mouseY/z)/TILE_SIZE);
+  if(col<0||col>=COLS||row<0||row>=ROWS) return;
+  const valid=isValidHQLocation(col,row);
+  const sx=(col*TILE_SIZE-cam.x)*z, sy=(row*TILE_SIZE-cam.y)*z, ts=TILE_SIZE*z;
+  // Draw clear radius preview (faint circle)
+  const radPx=BASE_CLEAR_RADIUS*TILE_SIZE*z;
+  const cx=sx+ts/2, cy=sy+ts/2;
+  ctx.beginPath();ctx.arc(cx,cy,radPx,0,Math.PI*2);
+  ctx.fillStyle=valid?'rgba(90,180,90,0.06)':'rgba(220,60,40,0.06)';
+  ctx.fill();
+  ctx.strokeStyle=valid?'rgba(90,180,90,0.25)':'rgba(220,60,40,0.25)';
+  ctx.lineWidth=z*1.5;ctx.stroke();
+  // Draw vision radius preview (inner circle)
+  const visRadPx=HQ_VISION_RADIUS*TILE_SIZE*z;
+  ctx.beginPath();ctx.arc(cx,cy,visRadPx,0,Math.PI*2);
+  ctx.strokeStyle=valid?'rgba(232,197,106,0.4)':'rgba(220,60,40,0.3)';
+  ctx.lineWidth=z;ctx.setLineDash([4*z,4*z]);ctx.stroke();ctx.setLineDash([]);
+  // Draw HQ tile ghost
+  ctx.fillStyle=valid?'rgba(90,180,90,0.35)':'rgba(220,60,40,0.35)';
+  ctx.fillRect(sx,sy,ts,ts);
+  ctx.strokeStyle=valid?'rgba(120,220,120,0.7)':'rgba(255,80,60,0.7)';
+  ctx.lineWidth=z*2;ctx.strokeRect(sx+z,sy+z,ts-z*2,ts-z*2);
+  // HQ icon
+  ctx.font=`${Math.floor(ts*0.7)}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle=valid?'rgba(255,255,255,0.7)':'rgba(255,100,80,0.5)';
+  ctx.fillText('🏰',sx+ts/2,sy+ts/2);
+  // Label
+  const label=valid?'Click to place HQ':'Too close to edge / water';
+  ctx.font=`${Math.max(11,Math.floor(12*z))}px system-ui`;ctx.textAlign='center';ctx.textBaseline='top';
+  const tw=ctx.measureText(label).width+16;
+  ctx.fillStyle='rgba(10,10,18,0.8)';ctx.fillRect(sx+ts/2-tw/2,sy-22*z,tw,18*z);
+  ctx.fillStyle=valid?'#7aca7a':'#e87a6a';
+  ctx.fillText(label,sx+ts/2,sy-20*z);
 }
 
 function drawGhostPreview(){
@@ -3770,7 +3870,8 @@ function updateUI(){
 function dismissStartScreen(){
   if(game.phase!=='MENU')return;
   document.getElementById('start-screen').classList.add('hidden');
-  game.phase='BUILD';
+  game.phase='PLACE_HQ';
+  document.getElementById('hq-placement-bar').classList.add('show');
   // Hide start screen completely after fade
   setTimeout(()=>{document.getElementById('start-screen').style.display='none';},600);
 }
@@ -3829,14 +3930,22 @@ function restartGame(){
   regrowthQueue=[];
   // Regen map (also resets fogMap via initFogMap() inside generateMap)
   generateMap(); buildTileCache();
-  // Reset cam — center on map
-  cam.x=hero.x-canvas.width/2; cam.y=hero.y-canvas.height/2;
+  // Reset cam — center on map for HQ placement
+  cam.x=MAP_PX_W/2-canvas.width/2; cam.y=MAP_PX_H/2-canvas.height/2;
   cam.tx=cam.x; cam.ty=cam.y; cam.shake=0; cam.zoom=1; cam.tZoom=1;
   // Hide overlays
   document.getElementById('gameover-screen').classList.remove('show');
   document.getElementById('win-screen').classList.remove('show');
   document.getElementById('aftermath-overlay').classList.remove('show');
   document.getElementById('wave-preview-overlay').classList.remove('show');
+  document.getElementById('hq-placement-bar').classList.remove('show');
+  // Show start screen again
+  const ss=document.getElementById('start-screen');
+  ss.style.display='';ss.classList.remove('hidden');
+  // Hide game UI
+  ['top-bar','toolbar','hint','minimap'].forEach(id=>{
+    document.getElementById(id).style.opacity='0';
+  });
   // Reset UI
   const badge=document.getElementById('phase-badge');
   badge.textContent='BUILD'; badge.className='phase-badge phase-build';
@@ -3950,6 +4059,7 @@ function draw(now){
   drawHero(now);
   // Fog of war overlay (drawn over terrain + entities, but hero always visible)
   drawFogOverlay();
+  drawHQGhostPreview();
   drawGhostPreview();
   drawHoverTile();
   updateUnitInfoPanel();
@@ -4041,7 +4151,8 @@ function draw(now){
 function init(){
   generateMap();
   buildTileCache();
-  cam.x=hero.x-canvas.width/2;cam.y=hero.y-canvas.height/2;
+  // Center camera on map center (hero will be repositioned when HQ placed)
+  cam.x=MAP_PX_W/2-canvas.width/2;cam.y=MAP_PX_H/2-canvas.height/2;
   cam.tx=cam.x;cam.ty=cam.y;
   // Start in MENU phase — hide game UI until dismissed
   document.getElementById('top-bar').style.opacity='0';
@@ -4055,12 +4166,22 @@ function init(){
 const _origDismiss=dismissStartScreen;
 dismissStartScreen=function(){
   _origDismiss();
-  // Fade in game UI
-  ['top-bar','toolbar','hint','minimap'].forEach(id=>{
+  // Fade in minimap only during PLACE_HQ (toolbar/hint wait for BUILD)
+  ['minimap'].forEach(id=>{
     const el=document.getElementById(id);
     el.style.transition='opacity 0.5s';el.style.opacity='1';
   });
 };
+
+// Transition from PLACE_HQ to BUILD after HQ is placed
+function enterBuildPhase(){
+  game.phase='BUILD';
+  document.getElementById('hq-placement-bar').classList.remove('show');
+  ['top-bar','toolbar','hint'].forEach(id=>{
+    const el=document.getElementById(id);
+    el.style.transition='opacity 0.5s';el.style.opacity='1';
+  });
+}
 
 init();
 
