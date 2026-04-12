@@ -284,6 +284,8 @@ const game={
   resources:{wood:50,stone:30,metal:15,food:20},
   waveCountdown:-1, // -1 = not counting
   enemiesKilled:0,
+  killsByTower:0,
+  killsByTrap:0,
 };
 
 const hero={
@@ -451,6 +453,52 @@ function spawnEnemy(typeKey){
   });
 }
 
+// Find nearest wall adjacent to enemy position
+function findNearestWall(ec,er){
+  let best=null, bestDist=Infinity;
+  // Search outward in rings
+  const maxR=10;
+  for(let dc=-maxR;dc<=maxR;dc++){
+    for(let dr=-maxR;dr<=maxR;dr++){
+      const c=ec+dc, r=er+dr;
+      if(c<0||c>=COLS||r<0||r>=ROWS)continue;
+      const sk=c+','+r;
+      const s=structures[sk];
+      if(s&&(s.type==='WALL'||s.type==='TOWER')){
+        const d=Math.abs(dc)+Math.abs(dr);
+        if(d<bestDist){bestDist=d;best={c,r,key:sk};}
+      }
+    }
+  }
+  return best;
+}
+
+// Destroy a structure and trigger repath for all enemies
+function destroyStructure(key){
+  const s=structures[key];
+  if(!s)return;
+  const[c,r]=key.split(',').map(Number);
+  const def=STRUCTS[s.type];
+  addFloat(`${def.name} destroyed!`,c*TILE_SIZE+TILE_SIZE/2,r*TILE_SIZE,'#ff6644');
+  addParticles(c*TILE_SIZE+TILE_SIZE/2,r*TILE_SIZE+TILE_SIZE/2,`rgba(${def.color[0]},${def.color[1]},${def.color[2]},0.8)`,15);
+  cam.shake=Math.max(cam.shake,6);
+  delete structures[key];
+  // Repath all enemies so they take advantage of the gap
+  for(const e of enemies){
+    const ec=Math.floor(e.x/TILE_SIZE),er=Math.floor(e.y/TILE_SIZE);
+    e.path=findPath(ec,er,BASE_CX,BASE_CY);
+    e.pathIdx=1;
+  }
+}
+
+function killEnemy(e,i,source){
+  addParticles(e.x,e.y,`rgba(${e.color[0]},${e.color[1]},${e.color[2]},0.8)`,12);
+  game.enemiesKilled++;
+  if(source==='tower')game.killsByTower++;
+  if(source==='trap')game.killsByTrap++;
+  enemies.splice(i,1);
+}
+
 function updateEnemies(dt){
   // Spawn from queue
   if(spawnQueue.length>0){
@@ -467,8 +515,9 @@ function updateEnemies(dt){
     e.slowTimer=Math.max(0,e.slowTimer-dt);
     e.attackCooldown=Math.max(0,e.attackCooldown-dt);
 
-    // Check if enemy is standing on a base tile
     const eCol=Math.floor(e.x/TILE_SIZE), eRow=Math.floor(e.y/TILE_SIZE);
+
+    // Check if enemy is standing on a base tile
     const onBase=eCol>=BASE_CX-1&&eCol<=BASE_CX+1&&eRow>=BASE_CY-1&&eRow<=BASE_CY+1;
 
     if(onBase){
@@ -480,7 +529,7 @@ function updateEnemies(dt){
         addFloat(`-${e.dmg}`,e.x,e.y-10,'#ff4444');
         addParticles(e.x, e.y, 'rgba(220,180,60,0.8)', 3);
         if(game.baseHP<=0){
-          showBanner('💀 BASE DESTROYED — GAME OVER');
+          showBanner('\u{1F480} BASE DESTROYED \u2014 GAME OVER');
           game.phase='GAMEOVER';
         }
       }
@@ -488,11 +537,53 @@ function updateEnemies(dt){
     }
 
     if(!e.path||e.pathIdx>=e.path.length){
-      // Path ended but not on base — repath
-      e.path=findPath(eCol,eRow,BASE_CX,BASE_CY);
-      e.pathIdx=1;
+      // Path ended or no path — try to repath
+      const newPath=findPath(eCol,eRow,BASE_CX,BASE_CY);
+      if(newPath){
+        e.path=newPath; e.pathIdx=1;
+      } else {
+        // No path exists — walls fully blocking. Attack nearest wall!
+        if(!e.wallTarget){
+          e.wallTarget=findNearestWall(eCol,eRow);
+        }
+        if(e.wallTarget){
+          const wt=e.wallTarget;
+          const wx=wt.c*TILE_SIZE+TILE_SIZE/2, wy=wt.r*TILE_SIZE+TILE_SIZE/2;
+          const ddx=wx-e.x, ddy=wy-e.y, dist=Math.sqrt(ddx*ddx+ddy*ddy);
+
+          if(dist<TILE_SIZE*1.3){
+            // Adjacent to wall — attack it
+            if(e.attackCooldown<=0){
+              const s=structures[wt.key];
+              if(s){
+                s.hp-=e.dmg;
+                e.attackCooldown=e.attackRate;
+                e.hitFlash=0.3;
+                addFloat(`-${e.dmg}`,wx,wy-10,'#ffaa44');
+                addParticles(wx,wy,'rgba(140,120,90,0.7)',4);
+                cam.shake=Math.max(cam.shake,2);
+                if(s.hp<=0){
+                  destroyStructure(wt.key);
+                  e.wallTarget=null;
+                }
+              } else {
+                // Wall already gone — clear target, will repath next frame
+                e.wallTarget=null;
+              }
+            }
+          } else {
+            // Move toward the wall
+            const speed=e.speed*(e.slowTimer>0?0.4:1)*dt;
+            e.x+=ddx/dist*speed;
+            e.y+=ddy/dist*speed;
+          }
+        }
+      }
       continue;
     }
+
+    // Clear wall target if we have a valid path now
+    e.wallTarget=null;
 
     // Move along path
     const target=e.path[e.pathIdx];
@@ -513,12 +604,7 @@ function updateEnemies(dt){
         trap.active=false;
         addFloat(`-${STRUCTS.TRAP.dmg}`,e.x,e.y-10,'#e87a6a');
         addParticles(e.x,e.y,'rgba(180,60,40,0.7)',6);
-        if(e.hp<=0){
-          addParticles(e.x,e.y,`rgba(${e.color[0]},${e.color[1]},${e.color[2]},0.8)`,12);
-          game.enemiesKilled++;
-          enemies.splice(i,1);
-          continue;
-        }
+        if(e.hp<=0){killEnemy(e,i,'trap');continue;}
       }
     } else {
       const speed=e.speed*(e.slowTimer>0?0.4:1)*dt;
@@ -585,10 +671,8 @@ function updateProjectiles(dt){
         addFloat(`-${p.dmg}`,p.target.x,p.target.y-10,'#ffaa44');
         addParticles(p.target.x,p.target.y,'rgba(255,180,80,0.7)',4);
         if(p.target.hp<=0){
-          addParticles(p.target.x,p.target.y,`rgba(${p.target.color[0]},${p.target.color[1]},${p.target.color[2]},0.8)`,12);
-          game.enemiesKilled++;
           const idx=enemies.indexOf(p.target);
-          if(idx>=0)enemies.splice(idx,1);
+          if(idx>=0)killEnemy(p.target,idx,'tower');
         }
       }
       projectiles.splice(i,1);
