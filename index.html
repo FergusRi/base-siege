@@ -144,8 +144,8 @@ const STRUCTS={
 
 // ─── ENEMY DEFINITIONS ───
 const ENEMY_TYPES={
-  raider: {name:'Raider', hp:10, dmg:5, speed:2, color:[180,50,50], attackRate:1.0, baseDmg:5},
-  runner: {name:'Runner', hp:5,  dmg:3, speed:4, color:[200,100,60], attackRate:0.8, baseDmg:3},
+  raider: {name:'Raider', hp:10, dmg:5, speed:3, color:[180,50,50], attackRate:1.0, baseDmg:5},
+  runner: {name:'Runner', hp:5,  dmg:3, speed:6, color:[200,100,60], attackRate:0.8, baseDmg:3},
 };
 
 // ─── NOISE ───
@@ -366,21 +366,25 @@ function getWaveComposition(waveNum){
 }
 
 function getSpawnEdgePosition(){
-  // Random edge tile
-  const side=Math.floor(Math.random()*4);
-  let c,r;
-  switch(side){
-    case 0: c=Math.floor(Math.random()*COLS); r=0; break; // top
-    case 1: c=Math.floor(Math.random()*COLS); r=ROWS-1; break; // bottom
-    case 2: c=0; r=Math.floor(Math.random()*ROWS); break; // left
-    case 3: c=COLS-1; r=Math.floor(Math.random()*ROWS); break; // right
+  // Try up to 10 times to find a walkable edge tile
+  for(let attempt=0;attempt<10;attempt++){
+    const side=Math.floor(Math.random()*4);
+    let c,r;
+    switch(side){
+      case 0: c=Math.floor(Math.random()*COLS); r=0; break; // top
+      case 1: c=Math.floor(Math.random()*COLS); r=ROWS-1; break; // bottom
+      case 2: c=0; r=Math.floor(Math.random()*ROWS); break; // left
+      case 3: c=COLS-1; r=Math.floor(Math.random()*ROWS); break; // right
+    }
+    if(isWalkable(c,r)) return{c,r};
   }
-  // Ensure not water
-  if(map[c][r]===T.WATER){c=BASE_CX>25?0:COLS-1;r=BASE_CY;}
-  return{c,r};
+  // Fallback: guaranteed walkable carved path positions
+  const fallbacks=[[BASE_CX,0],[BASE_CX,ROWS-1],[0,BASE_CY],[COLS-1,BASE_CY]];
+  const fb=fallbacks[Math.floor(Math.random()*4)];
+  return{c:fb[0],r:fb[1]};
 }
 
-let spawnQueue=[], spawnTimer=0, spawnInterval=0.3;
+let spawnQueue=[], spawnTimer=0, spawnInterval=0.25;
 
 function startWave(){
   if(game.phase!=='BUILD')return;
@@ -436,22 +440,38 @@ function showBanner(text){
 function spawnEnemy(typeKey){
   const def=ENEMY_TYPES[typeKey];
   const pos=getSpawnEdgePosition();
-  const wx=pos.c*TILE_SIZE+TILE_SIZE/2, wy=pos.r*TILE_SIZE+TILE_SIZE/2;
 
   // Find path to base center
   const path=findPath(pos.c, pos.r, BASE_CX, BASE_CY);
-  console.log('SPAWN',typeKey,'at',pos.c,pos.r,'tile:',map[pos.c][pos.r],'path:',path?path.length+'nodes':'NULL');
+  // If no path found, try repathing from a carved path position
+  let finalPath=path;
+  if(!finalPath){
+    const fallbacks=[[BASE_CX,0],[BASE_CX,ROWS-1],[0,BASE_CY],[COLS-1,BASE_CY]];
+    for(const[fc,fr] of fallbacks){
+      finalPath=findPath(fc,fr,BASE_CX,BASE_CY);
+      if(finalPath){
+        // Spawn at this fallback instead
+        pos.c=fc; pos.r=fr;
+        break;
+      }
+    }
+  }
+  if(!finalPath) return; // Skip if truly no path (shouldn't happen)
 
+  const spawnX=pos.c*TILE_SIZE+TILE_SIZE/2, spawnY=pos.r*TILE_SIZE+TILE_SIZE/2;
   enemies.push({
-    type:typeKey, x:wx, y:wy,
+    type:typeKey, x:spawnX, y:spawnY,
     hp:def.hp, maxHP:def.hp,
     speed:def.speed*TILE_SIZE,
     dmg:def.baseDmg, attackRate:def.attackRate, attackCooldown:0,
     color:def.color,
-    path:path, pathIdx:1, // start moving to second node (first is spawn)
+    path:finalPath, pathIdx:1,
     slowTimer:0,
     hitFlash:0,
+    wallTarget:null,
   });
+  // Spawn flash effect
+  addParticles(spawnX, spawnY, `rgba(${def.color[0]},${def.color[1]},${def.color[2]},0.9)`, 8);
 }
 
 // Find nearest wall adjacent to enemy position
@@ -924,7 +944,7 @@ function drawEnemies(now){
   const z=cam.zoom;
   for(const e of enemies){
     const ex=(e.x-TILE_SIZE/2-cam.x)*z, ey=(e.y-TILE_SIZE/2-cam.y)*z;
-    const sw=TILE_SIZE*z*0.85;
+    const sw=TILE_SIZE*z*0.9;
     if(ex+sw<0||ex>canvas.width||ey+sw<0||ey>canvas.height)continue;
 
     const off=(TILE_SIZE*z-sw)/2;
@@ -1163,12 +1183,24 @@ function draw(now){
     ctx.fillRect(0,0,canvas.width,canvas.height);
   }
 
-  // DEBUG DOM HUD (readable by accessibility tree)
-  let dbgEl=document.getElementById('debug-hud');
-  if(!dbgEl){dbgEl=document.createElement('div');dbgEl.id='debug-hud';dbgEl.setAttribute('role','status');dbgEl.setAttribute('aria-live','polite');dbgEl.style.cssText='position:fixed;bottom:70px;left:10px;z-index:9999;background:rgba(0,0,0,0.85);color:#0f0;padding:8px 12px;font:13px monospace;pointer-events:none;border-radius:4px;max-width:500px;';document.body.appendChild(dbgEl);}
-  let dbgText=`Phase:${game.phase} Wave:${game.wave} Enemies:${enemies.length} Queue:${spawnQueue.length}`;
-  if(enemies.length>0){const e0=enemies[0];dbgText+=` | E0:(${e0.x.toFixed(0)},${e0.y.toFixed(0)}) idx:${e0.pathIdx} pLen:${e0.path?e0.path.length:'null'}`;}
-  dbgEl.textContent=dbgText;
+  // Pulsing SPACE prompt during BUILD phase
+  if(game.phase==='BUILD'){
+    const pulse=Math.sin(now*0.004)*0.3+0.7;
+    ctx.save();
+    ctx.fillStyle=`rgba(232,197,106,${pulse*0.9})`;
+    ctx.font='bold 22px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.shadowColor='rgba(220,180,60,0.6)';ctx.shadowBlur=15;
+    ctx.fillText('⚔️  Press SPACE to Fight!  ⚔️', canvas.width/2, canvas.height-70);
+    ctx.restore();
+  }
+  // Enemy count during COMBAT
+  if(game.phase==='COMBAT'&&(enemies.length>0||spawnQueue.length>0)){
+    ctx.save();
+    ctx.fillStyle='rgba(220,80,60,0.85)';
+    ctx.font='bold 14px system-ui';ctx.textAlign='right';
+    ctx.fillText(`👹 ${enemies.length} enemies (${spawnQueue.length} incoming)`, canvas.width-170, 34);
+    ctx.restore();
+  }
 
   updateUI();
   drawMinimap();
