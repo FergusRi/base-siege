@@ -144,6 +144,7 @@
   <div class="ui-stat"><span class="ui-label">Range</span><span class="ui-val ui-range" id="ui-range">—</span></div>
   <div class="ui-stat"><span class="ui-label">XP</span><span class="ui-val" id="ui-xp">—</span></div>
   <div class="ui-stat"><span class="ui-label">Rank</span><span class="ui-val" id="ui-rank">—</span></div>
+  <div class="ui-stat"><span class="ui-label">Formation</span><span class="ui-val" id="ui-formation" style="color:#8ad0ff">—</span></div>
 </div>
 <canvas id="game-canvas"></canvas>
 <canvas id="minimap" width="150" height="90"></canvas>
@@ -154,7 +155,7 @@
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════
-//  BASE SIEGE — Step 6: Autonomous Unit AI
+//  BASE SIEGE — Step 7: Formation Bonuses
 // ═══════════════════════════════════════════════════
 
 // ─── CONSTANTS ───
@@ -859,7 +860,7 @@ function updateUnits(dt){
 
     if(u.type==='MILITIA'){
       // Melee attack — immediate damage
-      u.atkCooldown=UNIT_ATK_RATE_MILITIA;
+      u.atkCooldown=getUnitAtkRate(u);
       nearest.hp-=u.dmg;
       nearest.hitFlash=1;
       addFloat(`-${u.dmg}`,nearest.x,nearest.y-14,'#7ab0d8');
@@ -873,8 +874,8 @@ function updateUnits(dt){
       }
     }
     else if(u.type==='ARCHER'){
-      // Ranged attack — fire a projectile
-      u.atkCooldown=UNIT_ATK_RATE_ARCHER;
+      // Ranged attack — fire a projectile (Protected Fire = 20% faster)
+      u.atkCooldown=getUnitAtkRate(u);
       projectiles.push({
         x:ux, y:uy,
         tx:nearest.x, ty:nearest.y,
@@ -892,23 +893,35 @@ function updateUnits(dt){
   }
 }
 
-// ─── ENEMY RETARGETING: Enemies attack units blocking their path ───
+// ─── ENEMY RETARGETING: Enemies attack units — prefer isolated targets ───
 function findAdjacentUnit(eCol,eRow){
   // Check 4 adjacent tiles for a unit
   const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
-  let nearest=null, nearHP=Infinity;
+  let candidates=[];
   for(const[dc,dr] of dirs){
     const nc=eCol+dc, nr=eRow+dr;
     const u=unitAt(nc,nr);
-    if(u&&u.hp>0&&u.hp<nearHP){nearest=u;nearHP=u.hp;}  // Target lowest HP unit
+    if(u&&u.hp>0)candidates.push(u);
   }
-  return nearest;
+  if(candidates.length===0)return null;
+
+  // Prefer isolated units (not in formation) — sort by: !formation first, then lowest HP
+  candidates.sort((a,b)=>{
+    const aF=unitInFormation(a)?1:0;
+    const bF=unitInFormation(b)?1:0;
+    if(aF!==bF)return aF-bF;  // isolated units first
+    return a.hp-b.hp;           // then lowest HP
+  });
+  return candidates[0];
 }
 
 function damageUnit(u,dmg,e){
-  u.hp=Math.max(0,u.hp-dmg);
+  // Apply Shield Wall damage reduction
+  const effectiveDmg=Math.max(1,Math.round(dmg*getUnitDR(u)));
+  u.hp=Math.max(0,u.hp-effectiveDmg);
   const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
-  addFloat(`-${dmg}`,ux,uy-14,'#ff6644');
+  const drText=u.shieldWall?`-${effectiveDmg} 🛡️`:`-${effectiveDmg}`;
+  addFloat(drText,ux,uy-14,u.shieldWall?'#6aa0d8':'#ff6644');
   addParticles(ux,uy,'rgba(255,80,60,0.6)',3);
 
   if(u.hp<=0){
@@ -924,6 +937,103 @@ function damageUnit(u,dmg,e){
       units.splice(idx,1);
     }
   }
+}
+
+
+// ═══════════════════════════════════════════
+//  FORMATION BONUSES (Step 7)
+// ═══════════════════════════════════════════
+
+const SHIELD_WALL_DR=0.3;       // 30% damage reduction
+const PROTECTED_FIRE_RATE=0.2;  // 20% faster fire rate
+const SHIELD_WALL_MIN=3;        // 3+ melee in a line for Shield Wall
+
+// Check all formation bonuses — called once per frame (in update)
+function checkFormations(){
+  // Reset all formation flags
+  for(const u of units){
+    u.shieldWall=false;
+    u.protectedFire=false;
+  }
+
+  // Gather militia and archers by grid position
+  const militiaByCol={}, militiaByRow={};
+  const meleeGrid={};
+  for(const u of units){
+    if(u.type==='MILITIA'&&u.hp>0){
+      const ck='c'+u.col, rk='r'+u.row;
+      (militiaByCol[ck]=militiaByCol[ck]||[]).push(u);
+      (militiaByRow[rk]=militiaByRow[rk]||[]).push(u);
+      meleeGrid[u.col+','+u.row]=u;
+    }
+  }
+
+  // ── SHIELD WALL: 3+ melee in a horizontal or vertical line ──
+  // Check columns (vertical lines)
+  for(const ck in militiaByCol){
+    const col=militiaByCol[ck];
+    if(col.length<SHIELD_WALL_MIN)continue;
+    col.sort((a,b)=>a.row-b.row);
+    // Find consecutive runs
+    let run=[col[0]];
+    for(let i=1;i<col.length;i++){
+      if(col[i].row===run[run.length-1].row+1){
+        run.push(col[i]);
+      } else {
+        if(run.length>=SHIELD_WALL_MIN)run.forEach(u=>u.shieldWall=true);
+        run=[col[i]];
+      }
+    }
+    if(run.length>=SHIELD_WALL_MIN)run.forEach(u=>u.shieldWall=true);
+  }
+  // Check rows (horizontal lines)
+  for(const rk in militiaByRow){
+    const row=militiaByRow[rk];
+    if(row.length<SHIELD_WALL_MIN)continue;
+    row.sort((a,b)=>a.col-b.col);
+    let run=[row[0]];
+    for(let i=1;i<row.length;i++){
+      if(row[i].col===run[run.length-1].col+1){
+        run.push(row[i]);
+      } else {
+        if(run.length>=SHIELD_WALL_MIN)run.forEach(u=>u.shieldWall=true);
+        run=[row[i]];
+      }
+    }
+    if(run.length>=SHIELD_WALL_MIN)run.forEach(u=>u.shieldWall=true);
+  }
+
+  // ── PROTECTED FIRE: archer adjacent to (behind) a melee unit ──
+  // "Behind" = melee unit is between archer and nearest enemy direction (simplified: any adjacent melee)
+  for(const u of units){
+    if(u.type!=='ARCHER'||u.hp<=0)continue;
+    // Check 4 adjacent tiles for a melee unit
+    const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
+    for(const[dc,dr] of dirs){
+      const mk=(u.col+dc)+','+(u.row+dr);
+      if(meleeGrid[mk]){
+        u.protectedFire=true;
+        break;
+      }
+    }
+  }
+}
+
+// Check if a unit is in ANY formation (for enemy targeting AI)
+function unitInFormation(u){return u.shieldWall||u.protectedFire;}
+
+// Get the effective attack rate for a unit (factoring Protected Fire bonus)
+function getUnitAtkRate(u){
+  if(u.type==='ARCHER'&&u.protectedFire){
+    return UNIT_ATK_RATE_ARCHER*(1-PROTECTED_FIRE_RATE);
+  }
+  if(u.type==='MILITIA')return UNIT_ATK_RATE_MILITIA;
+  return UNIT_ATK_RATE_ARCHER;
+}
+
+// Get damage reduction multiplier for a unit (factoring Shield Wall)
+function getUnitDR(u){
+  return u.shieldWall?(1-SHIELD_WALL_DR):1;
 }
 
 
@@ -1238,12 +1348,38 @@ function drawUnits(now){
     const[cr,cg,cb]=def.color;
     const rank=unitRank(u.xp);
 
+    // Formation glow (under body)
+    if(u.shieldWall){
+      // Shield Wall: blue glow around unit
+      const swPulse=Math.sin(now*0.004)*0.1+0.25;
+      ctx.fillStyle=`rgba(80,140,220,${swPulse})`;
+      ctx.fillRect(sx,sy,sw,sw);
+    }
+    if(u.protectedFire){
+      // Protected Fire: green glow around unit
+      const pfPulse=Math.sin(now*0.005+1)*0.1+0.2;
+      ctx.fillStyle=`rgba(80,200,100,${pfPulse})`;
+      ctx.fillRect(sx,sy,sw,sw);
+    }
+
     // Body tile
     ctx.fillStyle=`rgb(${cr},${cg},${cb})`;
     ctx.fillRect(sx+z*1.5,sy+z*1.5,sw-z*3,sw-z*3);
 
+    // Shield Wall blue tint overlay on body
+    if(u.shieldWall){
+      ctx.fillStyle='rgba(80,150,255,0.2)';
+      ctx.fillRect(sx+z*1.5,sy+z*1.5,sw-z*3,sw-z*3);
+    }
+    // Protected Fire green tint overlay
+    if(u.protectedFire){
+      ctx.fillStyle='rgba(80,220,100,0.15)';
+      ctx.fillRect(sx+z*1.5,sy+z*1.5,sw-z*3,sw-z*3);
+    }
+
     // Attack flash (unit just attacked — cooldown near max)
-    if(game.phase==='COMBAT'&&u.atkCooldown>(u.type==='MILITIA'?UNIT_ATK_RATE_MILITIA*0.7:UNIT_ATK_RATE_ARCHER*0.7)){
+    const atkRate=getUnitAtkRate(u);
+    if(game.phase==='COMBAT'&&u.atkCooldown>atkRate*0.7){
       ctx.fillStyle='rgba(255,255,200,0.25)';
       ctx.fillRect(sx+z*1.5,sy+z*1.5,sw-z*3,sw-z*3);
     }
@@ -1252,6 +1388,14 @@ function drawUnits(now){
     if(rank>0){
       const rankColors=['','rgba(180,180,100,0.3)','rgba(200,160,60,0.4)','rgba(255,200,80,0.5)'];
       ctx.strokeStyle=rankColors[rank];ctx.lineWidth=z*2;
+      ctx.strokeRect(sx+z,sy+z,sw-z*2,sw-z*2);
+    } else if(u.shieldWall){
+      // Shield Wall border: blue
+      ctx.strokeStyle='rgba(80,150,255,0.5)';ctx.lineWidth=z*2;
+      ctx.strokeRect(sx+z,sy+z,sw-z*2,sw-z*2);
+    } else if(u.protectedFire){
+      // Protected Fire border: green
+      ctx.strokeStyle='rgba(80,220,100,0.45)';ctx.lineWidth=z*1.5;
       ctx.strokeRect(sx+z,sy+z,sw-z*2,sw-z*2);
     } else {
       ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=z;
@@ -1282,6 +1426,17 @@ function drawUnits(now){
       ctx.fillStyle='rgba(255,220,80,0.7)';ctx.font=`${8*z}px system-ui`;
       const stars='★'.repeat(rank);
       ctx.fillText(stars,sx+sw/2,sy+sw-z*3);
+    }
+
+    // Formation bonus icon (tiny indicator below HP bar)
+    if(u.shieldWall){
+      ctx.fillStyle='rgba(80,150,255,0.85)';ctx.font=`bold ${8*z}px system-ui`;
+      ctx.fillText('🛡️',sx+sw/2,sy-z*6);
+    }
+    if(u.protectedFire){
+      ctx.fillStyle='rgba(80,220,100,0.85)';ctx.font=`bold ${8*z}px system-ui`;
+      const offset=u.shieldWall?sw*0.3:0;
+      ctx.fillText('🏹',sx+sw/2+offset,sy-z*6);
     }
   }
   ctx.textAlign='start';ctx.textBaseline='alphabetic';
@@ -1462,7 +1617,65 @@ function drawGhostPreview(){
     ctx.strokeStyle=`rgba(${cr},${cg},${cb},0.15)`;ctx.lineWidth=z;
     ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,def.range*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
   }
+
+  // Formation preview: show what bonus this placement would create
+  if(isUnit&&valid){
+    const bonuses=previewFormationBonus(col,row,selectedTool);
+    if(bonuses.length>0){
+      // Formation indicator text
+      ctx.fillStyle='rgba(10,10,18,0.8)';
+      const bonusText=bonuses.join(' + ');
+      const tw=ctx.measureText(bonusText).width+14;
+      ctx.font=`bold ${10*z}px system-ui`;ctx.textAlign='center';
+      ctx.fillRect(sx+sw/2-tw/2,sy+sw+z*2,tw,14*z);
+      ctx.fillStyle='rgba(140,220,255,0.9)';
+      ctx.fillText(bonusText,sx+sw/2,sy+sw+z*2+10*z);
+    }
+  }
   ctx.textAlign='start';ctx.textBaseline='alphabetic';
+}
+
+// Preview what formation bonuses placing a unit at (col,row) would create
+function previewFormationBonus(col,row,unitType){
+  const bonuses=[];
+  const meleeGrid={};
+  for(const u of units){
+    if(u.type==='MILITIA'&&u.hp>0)meleeGrid[u.col+','+u.row]=u;
+  }
+
+  if(unitType==='MILITIA'){
+    // Would this complete a Shield Wall? (check both directions)
+    meleeGrid[col+','+row]={type:'MILITIA',col,row}; // temp add
+    // Check horizontal run through this tile
+    let hRun=1;
+    for(let dc=1;meleeGrid[(col+dc)+','+row];dc++)hRun++;
+    for(let dc=-1;meleeGrid[(col+dc)+','+row];dc--)hRun++;
+    // Check vertical run through this tile
+    let vRun=1;
+    for(let dr=1;meleeGrid[col+','+(row+dr)];dr++)vRun++;
+    for(let dr=-1;meleeGrid[col+','+(row+dr)];dr--)vRun++;
+    if(hRun>=SHIELD_WALL_MIN||vRun>=SHIELD_WALL_MIN)bonuses.push('🛡️ Shield Wall');
+    delete meleeGrid[col+','+row];
+  }
+
+  if(unitType==='ARCHER'){
+    // Would this have Protected Fire? (adjacent to any melee)
+    const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
+    for(const[dc,dr] of dirs){
+      if(meleeGrid[(col+dc)+','+(row+dr)]){bonuses.push('🏹 Protected Fire');break;}
+    }
+  }
+
+  if(unitType==='MILITIA'){
+    // Would placing melee here give any adjacent archer Protected Fire?
+    const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
+    for(const[dc,dr] of dirs){
+      const adj=unitAt(col+dc,row+dr);
+      if(adj&&adj.type==='ARCHER'&&!adj.protectedFire){bonuses.push('🏹 Enables Protected Fire');break;}
+    }
+  }
+
+  return bonuses;
 }
 
 // ─── DRAW HOVER INFO ───
@@ -1507,6 +1720,12 @@ function updateUnitInfoPanel(){
   document.getElementById('ui-range').textContent=def.range>1.5?def.range+' tiles':'Melee';
   document.getElementById('ui-xp').textContent=u.xp;
   document.getElementById('ui-rank').textContent=RANK_NAMES[rank]+(rank>0?' '+'★'.repeat(rank):'');
+  // Formation bonus display
+  const bonusParts=[];
+  if(u.shieldWall)bonusParts.push('🛡️ Shield Wall (-30% DMG)');
+  if(u.protectedFire)bonusParts.push('🏹 Protected Fire (+20% Rate)');
+  const bonusEl=document.getElementById('ui-formation');
+  if(bonusEl)bonusEl.textContent=bonusParts.length>0?bonusParts.join(' · '):'None';
   panel.classList.add('show');
 }
 
@@ -1607,6 +1826,7 @@ function draw(now){
   // Update
   updateHero(dt);
   updateHeroCombat(dt);
+  checkFormations(); // Update formation bonuses every frame
   if(game.phase==='COMBAT'){
     updateEnemies(dt);
     updateTowers(dt);
