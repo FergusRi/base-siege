@@ -147,18 +147,19 @@
   <div class="ui-stat"><span class="ui-label">Range</span><span class="ui-val ui-range" id="ui-range">—</span></div>
   <div class="ui-stat"><span class="ui-label">XP</span><span class="ui-val" id="ui-xp">—</span></div>
   <div class="ui-stat"><span class="ui-label">Rank</span><span class="ui-val" id="ui-rank">—</span></div>
+  <div class="ui-stat"><span class="ui-label">Morale</span><span class="ui-val" id="ui-morale" style="color:#e8c56a">—</span></div>
   <div class="ui-stat"><span class="ui-label">Formation</span><span class="ui-val" id="ui-formation" style="color:#8ad0ff">—</span></div>
 </div>
 <canvas id="game-canvas"></canvas>
 <canvas id="minimap" width="150" height="90"></canvas>
-<div id="hint">WASD move · Click to gather · Q/E/R/F/T units · 1-4 build · SPACE fight</div>
+<div id="hint">WASD move · Click to gather · Q/E/R/F/T units · 1-4 build · SPACE fight · Stay near troops for morale!</div>
 <div id="wave-banner"></div>
 
 <script async src="https://vibej.am/2026/widget.js"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════
-//  BASE SIEGE — Step 8: Full Unit Roster
+//  BASE SIEGE — Step 9: Morale System
 // ═══════════════════════════════════════════════════
 
 // ─── CONSTANTS ───
@@ -504,11 +505,14 @@ function endWave(){
   // Hero full heal on wave clear
   hero.hp=hero.maxHP;
   hero.stunTimer=0;
-  // Heal surviving units (50% of missing HP), reset cavalry charge
+  // Heal surviving units (50% of missing HP), reset cavalry charge, restore morale
   for(const u of units){
     const missing=u.maxHP-u.hp;
     u.hp=Math.min(u.maxHP, u.hp+Math.ceil(missing*0.5));
     u.atkCooldown=0;
+    u.morale=MORALE_MAX; // full morale restore between waves
+    u.moraleState='normal';
+    u.fleeTimer=0;
     if(u.type==='CAVALRY')u.hasCharged=false; // reset charge for next wave
   }
 
@@ -577,6 +581,8 @@ function killEnemy(e,i,source,sourceUnit){
     sourceUnit.xp+=10; // bonus XP for kill
     game.killsByUnit=(game.killsByUnit||0)+1;
   }
+  // Morale boost to nearby units when enemy dies
+  onEnemyKillMoraleBoost(e.x,e.y);
   enemies.splice(i,1);
 }
 
@@ -899,6 +905,9 @@ function updateUnits(dt){
     const u=units[i];
     u.atkCooldown=Math.max(0,u.atkCooldown-dt);
 
+    // ── BROKEN MORALE: skip combat AI (handled by updateFleeingUnits) ──
+    if(u.moraleState==='broken')continue;
+
     // ── CAVALRY PATROL MOVEMENT ──
     if(u.type==='CAVALRY'&&u.patrol&&u.patrol.length===2){
       const wp=u.patrol[u.patrolIdx||0];
@@ -1092,6 +1101,8 @@ function damageUnit(u,dmg,e){
       addParticles(ux,uy,`rgba(${def.color[0]},${def.color[1]},${def.color[2]},0.8)`,15);
       addParticles(ux,uy,'rgba(200,50,30,0.6)',8);
       cam.shake=Math.max(cam.shake,3);
+      // Morale hit to nearby units on friendly death
+      onFriendlyDeath(u.col,u.row);
       units.splice(idx,1);
     }
   }
@@ -1105,6 +1116,23 @@ function damageUnit(u,dmg,e){
 const SHIELD_WALL_DR=0.3;       // 30% damage reduction
 const PROTECTED_FIRE_RATE=0.2;  // 20% faster fire rate
 const SHIELD_WALL_MIN=3;        // 3+ melee in a line for Shield Wall
+
+// ─── MORALE CONSTANTS ───
+const MORALE_MAX=100;
+const MORALE_BREAK_THRESHOLD=0;  // morale at which unit breaks
+const MORALE_RALLY_VALUE=30;     // morale restored when rally completes
+const MORALE_FLEE_DURATION=5;    // seconds of fleeing before rally
+const MORALE_LOW_THRESHOLD=30;   // below this = flickering visual
+// Drain rates (per second)
+const MORALE_DRAIN_SURROUNDED=12;  // when 3+ enemies within 2 tiles
+const MORALE_DRAIN_NEARBY_DEATH=25; // instant drop when friendly dies within 3 tiles
+const MORALE_DRAIN_LOW_HP=8;       // when HP below 25%
+// Recovery rates (per second)
+const MORALE_RECOVER_NEAR_HERO=10;  // within 3 tiles of hero
+const MORALE_RECOVER_NEAR_BASE=5;   // within 4 tiles of base center
+const MORALE_RECOVER_ENEMY_KILL=15; // instant boost when enemy dies within 4 tiles
+const MORALE_RECOVER_FORMATION=6;   // in any formation (shield wall / protected fire)
+const HERO_MORALE_AURA=3;          // hero aura radius in tiles
 
 // Is this unit type considered melee for formation purposes?
 function isMeleeUnit(type){ return UNIT_TYPES[type]&&UNIT_TYPES[type].melee; }
@@ -1192,6 +1220,127 @@ function getUnitAtkRate(u){
 // Get damage reduction multiplier for a unit (factoring Shield Wall)
 function getUnitDR(u){
   return u.shieldWall?(1-SHIELD_WALL_DR):1;
+}
+
+
+// ═══════════════════════════════════════════
+//  MORALE SYSTEM (Step 9)
+// ═══════════════════════════════════════════
+
+function updateMorale(dt){
+  if(game.phase!=='COMBAT')return;
+
+  for(const u of units){
+    if(u.hp<=0)continue;
+
+    // ── FLEEING STATE: count down flee timer, then rally ──
+    if(u.moraleState==='broken'){
+      u.fleeTimer-=dt;
+      if(u.fleeTimer<=0){
+        // Rally: restore morale to 30, back to idle
+        u.morale=MORALE_RALLY_VALUE;
+        u.moraleState='normal';
+        const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
+        addFloat('Rallied!',ux,uy-TILE_SIZE,'#7aca7a');
+        addParticles(ux,uy,'rgba(120,200,120,0.7)',6);
+      }
+      continue; // no morale update while fleeing
+    }
+
+    let drainRate=0, recoverRate=0;
+    const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
+
+    // ── DRAIN: surrounded by enemies (3+ within 2 tiles) ──
+    let nearbyEnemies=0;
+    for(const e of enemies){
+      const dx=e.x-ux, dy=e.y-uy;
+      if(Math.sqrt(dx*dx+dy*dy)<=2*TILE_SIZE)nearbyEnemies++;
+    }
+    if(nearbyEnemies>=3)drainRate+=MORALE_DRAIN_SURROUNDED;
+
+    // ── DRAIN: low HP (below 25%) ──
+    if(u.hp/u.maxHP<0.25)drainRate+=MORALE_DRAIN_LOW_HP;
+
+    // ── RECOVER: near hero (3 tiles) ──
+    if(hero.stunTimer<=0){
+      const hdx=hero.x-ux, hdy=hero.y-uy;
+      if(Math.sqrt(hdx*hdx+hdy*hdy)<=HERO_MORALE_AURA*TILE_SIZE){
+        recoverRate+=MORALE_RECOVER_NEAR_HERO;
+      }
+    }
+
+    // ── RECOVER: near base (4 tiles from center) ──
+    const baseDist=Math.abs(u.col-BASE_CX)+Math.abs(u.row-BASE_CY);
+    if(baseDist<=4)recoverRate+=MORALE_RECOVER_NEAR_BASE;
+
+    // ── RECOVER: in formation ──
+    if(u.shieldWall||u.protectedFire)recoverRate+=MORALE_RECOVER_FORMATION;
+
+    // Apply net change
+    const net=(recoverRate-drainRate)*dt;
+    u.morale=Math.max(0,Math.min(MORALE_MAX,u.morale+net));
+
+    // ── BREAK CHECK ──
+    if(u.morale<=MORALE_BREAK_THRESHOLD&&u.moraleState!=='broken'){
+      u.moraleState='broken';
+      u.fleeTimer=MORALE_FLEE_DURATION;
+      const uxx=u.col*TILE_SIZE+TILE_SIZE/2, uyy=u.row*TILE_SIZE+TILE_SIZE/2;
+      addFloat('🏳️ BROKEN!',uxx,uyy-TILE_SIZE,'#ff6644');
+      addParticles(uxx,uyy,'rgba(255,200,100,0.6)',8);
+    }
+  }
+}
+
+// Called when a friendly unit dies — nearby units take morale hit
+function onFriendlyDeath(deadCol,deadRow){
+  for(const u of units){
+    if(u.hp<=0||u.moraleState==='broken')continue;
+    const dist=Math.abs(u.col-deadCol)+Math.abs(u.row-deadRow);
+    if(dist<=3){
+      u.morale=Math.max(0,u.morale-MORALE_DRAIN_NEARBY_DEATH);
+    }
+  }
+}
+
+// Called when an enemy dies — nearby units get morale boost
+function onEnemyKillMoraleBoost(ex,ey){
+  for(const u of units){
+    if(u.hp<=0)continue;
+    const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
+    const dx=ex-ux, dy=ey-uy;
+    if(Math.sqrt(dx*dx+dy*dy)<=4*TILE_SIZE){
+      u.morale=Math.min(MORALE_MAX,u.morale+MORALE_RECOVER_ENEMY_KILL);
+    }
+  }
+}
+
+// Flee AI: move broken unit toward base
+function updateFleeingUnits(dt){
+  for(const u of units){
+    if(u.moraleState!=='broken'||u.hp<=0)continue;
+    // Move toward base center (1 tile per second, slow panicked shuffle)
+    const ux=u.col, uy=u.row;
+    const dx=BASE_CX-ux, dy=BASE_CY-uy;
+    const adx=Math.abs(dx), ady=Math.abs(dy);
+    if(adx+ady<=2)continue; // already near base, huddle
+
+    // Move once per ~0.5s (using a sub-timer trick with fleeTimer)
+    u._fleeMoveTimer=(u._fleeMoveTimer||0)+dt;
+    if(u._fleeMoveTimer<0.5)continue;
+    u._fleeMoveTimer=0;
+
+    // Try to move one tile toward base
+    let nc=ux, nr=uy;
+    if(adx>=ady) nc+=dx>0?1:-1;
+    else nr+=dy>0?1:-1;
+
+    // Validate move
+    if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS&&
+       map[nc][nr]!==T.WATER&&!structures[nc+','+nr]&&
+       (nc===ux&&nr===uy||!unitAt(nc,nr))){
+      u.col=nc; u.row=nr;
+    }
+  }
 }
 
 
@@ -1351,7 +1500,8 @@ function handleRecruit(col,row){
   const newUnit={
     type:selectedTool, col, row,
     hp:def.hp, maxHP:def.hp, dmg:def.dmg, range:def.range,
-    xp:0, morale:100, state:'idle',
+    xp:0, morale:MORALE_MAX, state:'idle',
+    moraleState:'normal', fleeTimer:0, _fleeMoveTimer:0,
     atkCooldown:0,
   };
   units.push(newUnit);
@@ -1545,6 +1695,19 @@ function drawUnits(now){
     const[cr,cg,cb]=def.color;
     const rank=unitRank(u.xp);
 
+    // ── MORALE: flickering at low morale ──
+    const isBroken=u.moraleState==='broken';
+    const isLowMorale=u.morale<MORALE_LOW_THRESHOLD&&!isBroken;
+    let moraleAlpha=1;
+    if(isBroken){
+      // Rapid flicker when broken (fleeing)
+      moraleAlpha=Math.sin(now*0.015)*0.3+0.5;
+    } else if(isLowMorale){
+      // Subtle flicker when low morale
+      moraleAlpha=Math.sin(now*0.008)*0.15+0.75;
+    }
+    ctx.globalAlpha=moraleAlpha;
+
     // Formation glow (under body)
     if(u.shieldWall){
       // Shield Wall: blue glow around unit
@@ -1560,7 +1723,7 @@ function drawUnits(now){
     }
 
     // Body tile
-    ctx.fillStyle=`rgb(${cr},${cg},${cb})`;
+    ctx.fillStyle=isBroken?`rgb(${Math.min(255,cr+60)},${Math.max(0,cg-40)},${Math.max(0,cb-40)})`:`rgb(${cr},${cg},${cb})`;
     ctx.fillRect(sx+z*1.5,sy+z*1.5,sw-z*3,sw-z*3);
 
     // Shield Wall blue tint overlay on body
@@ -1670,6 +1833,17 @@ function drawUnits(now){
       ctx.fillRect(sx+(sw-bw)/2,sy-bh-z*2,bw*hpPct,bh);
     }
 
+    // Morale bar — below HP bar, thinner, yellow-to-red gradient
+    if(game.phase==='COMBAT'||u.morale<MORALE_MAX){
+      const bw=sw*0.8, bh=2*z;
+      const hpBarH=3*z;
+      const mby=sy-hpBarH-z*2-bh-z; // just above HP bar
+      ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(sx+(sw-bw)/2,mby,bw,bh);
+      const mPct=u.morale/MORALE_MAX;
+      ctx.fillStyle=mPct>0.5?'rgba(220,200,60,0.9)':mPct>0.2?'rgba(220,140,40,0.9)':'rgba(220,60,40,0.9)';
+      ctx.fillRect(sx+(sw-bw)/2,mby,bw*mPct,bh);
+    }
+
     // Rank stars
     if(rank>0){
       ctx.fillStyle='rgba(255,220,80,0.7)';ctx.font=`${8*z}px system-ui`;
@@ -1677,16 +1851,28 @@ function drawUnits(now){
       ctx.fillText(stars,sx+sw/2,sy+sw-z*3);
     }
 
-    // Formation bonus icon (tiny indicator below HP bar)
-    if(u.shieldWall){
-      ctx.fillStyle='rgba(80,150,255,0.85)';ctx.font=`bold ${8*z}px system-ui`;
-      ctx.fillText('🛡️',sx+sw/2,sy-z*6);
+    // White flag on broken units
+    if(isBroken){
+      ctx.fillStyle='rgba(255,255,255,0.95)';ctx.font=`bold ${12*z}px system-ui`;
+      ctx.fillText('🏳️',sx+sw/2,sy-z*8);
+      // "FLEEING" text
+      ctx.fillStyle='rgba(255,100,60,0.85)';ctx.font=`bold ${8*z}px system-ui`;
+      ctx.fillText('FLEE',sx+sw/2,sy+sw+z*6);
     }
-    if(u.protectedFire){
+
+    // Formation bonus icon (tiny indicator below HP bar)
+    if(u.shieldWall&&!isBroken){
+      ctx.fillStyle='rgba(80,150,255,0.85)';ctx.font=`bold ${8*z}px system-ui`;
+      ctx.fillText('🛡️',sx+sw/2,sy-z*10);
+    }
+    if(u.protectedFire&&!isBroken){
       ctx.fillStyle='rgba(80,220,100,0.85)';ctx.font=`bold ${8*z}px system-ui`;
       const offset=u.shieldWall?sw*0.3:0;
-      ctx.fillText('🏹',sx+sw/2+offset,sy-z*6);
+      ctx.fillText('🏹',sx+sw/2+offset,sy-z*10);
     }
+
+    // Reset alpha after morale flicker
+    ctx.globalAlpha=1;
   }
   ctx.textAlign='start';ctx.textBaseline='alphabetic';
 }
@@ -1822,6 +2008,11 @@ function drawHero(now){
     const atkPulse=Math.sin(now*0.005)*0.04+0.06;
     ctx.strokeStyle=`rgba(255,220,80,${atkPulse})`;ctx.lineWidth=z;
     ctx.beginPath();ctx.arc(hx+sw/2,hy+sw/2,HERO_ATK_RANGE*z,0,Math.PI*2);ctx.stroke();
+    // Morale aura ring (golden glow showing 3-tile hero aura)
+    const auraPulse=Math.sin(now*0.003)*0.04+0.08;
+    ctx.strokeStyle=`rgba(255,210,80,${auraPulse})`;ctx.lineWidth=z*1.5;ctx.setLineDash([3*z,5*z]);
+    ctx.beginPath();ctx.arc(hx+sw/2,hy+sw/2,HERO_MORALE_AURA*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   ctx.textAlign='start';ctx.textBaseline='alphabetic';
@@ -2022,6 +2213,14 @@ function updateUnitInfoPanel(){
   document.getElementById('ui-range').textContent=def.range>1.5?def.range+' tiles':'Melee';
   document.getElementById('ui-xp').textContent=u.xp;
   document.getElementById('ui-rank').textContent=RANK_NAMES[rank]+(rank>0?' '+'★'.repeat(rank):'');
+  // Morale display
+  const moraleEl=document.getElementById('ui-morale');
+  if(moraleEl){
+    const mPct=Math.round(u.morale);
+    const mLabel=u.moraleState==='broken'?`🏳️ BROKEN (${Math.ceil(u.fleeTimer)}s)`:mPct>=70?`${mPct}% Steady`:mPct>=30?`${mPct}% Shaken`:`${mPct}% Wavering`;
+    moraleEl.textContent=mLabel;
+    moraleEl.style.color=u.moraleState==='broken'?'#ff6644':mPct>=70?'#e8c56a':mPct>=30?'#daa040':'#e87a6a';
+  }
   // Formation bonus display + special abilities
   const bonusParts=[];
   if(u.shieldWall)bonusParts.push('🛡️ Shield Wall (-30% DMG)');
@@ -2139,6 +2338,8 @@ function draw(now){
     updateEnemies(dt);
     updateTowers(dt);
     updateUnits(dt);
+    updateMorale(dt);
+    updateFleeingUnits(dt);
     updateProjectiles(dt);
   }
   updateCamera();
