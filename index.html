@@ -24,6 +24,7 @@
   .resource .val { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 24px; }
   .r-wood .icon { background: #6b8a3a; } .r-stone .icon { background: #7a7a82; }
   .r-metal .icon { background: #5a7a9a; } .r-food .icon { background: #a85a70; }
+  .r-gold .icon { background: #c8a832; }
   .base-hp-wrap { display: flex; align-items: center; gap: 6px; }
   .hp-bar { width: 100px; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; }
   .hp-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
@@ -270,6 +271,7 @@
     <div class="resource r-stone"><span class="icon"></span><span class="val" id="res-stone">0</span></div>
     <div class="resource r-metal"><span class="icon"></span><span class="val" id="res-metal">0</span></div>
     <div class="resource r-food"><span class="icon"></span><span class="val" id="res-food">0</span></div>
+    <div class="resource r-gold"><span class="icon"></span><span class="val" id="res-gold">0</span></div>
     <div class="upkeep-wrap" id="upkeep-wrap" style="display:none">
       <span class="upkeep-icon">🍖</span>
       <span class="upkeep-label">Upkeep</span>
@@ -389,15 +391,33 @@ const HERO_ATK_DMG=8, HERO_ATK_RATE=0.4, HERO_ATK_RANGE=1.2*TILE_SIZE;
 const HERO_KNOCKDOWN_TIME=10, HERO_REVIVE_PCT=0.25;
 
 // Tile types
-const T={GRASS:0,TREE:1,STONE:2,ORE:3,BERRY:4,WATER:5,HQ:6};
+const T={GRASS:0,TREE:1,STONE:2,ORE:3,BERRY:4,WATER:5,HQ:6,GOLD:7,TREE_DEPLETED:8,STONE_DEPLETED:9,ORE_DEPLETED:10,BERRY_DEPLETED:11,GOLD_DEPLETED:12};
 const TILE_COLORS={
   [T.GRASS]:{base:[38,72,34],v:12},[T.TREE]:{base:[22,50,18],v:8},
   [T.STONE]:{base:[88,88,96],v:10},[T.ORE]:{base:[60,82,110],v:8},
   [T.BERRY]:{base:[42,78,38],v:8},[T.WATER]:{base:[20,42,72],v:6},
-  [T.HQ]:{base:[120,96,42],v:6},
+  [T.HQ]:{base:[120,96,42],v:6},[T.GOLD]:{base:[140,120,40],v:10},
+  [T.TREE_DEPLETED]:{base:[48,58,40],v:6},[T.STONE_DEPLETED]:{base:[72,72,76],v:6},
+  [T.ORE_DEPLETED]:{base:[55,65,80],v:6},[T.BERRY_DEPLETED]:{base:[50,62,44],v:6},
+  [T.GOLD_DEPLETED]:{base:[90,82,50],v:6},
 };
-const TILE_NAMES=['Grass','Forest','Stone','Iron Ore','Berry Bush','Water','Base'];
-const HARVEST={[T.TREE]:{res:'wood',amt:5},[T.STONE]:{res:'stone',amt:5},[T.ORE]:{res:'metal',amt:3},[T.BERRY]:{res:'food',amt:4}};
+const TILE_NAMES=['Grass','Forest','Stone','Iron Ore','Berry Bush','Water','HQ','Gold Deposit',
+  'Stump','Spent Quarry','Spent Vein','Bare Bush','Spent Gold'];
+
+// ─── RESOURCE DEPOSITS (multi-harvest nodes) ───
+const DEPOSITS={
+  [T.TREE]:  {res:'wood', amt:2, maxHP:5, regrowAfter:3, depletedTile:T.TREE_DEPLETED},
+  [T.BERRY]: {res:'food', amt:3, maxHP:4, regrowAfter:2, depletedTile:T.BERRY_DEPLETED},
+  [T.STONE]: {res:'stone',amt:2, maxHP:8, regrowAfter:0, depletedTile:T.STONE_DEPLETED},  // 0 = never
+  [T.ORE]:   {res:'metal',amt:1, maxHP:6, regrowAfter:0, depletedTile:T.ORE_DEPLETED},
+  [T.GOLD]:  {res:'gold', amt:1, maxHP:3, regrowAfter:0, depletedTile:T.GOLD_DEPLETED},
+};
+// depositHP[col][row] = remaining harvests (undefined = not a deposit or use maxHP)
+let depositHP=[];
+// regrowth tracking: {key:'c,r', originalTile, wavesLeft}
+let regrowthQueue=[];
+// Legacy compat
+const HARVEST={[T.TREE]:{res:'wood',amt:2},[T.STONE]:{res:'stone',amt:2},[T.ORE]:{res:'metal',amt:1},[T.BERRY]:{res:'food',amt:3},[T.GOLD]:{res:'gold',amt:1}};
 const STRUCTS={
   WALL:{name:'Wall',cost:{stone:5},hp:60,color:[110,100,88],letter:'W'},
   TOWER:{name:'Tower',cost:{wood:10,stone:5,metal:3},hp:40,color:[80,70,62],letter:'T',range:6,dmg:4,rate:0.8},
@@ -506,24 +526,118 @@ function fbm(x,y,oct,freq,lac,gain){let v=0,a=1,f=freq,ta=0;for(let i=0;i<oct;i+
 let map=[], tileVariant=[];
 let hqPlaced=false; // HQ placement state
 function distC(c,r){return Math.sqrt((c-BASE_CX)**2+(r-BASE_CY)**2);}
+// Distance from nearest map edge
+function edgeDist(c,r){return Math.min(c,r,COLS-1-c,ROWS-1-r);}
+// Normalized distance from map center (0=center, 1=edge)
+function centerDist(c,r){
+  const cx=COLS/2, cy=ROWS/2;
+  const dx=Math.abs(c-cx)/(COLS/2), dy=Math.abs(r-cy)/(ROWS/2);
+  return Math.max(dx,dy); // Chebyshev so edges form a rectangle
+}
+
 function generateMap(){
-  map=[];tileVariant=[];
-  for(let c=0;c<COLS;c++){map[c]=[];tileVariant[c]=[];
+  map=[];tileVariant=[];depositHP=[];
+  // Pass 1: terrain (water + grass base)
+  for(let c=0;c<COLS;c++){map[c]=[];tileVariant[c]=[];depositHP[c]=[];
     for(let r=0;r<ROWS;r++){
       tileVariant[c][r]=(hash(c*7+31,r*13+47)-0.5)*2;
-      // No static base — HQ placed by player later
-      const elev=fbm(c,r,4,0.06,2,0.5); // slightly lower freq for bigger map
-      const ed=Math.min(c,r,COLS-1-c,ROWS-1-r);
+      depositHP[c][r]=0;
+      const elev=fbm(c,r,4,0.06,2,0.5);
+      const ed=edgeDist(c,r);
       if(elev<0.28&&ed>5){map[c][r]=T.WATER;continue;}
-      const forest=fbm(c+100,r+100,3,0.09,2,0.55);
-      if(forest>0.55){map[c][r]=T.TREE;continue;}
-      const stone=fbm(c+200,r+200,2,0.12,2,0.5);
-      if(stone>0.65){map[c][r]=T.STONE;continue;}
-      const ore=fbm(c+300,r+300,2,0.15,2,0.45);
-      if(ore>0.72){map[c][r]=T.ORE;continue;}
-      if(forest>0.42&&forest<0.55&&hash(c+500,r+500)>0.75){map[c][r]=T.BERRY;continue;}
       map[c][r]=T.GRASS;
     }
+  }
+  // Pass 2: distance-based resource placement with clustering
+  // Distance bands based on centerDist:
+  //   Inner (0-0.2):  sparse trees only
+  //   Mid   (0.2-0.55): trees + berries (moderate)
+  //   Outer (0.55-0.85): stone clusters + scattered trees
+  //   Edge  (0.85-1.0): iron + gold + camps (later)
+  
+  // Place resource clusters using seed points
+  placeResourceClusters();
+}
+
+// Cluster-based resource generation
+function placeResourceClusters(){
+  const maxDist=Math.max(COLS,ROWS)/2;
+  // Generate cluster seed points for each resource type
+  // Trees: everywhere, dense mid (0.15-0.7)
+  placeClusters(T.TREE, {
+    count:120, minSize:3, maxSize:7,
+    minDist:0.05, maxDist:0.85,
+    densityPeak:0.4, densityWidth:0.35,
+    noiseOctaves:3, noiseFreq:0.09, noiseThresh:0.42
+  });
+  // Berry groves: scattered mid (0.15-0.6)
+  placeClusters(T.BERRY, {
+    count:40, minSize:2, maxSize:5,
+    minDist:0.1, maxDist:0.6,
+    densityPeak:0.35, densityWidth:0.2,
+    noiseOctaves:2, noiseFreq:0.12, noiseThresh:0.55
+  });
+  // Stone quarries: clustered outer (0.45-0.85)
+  placeClusters(T.STONE, {
+    count:50, minSize:3, maxSize:6,
+    minDist:0.4, maxDist:0.85,
+    densityPeak:0.65, densityWidth:0.2,
+    noiseOctaves:2, noiseFreq:0.1, noiseThresh:0.5
+  });
+  // Iron veins: rare outer near edges (0.65-0.92)
+  placeClusters(T.ORE, {
+    count:20, minSize:2, maxSize:4,
+    minDist:0.6, maxDist:0.92,
+    densityPeak:0.78, densityWidth:0.15,
+    noiseOctaves:2, noiseFreq:0.15, noiseThresh:0.6
+  });
+  // Gold deposits: very rare, edge strip only (0.85-1.0)
+  placeClusters(T.GOLD, {
+    count:8, minSize:2, maxSize:3,
+    minDist:0.82, maxDist:0.98,
+    densityPeak:0.92, densityWidth:0.08,
+    noiseOctaves:1, noiseFreq:0.2, noiseThresh:0.5
+  });
+  // Initialize depositHP for all resource tiles
+  for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
+    const dep=DEPOSITS[map[c][r]];
+    if(dep) depositHP[c][r]=dep.maxHP;
+  }
+}
+
+function placeClusters(tileType, cfg){
+  const {count,minSize,maxSize,minDist,maxDist,densityPeak,densityWidth,noiseOctaves,noiseFreq,noiseThresh}=cfg;
+  let placed=0;
+  for(let attempt=0;attempt<count*8&&placed<count;attempt++){
+    // Random seed point
+    const sc=Math.floor(hash(attempt*73+tileType*137,attempt*31+17)*COLS);
+    const sr=Math.floor(hash(attempt*59+tileType*211,attempt*43+23)*ROWS);
+    if(sc<1||sc>=COLS-1||sr<1||sr>=ROWS-1) continue;
+    if(map[sc][sr]===T.WATER) continue;
+    // Check distance band
+    const cd=centerDist(sc,sr);
+    if(cd<minDist||cd>maxDist) continue;
+    // Gaussian density falloff from peak
+    const distFromPeak=Math.abs(cd-densityPeak)/densityWidth;
+    const density=Math.exp(-distFromPeak*distFromPeak);
+    if(hash(attempt*97+tileType*53,attempt*67+11)<(1-density*0.8)) continue;
+    // Noise check for natural shape
+    const nv=fbm(sc+tileType*200,sr+tileType*200,noiseOctaves,noiseFreq,2,0.5);
+    if(nv<noiseThresh) continue;
+    // Place cluster using random walk from seed
+    const clusterSize=minSize+Math.floor(hash(attempt*41+tileType,attempt*29)*(maxSize-minSize+1));
+    let cx=sc, cy=sr;
+    for(let i=0;i<clusterSize;i++){
+      if(cx>=0&&cx<COLS&&cy>=0&&cy<ROWS&&map[cx][cy]===T.GRASS){
+        map[cx][cy]=tileType;
+      }
+      // Random walk to next tile in cluster
+      const dir=Math.floor(hash(attempt*13+i*7+tileType,i*19+attempt)*4);
+      if(dir===0)cx++;else if(dir===1)cx--;else if(dir===2)cy++;else cy--;
+      cx=Math.max(0,Math.min(COLS-1,cx));
+      cy=Math.max(0,Math.min(ROWS-1,cy));
+    }
+    placed++;
   }
 }
 // Place HQ — clear area around it, set BASE_CX/CY, carve spawn paths
@@ -543,7 +657,7 @@ function placeHQ(col,row){
       }
       // Inner ring (3 tiles) — clear everything for building space
       if(dist<=3&&nc!==col&&nr!==row){
-        if(map[nc][nr]!==T.WATER) map[nc][nr]=T.GRASS;
+        if(map[nc][nr]!==T.WATER){map[nc][nr]=T.GRASS;depositHP[nc][nr]=0;}
       }
     }
   }
@@ -664,11 +778,11 @@ function findPath(sc,sr,tc,tr){
 // ═══════════════════════════════════════════
 
 const WIN_WAVE=20; // survive this many waves to win
-const INITIAL_RESOURCES={wood:80,stone:45,metal:25,food:35};
+const INITIAL_RESOURCES={wood:80,stone:45,metal:25,food:35,gold:0};
 
 const game={
   phase:'MENU', wave:0, baseHP:HQ_HP, baseMaxHP:HQ_HP,
-  resources:{wood:80,stone:45,metal:25,food:35},
+  resources:{wood:80,stone:45,metal:25,food:35,gold:0},
   waveCountdown:-1, // -1 = not counting
   enemiesKilled:0,
   killsByTower:0,
@@ -2029,7 +2143,7 @@ const SHIELD_WALL_MIN=3;        // 3+ melee in a line for Shield Wall
 
 // ─── UPKEEP & ECONOMY ───
 const STARVATION_MORALE_PENALTY=30;   // morale penalty for unfed units at wave start
-const RESOURCE_REGROWTH_CHANCE=0.12;  // chance per cleared tile to regrow per wave
+// RESOURCE_REGROWTH_CHANCE removed — now using wave-based regrowth queue (see regrowthQueue)
 
 // Calculate total food upkeep for all units
 function getTotalUpkeep(){
@@ -2073,27 +2187,30 @@ function applyStarvation(unfedUnits){
   }
 }
 
-// Resource regrowth — some cleared tiles grow back between waves
+// Resource regrowth — depleted renewable nodes regrow after N waves
 function regrowResources(){
   let regrown=0;
-  for(let c=0;c<COLS;c++){
-    for(let r=0;r<ROWS;r++){
-      if(map[c][r]!==T.GRASS) continue;
-      if(structures[c+','+r]) continue;
-      if(unitAt(c,r)) continue;
-      const dist=distC(c,r);
-      if(dist<BASE_CLEAR_RADIUS) continue; // don't regrow near base
-      if(Math.random()>RESOURCE_REGROWTH_CHANCE) continue;
-      // Decide what to regrow based on original noise values
-      const forest=fbm(c+100,r+100,3,0.12,2,0.55);
-      if(forest>0.42&&hash(c+500,r+500)>0.65){
-        map[c][r]=T.BERRY; regrown++; rebuildTile(c,r); continue;
+  const remaining=[];
+  for(const entry of regrowthQueue){
+    entry.wavesLeft--;
+    if(entry.wavesLeft<=0){
+      const {col,row,originalTile}=entry;
+      // Only regrow if tile is still depleted (not built on)
+      const curTile=map[col][row];
+      if(curTile===T.TREE_DEPLETED||curTile===T.BERRY_DEPLETED||curTile===T.GRASS){
+        if(!structures[col+','+row]){
+          map[col][row]=originalTile;
+          const dep=DEPOSITS[originalTile];
+          if(dep) depositHP[col][row]=dep.maxHP;
+          rebuildTile(col,row);
+          regrown++;
+        }
       }
-      if(forest>0.50){
-        map[c][r]=T.TREE; regrown++; rebuildTile(c,r); continue;
-      }
+    } else {
+      remaining.push(entry);
     }
   }
+  regrowthQueue=remaining;
   return regrown;
 }
 
@@ -2410,15 +2527,34 @@ function updateHero(dt){
 }
 
 // ─── CLICK ACTIONS ───
-const RES_COLORS={wood:'#7aca7a',stone:'#aaaabc',metal:'#7ab0d8',food:'#d87aa0'};
+const RES_COLORS={wood:'#7aca7a',stone:'#aaaabc',metal:'#7ab0d8',food:'#d87aa0',gold:'#e8c56a'};
 
 function handleGather(col,row){
-  const tile=map[col][row];const h=HARVEST[tile];if(!h)return;
+  const tile=map[col][row];
+  const dep=DEPOSITS[tile];
+  if(!dep)return;
   const dist=Math.abs(col-heroCol())+Math.abs(row-heroRow());
   if(dist>HARVEST_RANGE){addFloat('Too far!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
-  game.resources[h.res]+=h.amt;
-  map[col][row]=T.GRASS;rebuildTile(col,row);
-  addFloat(`+${h.amt} ${h.res.charAt(0).toUpperCase()+h.res.slice(1)}`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,RES_COLORS[h.res]);
+  // Multi-harvest: decrement HP
+  if(depositHP[col]&&depositHP[col][row]>0){
+    depositHP[col][row]--;
+    game.resources[dep.res]+=dep.amt;
+    const remaining=depositHP[col][row];
+    const label=dep.res.charAt(0).toUpperCase()+dep.res.slice(1);
+    if(remaining>0){
+      addFloat(`+${dep.amt} ${label} (${remaining} left)`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,RES_COLORS[dep.res]);
+    } else {
+      // Depleted — convert to depleted tile
+      addFloat(`+${dep.amt} ${label} (Depleted!)`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#aa8855');
+      map[col][row]=dep.depletedTile;
+      // Queue for regrowth if applicable
+      if(dep.regrowAfter>0){
+        regrowthQueue.push({col,row,originalTile:tile,wavesLeft:dep.regrowAfter});
+      }
+    }
+    rebuildTile(col,row);
+    addParticles(col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE+TILE_SIZE/2,RES_COLORS[dep.res],3);
+  }
 }
 // Check if placing a blocking structure would seal ALL paths to base
 function wouldSealBase(col,row,structType){
@@ -2589,6 +2725,68 @@ function renderTile(tc,c,r,pxOverride,pyOverride){
     // Crown icon
     tc.fillStyle='rgba(220,190,80,0.8)';tc.font='bold 16px system-ui';tc.textAlign='center';tc.textBaseline='middle';
     tc.fillText('👑',px+TILE_SIZE/2,py+TILE_SIZE/2);tc.textAlign='start';tc.textBaseline='alphabetic';
+  }
+  // Gold deposit — glittering nuggets
+  if(tile===T.GOLD){
+    for(let i=0;i<4;i++){
+      const gx=px+5+hash(c*17+i,r*23)*22, gy=py+5+hash(c*29+i,r*11)*22;
+      const gs=2+hash(c+i*5,r+i*3)*2.5;
+      tc.fillStyle=`rgba(220,190,60,${0.6+hash(c+i,r+i)*0.35})`;
+      tc.beginPath();tc.arc(gx,gy,gs,0,Math.PI*2);tc.fill();
+    }
+    // Sparkle highlight
+    tc.fillStyle='rgba(255,240,120,0.4)';tc.beginPath();tc.arc(px+16,py+14,2,0,Math.PI*2);tc.fill();
+  }
+  // ─── DEPLETED NODE VISUALS ───
+  if(tile===T.TREE_DEPLETED){
+    // Bare stump
+    tc.fillStyle='rgba(74,53,32,0.5)';tc.fillRect(px+12,py+18,8,12);
+    tc.fillStyle='rgba(90,70,45,0.4)';tc.fillRect(px+10,py+17,12,3);
+    // Axe marks
+    tc.strokeStyle='rgba(50,35,20,0.3)';tc.lineWidth=1;
+    tc.beginPath();tc.moveTo(px+11,py+20);tc.lineTo(px+15,py+24);tc.stroke();
+    tc.beginPath();tc.moveTo(px+19,py+19);tc.lineTo(px+16,py+23);tc.stroke();
+  }
+  if(tile===T.STONE_DEPLETED){
+    // Cracked rubble
+    tc.fillStyle='rgba(85,85,90,0.35)';tc.beginPath();tc.arc(px+10,py+20,3,0,Math.PI*2);tc.fill();
+    tc.fillStyle='rgba(75,75,82,0.3)';tc.beginPath();tc.arc(px+22,py+22,2.5,0,Math.PI*2);tc.fill();
+    tc.strokeStyle='rgba(60,60,68,0.25)';tc.lineWidth=0.8;
+    tc.beginPath();tc.moveTo(px+8,py+14);tc.lineTo(px+18,py+18);tc.lineTo(px+24,py+12);tc.stroke();
+  }
+  if(tile===T.ORE_DEPLETED){
+    // Empty pit marks
+    tc.fillStyle='rgba(50,60,75,0.3)';tc.beginPath();tc.arc(px+14,py+16,4,0,Math.PI*2);tc.fill();
+    tc.fillStyle='rgba(45,55,70,0.25)';tc.beginPath();tc.arc(px+22,py+20,3,0,Math.PI*2);tc.fill();
+    tc.strokeStyle='rgba(40,50,65,0.2)';tc.lineWidth=0.7;
+    tc.beginPath();tc.moveTo(px+10,py+10);tc.lineTo(px+20,py+20);tc.stroke();
+  }
+  if(tile===T.BERRY_DEPLETED){
+    // Bare bush (no berries, just stems)
+    tc.fillStyle='rgba(60,80,40,0.35)';tc.fillRect(px+14,py+12,4,8);
+    tc.strokeStyle='rgba(55,75,35,0.3)';tc.lineWidth=0.8;
+    tc.beginPath();tc.moveTo(px+16,py+12);tc.lineTo(px+10,py+8);tc.stroke();
+    tc.beginPath();tc.moveTo(px+16,py+12);tc.lineTo(px+22,py+9);tc.stroke();
+    tc.beginPath();tc.moveTo(px+16,py+14);tc.lineTo(px+8,py+16);tc.stroke();
+  }
+  if(tile===T.GOLD_DEPLETED){
+    // Scratched-out pit
+    tc.fillStyle='rgba(80,72,40,0.3)';tc.beginPath();tc.arc(px+16,py+16,5,0,Math.PI*2);tc.fill();
+    tc.strokeStyle='rgba(100,90,50,0.25)';tc.lineWidth=0.7;
+    tc.beginPath();tc.moveTo(px+8,py+12);tc.lineTo(px+24,py+20);tc.stroke();
+    tc.beginPath();tc.moveTo(px+20,py+10);tc.lineTo(px+12,py+22);tc.stroke();
+  }
+  // Deposit HP indicator (small dots showing remaining harvests)
+  if(DEPOSITS[tile]&&depositHP[c]&&depositHP[c][r]>0){
+    const dep=DEPOSITS[tile];
+    const hp=depositHP[c][r], maxHP=dep.maxHP;
+    if(hp<maxHP){
+      const pct=hp/maxHP;
+      tc.fillStyle=pct>0.5?'rgba(120,200,120,0.6)':pct>0.25?'rgba(200,180,60,0.6)':'rgba(200,80,60,0.6)';
+      const barW=TILE_SIZE-6;
+      tc.fillRect(px+3,py+TILE_SIZE-4,barW*pct,2);
+      tc.fillStyle='rgba(0,0,0,0.2)';tc.fillRect(px+3+barW*pct,py+TILE_SIZE-4,barW*(1-pct),2);
+    }
   }
   tc.strokeStyle='rgba(0,0,0,0.12)';tc.lineWidth=0.5;tc.strokeRect(px,py,TILE_SIZE,TILE_SIZE);
 }
@@ -3287,7 +3485,14 @@ function drawHoverTile(){
   if(hoverUnit){const def=UNIT_TYPES[hoverUnit.type];label=`${def.name} (${hoverUnit.hp}/${hoverUnit.maxHP} HP) 🍖${def.upkeep||0}/wave`;}
   else if(structures[sk])label=STRUCTS[structures[sk].type].name;
   else label=TILE_NAMES[tile];
-  if(isRes&&selectedTool==='gather'){const h=HARVEST[tile];label+=` (+${h.amt} ${h.res})`;}
+  if(isRes&&selectedTool==='gather'){
+    const dep=DEPOSITS[tile];
+    if(dep&&depositHP[col]&&depositHP[col][row]>0){
+      label+=` (+${dep.amt} ${dep.res}, ${depositHP[col][row]}/${dep.maxHP})`;
+    } else if(dep){
+      label+=` (+${dep.amt} ${dep.res})`;
+    }
+  }
   ctx.font='11px system-ui';ctx.textAlign='center';
   const tw=ctx.measureText(label).width+16;
   ctx.fillStyle='rgba(10,10,18,0.75)';ctx.fillRect(sx+sw/2-tw/2,sy-20,tw,18);
@@ -3425,6 +3630,7 @@ function updateUI(){
   document.getElementById('res-stone').textContent=game.resources.stone;
   document.getElementById('res-metal').textContent=game.resources.metal;
   document.getElementById('res-food').textContent=game.resources.food;
+  document.getElementById('res-gold').textContent=game.resources.gold;
   // Base HP bar
   const pct=game.baseHP/game.baseMaxHP*100;
   const fill=document.getElementById('base-hp-fill');
@@ -3518,6 +3724,7 @@ function restartGame(){
   floats.length=0; particles.length=0; spawnQueue.length=0;
   for(const k in structures) delete structures[k];
   cavalryPendingUnit=null;
+  regrowthQueue=[];
   // Regen map
   generateMap(); buildTileCache();
   // Reset cam — center on map
