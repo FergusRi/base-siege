@@ -558,10 +558,19 @@ let hqPlaced=false; // HQ placement state
 const FOG_UNEXPLORED=0, FOG_EXPLORED=1, FOG_VISIBLE=2;
 const HERO_FOG_RADIUS=3;   // hero reveals VISIBLE in tight radius (scout feel)
 const HERO_EXPLORE_RADIUS=10; // hero permanently reveals EXPLORED in wider radius
+const STRUCT_VIS_RADIUS=3;   // buildings reveal VISIBLE in this radius permanently
+const STRUCT_EXP_RADIUS=4;   // buildings reveal EXPLORED in this radius permanently
 let fogMap=[];  // fogMap[col][row] = FOG_UNEXPLORED | FOG_EXPLORED | FOG_VISIBLE
+// visionCount[c][r] = number of buildings granting permanent vision to this tile
+// When >0, tile stays VISIBLE even after hero/HQ vision decay
+let visionCount=[];
 function initFogMap(){
   fogMap=[];
-  for(let c=0;c<COLS;c++){fogMap[c]=[];for(let r=0;r<ROWS;r++) fogMap[c][r]=FOG_UNEXPLORED;}
+  visionCount=[];
+  for(let c=0;c<COLS;c++){
+    fogMap[c]=[];visionCount[c]=[];
+    for(let r=0;r<ROWS;r++){fogMap[c][r]=FOG_UNEXPLORED;visionCount[c][r]=0;}
+  }
 }
 function revealFog(cx,cy,visRadius,expRadius){
   // Reveal tiles: VISIBLE within visRadius, EXPLORED within expRadius
@@ -581,11 +590,11 @@ function revealFog(cx,cy,visRadius,expRadius){
 }
 // Track which tiles are currently VISIBLE so we can efficiently decay them
 let visibleTiles=[]; // array of [c,r] pairs
-// Downgrade VISIBLE tiles to EXPLORED using tracked list (O(n) where n=visible count)
+// Downgrade VISIBLE tiles to EXPLORED — SKIP tiles with permanent building vision
 function decayFogVisible(){
   for(let i=0;i<visibleTiles.length;i++){
     const[c,r]=visibleTiles[i];
-    if(fogMap[c][r]===FOG_VISIBLE) fogMap[c][r]=FOG_EXPLORED;
+    if(fogMap[c][r]===FOG_VISIBLE&&visionCount[c][r]===0) fogMap[c][r]=FOG_EXPLORED;
   }
   visibleTiles=[];
 }
@@ -606,23 +615,51 @@ function revealFogTracked(cx,cy,visRadius,expRadius){
     }
   }
 }
-// Refresh all vision sources (HQ + hero + structures) — call each frame
-let fogFrameCounter=0;
-function refreshFogVision(){
-  decayFogVisible();
-  // HQ vision
-  if(hqPlaced) revealFogTracked(BASE_CX,BASE_CY,HQ_VISION_RADIUS,HQ_VISION_RADIUS+2);
-  // Hero vision
-  const hc=heroCol(),hr=heroRow();
-  revealFogTracked(hc,hr,HERO_FOG_RADIUS,HERO_EXPLORE_RADIUS);
-  // Structures give small vision — only recalculate every 30 frames for perf
-  fogFrameCounter++;
-  if(fogFrameCounter%30===0){
-    for(const[key]of Object.entries(structures)){
-      const[sc,sr]=key.split(',').map(Number);
-      revealFogTracked(sc,sr,3,4);
+// ─── PERMANENT BUILDING VISION ───
+// Called when a building is placed — permanently reveals fog and increments visionCount
+function addStructureVision(col,row){
+  const vr=STRUCT_VIS_RADIUS,er=STRUCT_EXP_RADIUS;
+  for(let dc=-er;dc<=er;dc++){
+    for(let dr=-er;dr<=er;dr++){
+      const nc=col+dc,nr=row+dr;
+      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
+      const dist=Math.sqrt(dc*dc+dr*dr);
+      if(dist<=vr){
+        visionCount[nc][nr]++;
+        fogMap[nc][nr]=FOG_VISIBLE;
+      } else if(dist<=er&&fogMap[nc][nr]<FOG_EXPLORED){
+        fogMap[nc][nr]=FOG_EXPLORED;
+      }
     }
   }
+}
+// Called when a building is destroyed — decrements visionCount and re-fogs uncovered tiles
+function removeStructureVision(col,row){
+  const vr=STRUCT_VIS_RADIUS,er=STRUCT_EXP_RADIUS;
+  for(let dc=-er;dc<=er;dc++){
+    for(let dr=-er;dr<=er;dr++){
+      const nc=col+dc,nr=row+dr;
+      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
+      const dist=Math.sqrt(dc*dc+dr*dr);
+      if(dist<=vr){
+        visionCount[nc][nr]=Math.max(0,visionCount[nc][nr]-1);
+        // If no building covers this tile anymore, downgrade to EXPLORED (re-fog)
+        if(visionCount[nc][nr]===0&&fogMap[nc][nr]===FOG_VISIBLE){
+          fogMap[nc][nr]=FOG_EXPLORED;
+        }
+      }
+    }
+  }
+}
+// Refresh dynamic vision sources (hero only) — call each frame
+// HQ + building vision is permanent via visionCount, no periodic refresh needed
+let fogFrameCounter=0;
+function refreshFogVision(){
+  fogFrameCounter++;
+  decayFogVisible();
+  // Hero vision (dynamic, moves with hero)
+  const hc=heroCol(),hr=heroRow();
+  revealFogTracked(hc,hr,HERO_FOG_RADIUS,HERO_EXPLORE_RADIUS);
 }
 function distC(c,r){return Math.sqrt((c-BASE_CX)**2+(r-BASE_CY)**2);}
 // Distance from nearest map edge
@@ -723,8 +760,18 @@ function placeHQ(col,row){
   // Position hero near HQ
   hero.x=col*TILE_SIZE+TILE_SIZE/2;
   hero.y=(row-2)*TILE_SIZE+TILE_SIZE/2;
-  // Reveal fog around HQ
+  // Reveal fog around HQ permanently (HQ counts as a building for vision)
+  addStructureVision(col,row);
+  // Also reveal the wider HQ-specific radius
   revealFog(col,row,HQ_VISION_RADIUS,HQ_VISION_RADIUS+2);
+  // Mark HQ vision radius tiles as permanently visible via visionCount
+  for(let dc=-HQ_VISION_RADIUS;dc<=HQ_VISION_RADIUS;dc++){
+    for(let dr=-HQ_VISION_RADIUS;dr<=HQ_VISION_RADIUS;dr++){
+      const nc=col+dc,nr=row+dr;
+      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
+      if(Math.sqrt(dc*dc+dr*dr)<=HQ_VISION_RADIUS) visionCount[nc][nr]++;
+    }
+  }
   // Reveal fog around hero starting position
   const hc=Math.floor(hero.x/TILE_SIZE), hr_=Math.floor(hero.y/TILE_SIZE);
   revealFog(hc,hr_,HERO_FOG_RADIUS,HERO_EXPLORE_RADIUS);
@@ -1402,6 +1449,8 @@ function destroyStructure(key){
   addParticles(c*TILE_SIZE+TILE_SIZE/2,r*TILE_SIZE+TILE_SIZE/2,'rgba(160,120,80,0.8)',12);
   addParticles(c*TILE_SIZE+TILE_SIZE/2,r*TILE_SIZE+TILE_SIZE/2,'rgba(255,100,50,0.6)',8);
   cam.shake=Math.max(cam.shake,5);
+  // Remove permanent fog vision from this building (re-fog uncovered tiles)
+  removeStructureVision(c,r);
   delete structures[key];
 }
 
@@ -1736,6 +1785,7 @@ function updateEnemies(dt){
           addFloat('Gate destroyed!',gc*TILE_SIZE+TILE_SIZE/2,gr*TILE_SIZE,'#ff6644');
           addParticles(gc*TILE_SIZE+TILE_SIZE/2,gr*TILE_SIZE+TILE_SIZE/2,'rgba(90,75,55,0.8)',10);
           cam.shake=Math.max(cam.shake,4);
+          removeStructureVision(gc,gr);
           delete structures[sk];
         }
         if(e.hp<=0){killEnemy(e,i,'gate');continue;}
@@ -2669,6 +2719,8 @@ function handleBuild(col,row){
   if(wouldSealBase(col,row,selectedTool)){addFloat('Must leave a path to the base!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
   for(const[r,a] of Object.entries(def.cost))game.resources[r]-=a;
   structures[sk]={type:selectedTool,hp:def.hp,maxHP:def.hp,cooldown:0,active:true};
+  // Permanently reveal fog around new building
+  addStructureVision(col,row);
   addFloat(`${def.name} built!`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#7aca7a');
 }
 // Cavalry patrol waypoint state
@@ -2746,6 +2798,8 @@ function handleDemolish(col,row){
   }
   const s=structures[sk];if(!s)return;const def=STRUCTS[s.type];
   for(const[r,a]of Object.entries(def.cost))game.resources[r]+=Math.floor(a*0.5);
+  // Remove permanent fog vision from demolished building
+  removeStructureVision(col,row);
   delete structures[sk];
   addFloat(`${def.name} demolished`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ffaa44');
 }
