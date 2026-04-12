@@ -102,6 +102,7 @@
   <button class="tool-btn" data-tool="WALL" onclick="selectTool('WALL')"><span class="tool-key">1</span> Wall <span class="tool-cost">5S</span></button>
   <button class="tool-btn" data-tool="TOWER" onclick="selectTool('TOWER')"><span class="tool-key">2</span> Tower <span class="tool-cost">10W 5S 3M</span></button>
   <button class="tool-btn" data-tool="TRAP" onclick="selectTool('TRAP')"><span class="tool-key">3</span> Trap <span class="tool-cost">3W 1M</span></button>
+  <button class="tool-btn" data-tool="GATE" onclick="selectTool('GATE')"><span class="tool-key">4</span> Gate <span class="tool-cost">5W 2S</span></button>
   <span class="tb-sep">│</span>
   <button class="tool-btn" data-tool="DEMOLISH" onclick="selectTool('DEMOLISH')"><span class="tool-key">X</span> Demolish</button>
 </div>
@@ -140,6 +141,7 @@ const STRUCTS={
   WALL:{name:'Wall',cost:{stone:5},hp:60,color:[110,100,88],letter:'W'},
   TOWER:{name:'Tower',cost:{wood:10,stone:5,metal:3},hp:40,color:[80,70,62],letter:'T',range:5,dmg:4,rate:0.8},
   TRAP:{name:'Spike Trap',cost:{wood:3,metal:1},hp:1,color:[55,50,45],letter:'X',dmg:8,slow:0.5},
+  GATE:{name:'Gate',cost:{wood:5,stone:2},hp:30,color:[90,75,55],letter:'G',dmg:3,slow:0.6},
 };
 
 // ─── ENEMY DEFINITIONS ───
@@ -195,8 +197,9 @@ function isWalkable(c,r){
   if(c<0||c>=COLS||r<0||r>=ROWS) return false;
   if(map[c][r]===T.WATER) return false;
   const sk=c+','+r;
-  if(structures[sk]&&structures[sk].type==='WALL') return false;
-  return true;  // BASE tiles ARE walkable — enemies must reach them to attack
+  const s=structures[sk];
+  if(s&&(s.type==='WALL'||s.type==='TOWER')) return false;  // Walls & Towers block; Gates are walkable
+  return true;
 }
 
 // Binary min-heap for A*
@@ -468,49 +471,15 @@ function spawnEnemy(typeKey){
     path:finalPath, pathIdx:1,
     slowTimer:0,
     hitFlash:0,
-    wallTarget:null,
   });
   // Spawn flash effect
   addParticles(spawnX, spawnY, `rgba(${def.color[0]},${def.color[1]},${def.color[2]},0.9)`, 8);
 }
 
-// Find nearest wall adjacent to enemy position
-function findNearestWall(ec,er){
-  let best=null, bestDist=Infinity;
-  // Search outward in rings
-  const maxR=10;
-  for(let dc=-maxR;dc<=maxR;dc++){
-    for(let dr=-maxR;dr<=maxR;dr++){
-      const c=ec+dc, r=er+dr;
-      if(c<0||c>=COLS||r<0||r>=ROWS)continue;
-      const sk=c+','+r;
-      const s=structures[sk];
-      if(s&&(s.type==='WALL'||s.type==='TOWER')){
-        const d=Math.abs(dc)+Math.abs(dr);
-        if(d<bestDist){bestDist=d;best={c,r,key:sk};}
-      }
-    }
-  }
-  return best;
-}
-
-// Destroy a structure and trigger repath for all enemies
-function destroyStructure(key){
-  const s=structures[key];
-  if(!s)return;
-  const[c,r]=key.split(',').map(Number);
-  const def=STRUCTS[s.type];
-  addFloat(`${def.name} destroyed!`,c*TILE_SIZE+TILE_SIZE/2,r*TILE_SIZE,'#ff6644');
-  addParticles(c*TILE_SIZE+TILE_SIZE/2,r*TILE_SIZE+TILE_SIZE/2,`rgba(${def.color[0]},${def.color[1]},${def.color[2]},0.8)`,15);
-  cam.shake=Math.max(cam.shake,6);
-  delete structures[key];
-  // Repath all enemies so they take advantage of the gap
-  for(const e of enemies){
-    const ec=Math.floor(e.x/TILE_SIZE),er=Math.floor(e.y/TILE_SIZE);
-    e.path=findPath(ec,er,BASE_CX,BASE_CY);
-    e.pathIdx=1;
-  }
-}
+// ── Step 9: Wall-attacking for Brutes/Siege Rams (disabled for basic enemies) ──
+// function findNearestWall(ec,er){ ... }
+// function destroyStructure(key){ ... }
+// Will be re-enabled when Brute enemy type is added in Step 9.
 
 function killEnemy(e,i,source){
   addParticles(e.x,e.y,`rgba(${e.color[0]},${e.color[1]},${e.color[2]},0.8)`,12);
@@ -563,48 +532,11 @@ function updateEnemies(dt){
       if(newPath){
         e.path=newPath; e.pathIdx=1;
       } else {
-        // No path exists — walls fully blocking. Attack nearest wall!
-        if(!e.wallTarget){
-          e.wallTarget=findNearestWall(eCol,eRow);
-        }
-        if(e.wallTarget){
-          const wt=e.wallTarget;
-          const wx=wt.c*TILE_SIZE+TILE_SIZE/2, wy=wt.r*TILE_SIZE+TILE_SIZE/2;
-          const ddx=wx-e.x, ddy=wy-e.y, dist=Math.sqrt(ddx*ddx+ddy*ddy);
-
-          if(dist<TILE_SIZE*1.3){
-            // Adjacent to wall — attack it
-            if(e.attackCooldown<=0){
-              const s=structures[wt.key];
-              if(s){
-                s.hp-=e.dmg;
-                e.attackCooldown=e.attackRate;
-                e.hitFlash=0.3;
-                addFloat(`-${e.dmg}`,wx,wy-10,'#ffaa44');
-                addParticles(wx,wy,'rgba(140,120,90,0.7)',4);
-                cam.shake=Math.max(cam.shake,2);
-                if(s.hp<=0){
-                  destroyStructure(wt.key);
-                  e.wallTarget=null;
-                }
-              } else {
-                // Wall already gone — clear target, will repath next frame
-                e.wallTarget=null;
-              }
-            }
-          } else {
-            // Move toward the wall
-            const speed=e.speed*(e.slowTimer>0?0.4:1)*dt;
-            e.x+=ddx/dist*speed;
-            e.y+=ddy/dist*speed;
-          }
-        }
+        // No path — idle/wander (basic enemies don't attack walls; Step 9 Brutes will)
+        // Shouldn't happen due to wall placement validation, but just in case
       }
       continue;
     }
-
-    // Clear wall target if we have a valid path now
-    e.wallTarget=null;
 
     // Move along path
     const target=e.path[e.pathIdx];
@@ -617,15 +549,33 @@ function updateEnemies(dt){
 
       // Check for trap at this tile
       const sk=target.c+','+target.r;
-      const trap=structures[sk];
-      if(trap&&trap.type==='TRAP'&&trap.active){
+      const struct=structures[sk];
+      if(struct&&struct.type==='TRAP'&&struct.active){
         e.hp-=STRUCTS.TRAP.dmg;
         e.slowTimer=STRUCTS.TRAP.slow;
         e.hitFlash=1;
-        trap.active=false;
+        struct.active=false;
         addFloat(`-${STRUCTS.TRAP.dmg}`,e.x,e.y-10,'#e87a6a');
         addParticles(e.x,e.y,'rgba(180,60,40,0.7)',6);
         if(e.hp<=0){killEnemy(e,i,'trap');continue;}
+      }
+      // Gate: damages and slows enemies passing through, gate takes damage too
+      if(struct&&struct.type==='GATE'){
+        e.hp-=STRUCTS.GATE.dmg;
+        e.slowTimer=STRUCTS.GATE.slow;
+        e.hitFlash=0.5;
+        struct.hp-=e.dmg;  // enemy damages the gate back
+        addFloat(`-${STRUCTS.GATE.dmg}`,e.x,e.y-10,'#c8a050');
+        addParticles(e.x,e.y,'rgba(90,75,55,0.6)',4);
+        if(struct.hp<=0){
+          // Gate destroyed
+          const[gc,gr]=sk.split(',').map(Number);
+          addFloat('Gate destroyed!',gc*TILE_SIZE+TILE_SIZE/2,gr*TILE_SIZE,'#ff6644');
+          addParticles(gc*TILE_SIZE+TILE_SIZE/2,gr*TILE_SIZE+TILE_SIZE/2,'rgba(90,75,55,0.8)',10);
+          cam.shake=Math.max(cam.shake,4);
+          delete structures[sk];
+        }
+        if(e.hp<=0){killEnemy(e,i,'gate');continue;}
       }
     } else {
       const speed=e.speed*(e.slowTimer>0?0.4:1)*dt;
@@ -726,6 +676,7 @@ window.addEventListener('keydown',e=>{
     if(e.key==='1')selectTool('WALL');
     if(e.key==='2')selectTool('TOWER');
     if(e.key==='3')selectTool('TRAP');
+    if(e.key==='4')selectTool('GATE');
     if(e.key==='x'||e.key==='X')selectTool('DEMOLISH');
     if(e.key==='Escape')selectTool('gather');
   }
@@ -754,7 +705,8 @@ function heroCanWalkTo(wx,wy){
   if(c<0||c>=COLS||r<0||r>=ROWS)return false;
   if(map[c][r]===T.WATER)return false;
   const sk=c+','+r;
-  if(structures[sk]&&structures[sk].type==='WALL')return false;
+  const s=structures[sk];
+  if(s&&(s.type==='WALL'||s.type==='TOWER'||s.type==='GATE'))return false;
   return true;
 }
 
@@ -785,6 +737,24 @@ function handleGather(col,row){
   map[col][row]=T.GRASS;rebuildTile(col,row);
   addFloat(`+${h.amt} ${h.res.charAt(0).toUpperCase()+h.res.slice(1)}`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,RES_COLORS[h.res]);
 }
+// Check if placing a blocking structure would seal ALL paths to base
+function wouldSealBase(col,row,structType){
+  // Only walls and towers block pathfinding — gates don't
+  if(structType!=='WALL'&&structType!=='TOWER') return false;
+  const sk=col+','+row;
+  // Temporarily add the structure
+  structures[sk]={type:structType,hp:1,maxHP:1};
+  // Check from 4 carved spawn lane positions
+  const spawnPoints=[[BASE_CX,0],[BASE_CX,ROWS-1],[0,BASE_CY],[COLS-1,BASE_CY]];
+  let anyPath=false;
+  for(const[sc,sr] of spawnPoints){
+    if(findPath(sc,sr,BASE_CX,BASE_CY)){anyPath=true;break;}
+  }
+  // Remove temp structure
+  delete structures[sk];
+  return !anyPath;  // sealed if NO path exists from any spawn lane
+}
+
 function handleBuild(col,row){
   const def=STRUCTS[selectedTool];if(!def)return;
   const sk=col+','+row;
@@ -792,6 +762,8 @@ function handleBuild(col,row){
   const dist=Math.abs(col-heroCol())+Math.abs(row-heroRow());
   if(dist>BUILD_RANGE){addFloat('Too far!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
   if(!canAfford(selectedTool)){addFloat('Can\'t afford!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+  // Prevent sealing the base — must always leave a path
+  if(wouldSealBase(col,row,selectedTool)){addFloat('Must leave a path to the base!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
   for(const[r,a] of Object.entries(def.cost))game.resources[r]-=a;
   structures[sk]={type:selectedTool,hp:def.hp,maxHP:def.hp,cooldown:0,active:true};
   addFloat(`${def.name} built!`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#7aca7a');
@@ -923,6 +895,16 @@ function drawStructures(){
       ctx.strokeStyle=`rgba(180,60,40,${alpha})`;ctx.lineWidth=z*1.5;
       const m=sw*0.25;ctx.beginPath();ctx.moveTo(sx+m,sy+m);ctx.lineTo(sx+sw-m,sy+sw-m);ctx.moveTo(sx+sw-m,sy+m);ctx.lineTo(sx+m,sy+sw-m);ctx.stroke();
     }
+    if(s.type==='GATE'){
+      // Portcullis style: vertical bars with cross bar
+      ctx.strokeStyle='rgba(160,130,70,0.6)';ctx.lineWidth=z*1.5;
+      const bars=4, gap=sw/(bars+1);
+      for(let b=1;b<=bars;b++){ctx.beginPath();ctx.moveTo(sx+gap*b,sy+z*2);ctx.lineTo(sx+gap*b,sy+sw-z*2);ctx.stroke();}
+      // Cross bars
+      ctx.strokeStyle='rgba(140,110,50,0.4)';ctx.lineWidth=z;
+      ctx.beginPath();ctx.moveTo(sx+z*2,sy+sw*0.33);ctx.lineTo(sx+sw-z*2,sy+sw*0.33);
+      ctx.moveTo(sx+z*2,sy+sw*0.66);ctx.lineTo(sx+sw-z*2,sy+sw*0.66);ctx.stroke();
+    }
 
     ctx.fillStyle='rgba(255,255,255,0.35)';ctx.font=`bold ${12*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
     ctx.fillText(def.letter,sx+sw/2,sy+sw/2);
@@ -1023,6 +1005,14 @@ function drawHero(now){
 }
 
 // ─── DRAW GHOST PREVIEW ───
+// Cached seal check for ghost preview (avoid running A* every frame)
+let _sealCache={col:-1,row:-1,tool:'',result:false};
+function cachedWouldSeal(col,row,tool){
+  if(_sealCache.col===col&&_sealCache.row===row&&_sealCache.tool===tool)return _sealCache.result;
+  _sealCache={col,row,tool,result:wouldSealBase(col,row,tool)};
+  return _sealCache.result;
+}
+
 function drawGhostPreview(){
   if(game.phase!=='BUILD'||selectedTool==='gather'||selectedTool==='DEMOLISH'||isTouching)return;
   const z=cam.zoom;
@@ -1030,7 +1020,8 @@ function drawGhostPreview(){
   if(col<0||col>=COLS||row<0||row>=ROWS)return;
   const sx=(col*TILE_SIZE-cam.x)*z,sy=(row*TILE_SIZE-cam.y)*z,sw=TILE_SIZE*z;
   const sk=col+','+row;
-  const valid=map[col][row]===T.GRASS&&!structures[sk]&&(Math.abs(col-heroCol())+Math.abs(row-heroRow()))<=BUILD_RANGE&&canAfford(selectedTool);
+  const basicValid=map[col][row]===T.GRASS&&!structures[sk]&&(Math.abs(col-heroCol())+Math.abs(row-heroRow()))<=BUILD_RANGE&&canAfford(selectedTool);
+  const valid=basicValid&&!cachedWouldSeal(col,row,selectedTool);
   const def=STRUCTS[selectedTool];const[cr,cg,cb]=def.color;
   ctx.fillStyle=valid?`rgba(${cr},${cg},${cb},0.45)`:'rgba(200,50,50,0.25)';ctx.fillRect(sx,sy,sw,sw);
   ctx.fillStyle=`rgba(255,255,255,${valid?0.3:0.15})`;ctx.font=`bold ${12*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
