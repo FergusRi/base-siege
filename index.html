@@ -154,7 +154,7 @@
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════
-//  BASE SIEGE — Step 5: Unit Recruitment & Placement
+//  BASE SIEGE — Step 6: Autonomous Unit AI
 // ═══════════════════════════════════════════════════
 
 // ─── CONSTANTS ───
@@ -492,6 +492,12 @@ function endWave(){
   // Hero full heal on wave clear
   hero.hp=hero.maxHP;
   hero.stunTimer=0;
+  // Heal surviving units (50% of missing HP)
+  for(const u of units){
+    const missing=u.maxHP-u.hp;
+    u.hp=Math.min(u.maxHP, u.hp+Math.ceil(missing*0.5));
+    u.atkCooldown=0;
+  }
 
   // Bonus resources
   const bonus=2+game.wave;
@@ -549,11 +555,15 @@ function spawnEnemy(typeKey){
 // function destroyStructure(key){ ... }
 // Will be re-enabled when Brute enemy type is added in Step 9.
 
-function killEnemy(e,i,source){
+function killEnemy(e,i,source,sourceUnit){
   addParticles(e.x,e.y,`rgba(${e.color[0]},${e.color[1]},${e.color[2]},0.8)`,12);
   game.enemiesKilled++;
   if(source==='tower')game.killsByTower++;
   if(source==='trap')game.killsByTrap++;
+  if(source==='unit'&&sourceUnit){
+    sourceUnit.xp+=10; // bonus XP for kill
+    game.killsByUnit=(game.killsByUnit||0)+1;
+  }
   enemies.splice(i,1);
 }
 
@@ -648,6 +658,16 @@ function updateEnemies(dt){
         // Prioritize attacking hero over moving
         const eDmg=ENEMY_TYPES[e.type].dmg;
         damageHero(eDmg);
+        e.attackCooldown=e.attackRate;
+      }
+    }
+
+    // Enemy retargeting: attack adjacent units (30% chance per tick when cooldown ready)
+    if(e.attackCooldown<=0){
+      const adjacentUnit=findAdjacentUnit(eCol,eRow);
+      if(adjacentUnit&&Math.random()<0.3){
+        const eDmg=ENEMY_TYPES[e.type].dmg;
+        damageUnit(adjacentUnit,eDmg,e);
         e.attackCooldown=e.attackRate;
       }
     }
@@ -784,11 +804,19 @@ function updateProjectiles(dt){
       if(p.target&&p.target.hp>0){
         p.target.hp-=p.dmg;
         p.target.hitFlash=1;
-        addFloat(`-${p.dmg}`,p.target.x,p.target.y-10,'#ffaa44');
-        addParticles(p.target.x,p.target.y,'rgba(255,180,80,0.7)',4);
+        const floatColor=p.source==='unit'?'#7ab0d8':'#ffaa44';
+        const partColor=p.source==='unit'?'rgba(80,180,110,0.7)':'rgba(255,180,80,0.7)';
+        addFloat(`-${p.dmg}`,p.target.x,p.target.y-10,floatColor);
+        addParticles(p.target.x,p.target.y,partColor,4);
         if(p.target.hp<=0){
           const idx=enemies.indexOf(p.target);
-          if(idx>=0)killEnemy(p.target,idx,'tower');
+          if(idx>=0){
+            if(p.source==='unit'&&p.sourceUnit){
+              killEnemy(p.target,idx,'unit',p.sourceUnit);
+            } else {
+              killEnemy(p.target,idx,'tower');
+            }
+          }
         }
       }
       projectiles.splice(i,1);
@@ -799,6 +827,102 @@ function updateProjectiles(dt){
     if(p.target&&p.target.hp>0){p.tx=p.target.x;p.ty=p.target.y;}
     p.x+=dx/dist*speed;
     p.y+=dy/dist*speed;
+  }
+}
+
+
+// ═══════════════════════════════════════════
+//  UNIT AI (Step 6)
+// ═══════════════════════════════════════════
+
+const UNIT_ATK_RATE_MILITIA=0.8;  // seconds between militia swings
+const UNIT_ATK_RATE_ARCHER=1.2;   // seconds between archer shots
+
+function updateUnits(dt){
+  if(game.phase!=='COMBAT')return;
+
+  for(let i=units.length-1;i>=0;i--){
+    const u=units[i];
+    u.atkCooldown=Math.max(0,u.atkCooldown-dt);
+    if(u.atkCooldown>0)continue;
+
+    const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
+    const rangePx=u.range*TILE_SIZE;
+
+    // Find nearest enemy in range
+    let nearest=null, nearDist=Infinity;
+    for(const e of enemies){
+      const dx=e.x-ux, dy=e.y-uy, d=Math.sqrt(dx*dx+dy*dy);
+      if(d<=rangePx&&d<nearDist){nearDist=d;nearest=e;}
+    }
+    if(!nearest)continue;
+
+    if(u.type==='MILITIA'){
+      // Melee attack — immediate damage
+      u.atkCooldown=UNIT_ATK_RATE_MILITIA;
+      nearest.hp-=u.dmg;
+      nearest.hitFlash=1;
+      addFloat(`-${u.dmg}`,nearest.x,nearest.y-14,'#7ab0d8');
+      addParticles(nearest.x,nearest.y,'rgba(90,140,200,0.7)',4);
+
+      if(nearest.hp<=0){
+        const idx=enemies.indexOf(nearest);
+        if(idx>=0){killEnemy(nearest,idx,'unit',u);u.xp+=10;}
+      } else {
+        u.xp+=1; // XP for hitting
+      }
+    }
+    else if(u.type==='ARCHER'){
+      // Ranged attack — fire a projectile
+      u.atkCooldown=UNIT_ATK_RATE_ARCHER;
+      projectiles.push({
+        x:ux, y:uy,
+        tx:nearest.x, ty:nearest.y,
+        speed:250,
+        dmg:u.dmg,
+        target:nearest,
+        age:0,
+        source:'unit',  // mark as unit projectile
+        sourceUnit:u,    // reference to the unit that fired
+        color:'rgba(80,180,110,0.9)',   // green-teal for archer projectiles
+        trailColor:'rgba(80,180,110,0.3)',
+      });
+      u.xp+=1; // XP for shooting
+    }
+  }
+}
+
+// ─── ENEMY RETARGETING: Enemies attack units blocking their path ───
+function findAdjacentUnit(eCol,eRow){
+  // Check 4 adjacent tiles for a unit
+  const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
+  let nearest=null, nearHP=Infinity;
+  for(const[dc,dr] of dirs){
+    const nc=eCol+dc, nr=eRow+dr;
+    const u=unitAt(nc,nr);
+    if(u&&u.hp>0&&u.hp<nearHP){nearest=u;nearHP=u.hp;}  // Target lowest HP unit
+  }
+  return nearest;
+}
+
+function damageUnit(u,dmg,e){
+  u.hp=Math.max(0,u.hp-dmg);
+  const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
+  addFloat(`-${dmg}`,ux,uy-14,'#ff6644');
+  addParticles(ux,uy,'rgba(255,80,60,0.6)',3);
+
+  if(u.hp<=0){
+    // Unit death
+    const idx=units.indexOf(u);
+    if(idx>=0){
+      const def=UNIT_TYPES[u.type];
+      addFloat(`${def.name} fallen!`,ux,uy-TILE_SIZE,'#ff4444');
+      // Death particles — dramatic burst
+      addParticles(ux,uy,`rgba(${def.color[0]},${def.color[1]},${def.color[2]},0.8)`,15);
+      addParticles(ux,uy,'rgba(200,50,30,0.6)',8);
+      cam.shake=Math.max(cam.shake,3);
+      units.splice(idx,1);
+    }
   }
 }
 
@@ -1118,6 +1242,12 @@ function drawUnits(now){
     ctx.fillStyle=`rgb(${cr},${cg},${cb})`;
     ctx.fillRect(sx+z*1.5,sy+z*1.5,sw-z*3,sw-z*3);
 
+    // Attack flash (unit just attacked — cooldown near max)
+    if(game.phase==='COMBAT'&&u.atkCooldown>(u.type==='MILITIA'?UNIT_ATK_RATE_MILITIA*0.7:UNIT_ATK_RATE_ARCHER*0.7)){
+      ctx.fillStyle='rgba(255,255,200,0.25)';
+      ctx.fillRect(sx+z*1.5,sy+z*1.5,sw-z*3,sw-z*3);
+    }
+
     // Rank border glow
     if(rank>0){
       const rankColors=['','rgba(180,180,100,0.3)','rgba(200,160,60,0.4)','rgba(255,200,80,0.5)'];
@@ -1138,8 +1268,8 @@ function drawUnits(now){
       ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,def.range*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
     }
 
-    // HP bar (show if damaged)
-    if(u.hp<u.maxHP){
+    // HP bar — always visible during combat, or when damaged
+    if(game.phase==='COMBAT'||u.hp<u.maxHP){
       const bw=sw*0.8,bh=3*z;
       ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(sx+(sw-bw)/2,sy-bh-z*2,bw,bh);
       const hpPct=u.hp/u.maxHP;
@@ -1201,13 +1331,14 @@ function drawEnemies(now){
 // ─── DRAW PROJECTILES ───
 function drawProjectiles(){
   const z=cam.zoom;
-  ctx.fillStyle='rgba(255,200,80,0.9)';
   for(const p of projectiles){
     const px=(p.x-cam.x)*z, py=(p.y-cam.y)*z;
+    // Use unit projectile color if available, else tower gold
+    ctx.fillStyle=p.color||'rgba(255,200,80,0.9)';
     ctx.beginPath();ctx.arc(px,py,3*z,0,Math.PI*2);ctx.fill();
     // Trail
     const dx=p.tx-p.x,dy=p.ty-p.y,d=Math.sqrt(dx*dx+dy*dy)||1;
-    ctx.strokeStyle='rgba(255,200,80,0.3)';ctx.lineWidth=2*z;
+    ctx.strokeStyle=p.trailColor||'rgba(255,200,80,0.3)';ctx.lineWidth=2*z;
     ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(px-dx/d*8*z, py-dy/d*8*z);ctx.stroke();
   }
 }
@@ -1479,6 +1610,7 @@ function draw(now){
   if(game.phase==='COMBAT'){
     updateEnemies(dt);
     updateTowers(dt);
+    updateUnits(dt);
     updateProjectiles(dt);
   }
   updateCamera();
