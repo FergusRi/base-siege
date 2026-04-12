@@ -440,6 +440,7 @@ function spawnEnemy(typeKey){
 
   // Find path to base center
   const path=findPath(pos.c, pos.r, BASE_CX, BASE_CY);
+  console.log('SPAWN',typeKey,'at',pos.c,pos.r,'tile:',map[pos.c][pos.r],'path:',path?path.length+'nodes':'NULL');
 
   enemies.push({
     type:typeKey, x:wx, y:wy,
@@ -1161,6 +1162,13 @@ function draw(now){
     ctx.fillStyle=`rgba(150,30,20,${0.02+Math.sin(now*0.003)*0.01})`;
     ctx.fillRect(0,0,canvas.width,canvas.height);
   }
+
+  // DEBUG HUD
+  ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(0,canvas.height-60,340,60);
+  ctx.fillStyle='#0f0';ctx.font='13px monospace';
+  ctx.fillText(`Phase: ${game.phase} | Enemies: ${enemies.length} | Queue: ${spawnQueue.length} | Wave: ${game.wave}`,8,canvas.height-40);
+  if(enemies.length>0){const e0=enemies[0];ctx.fillText(`E0 pos:(${e0.x.toFixed(0)},${e0.y.toFixed(0)}) pathIdx:${e0.pathIdx} pathLen:${e0.path?e0.path.length:'null'}`,8,canvas.height-20);}
+  else{ctx.fillText('No enemies alive',8,canvas.height-20);}
 
   updateUI();
   drawMinimap();
