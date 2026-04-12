@@ -323,7 +323,7 @@
   <div class="ui-stat"><span class="ui-label">Formation</span><span class="ui-val" id="ui-formation" style="color:#8ad0ff">—</span></div>
 </div>
 <canvas id="game-canvas"></canvas>
-<canvas id="minimap" width="180" height="120"></canvas>
+<canvas id="minimap" width="240" height="160"></canvas>
 <div id="hint">WASD move · Click gather · Q/E/R/F/T units · 1-4 build · SPACE fight · Tab cycle · X disband · 🍖 Units cost food!</div>
 <div id="wave-banner"></div>
 <div id="wave-preview-overlay"></div>
@@ -372,21 +372,21 @@
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════
-//  BASE SIEGE — Step 13b: Larger Map (80×50)
+//  BASE SIEGE — Step 14B+: Mega Map (475×316) + 4× Resources
 // ═══════════════════════════════════════════════════
 
 // ─── CONSTANTS ───
-const COLS=150, ROWS=100, TILE_SIZE=32;
+const COLS=475, ROWS=316, TILE_SIZE=32;
 const MAP_PX_W=COLS*TILE_SIZE, MAP_PX_H=ROWS*TILE_SIZE;
 // HQ position — set dynamically when player places HQ (default center for now)
 let BASE_CX=Math.floor(COLS/2), BASE_CY=Math.floor(ROWS/2);
-const BASE_CLEAR_RADIUS=10;
-const HQ_VISION_RADIUS=4;
+const BASE_CLEAR_RADIUS=20;
+const HQ_VISION_RADIUS=6;
 const HQ_HP=200;
 const CAM_LERP=0.1, MAX_ZOOM=2.0;
-function getMinZoom(){const c=document.getElementById('game-canvas');if(!c)return 0.2;return Math.max(c.width/MAP_PX_W,c.height/MAP_PX_H);}
-const HERO_SPEED=6*TILE_SIZE;
-const HARVEST_RANGE=5, BUILD_RANGE=10;
+function getMinZoom(){const c=document.getElementById('game-canvas');if(!c)return 0.1;return Math.max(c.width/MAP_PX_W,c.height/MAP_PX_H);}
+const HERO_SPEED=12*TILE_SIZE;
+const HARVEST_RANGE=7, BUILD_RANGE=15;
 const HERO_ATK_DMG=8, HERO_ATK_RATE=0.4, HERO_ATK_RANGE=1.2*TILE_SIZE;
 const HERO_KNOCKDOWN_TIME=10, HERO_REVIVE_PCT=0.25;
 
@@ -433,7 +433,7 @@ const UNIT_TYPES={
     color:[60,160,90],letter:'A',desc:'Ranged attacker',melee:false},
   SPEARMAN:{name:'Spearman',hp:16,dmg:3,range:1.5,speed:0,cost:{wood:4,food:3},upkeep:1,
     color:[180,160,60],letter:'S',desc:'Anti-fast, zone of control',melee:true},
-  CAVALRY:{name:'Cavalry',hp:18,dmg:6,range:1.3,speed:4.5,cost:{wood:8,food:5},upkeep:2,
+  CAVALRY:{name:'Cavalry',hp:18,dmg:6,range:1.3,speed:9,cost:{wood:8,food:5},upkeep:2,
     color:[160,100,60],letter:'C',desc:'Mobile patrol, charge bonus',melee:true},
   CATAPULT:{name:'Catapult',hp:8,dmg:12,range:6,speed:0,cost:{wood:12,stone:5,metal:4},upkeep:2,
     color:[120,90,70],letter:'K',desc:'AOE siege, slow fire, fragile',melee:false},
@@ -507,13 +507,13 @@ function showRankUpEffect(u,newRank){
 
 // ─── ENEMY DEFINITIONS ───
 const ENEMY_TYPES={
-  raider:      {name:'Raider',       hp:10, dmg:5,  speed:5,   color:[180,50,50],  attackRate:1.0, baseDmg:5,  letter:'E'},
-  runner:      {name:'Runner',       hp:5,  dmg:3,  speed:9,   color:[200,100,60], attackRate:0.8, baseDmg:3,  letter:'R'},
-  brute:       {name:'Brute',        hp:45, dmg:8,  speed:2.5, color:[140,40,40],  attackRate:1.5, baseDmg:10, letter:'B', smashWalls:true},
-  enemyArcher: {name:'Enemy Archer', hp:8,  dmg:6,  speed:3,   color:[160,80,130], attackRate:1.2, baseDmg:3,  letter:'A', ranged:true, range:5},
-  warchief:    {name:'Warchief',     hp:30, dmg:6,  speed:3.5, color:[200,40,80],  attackRate:1.0, baseDmg:7,  letter:'W', buffAura:true, buffRadius:4, buffDmgMult:1.3, buffSpeedMult:1.2},
-  siegeRam:    {name:'Siege Ram',    hp:60, dmg:3,  speed:2,   color:[100,70,50],  attackRate:2.0, baseDmg:15, letter:'S', targetsStructures:true, structDmg:20},
-  swarm:       {name:'Swarm',        hp:3,  dmg:2,  speed:7,   color:[170,120,70], attackRate:0.5, baseDmg:2,  letter:'z'},
+  raider:      {name:'Raider',       hp:10, dmg:5,  speed:10,  color:[180,50,50],  attackRate:1.0, baseDmg:5,  letter:'E'},
+  runner:      {name:'Runner',       hp:5,  dmg:3,  speed:18,  color:[200,100,60], attackRate:0.8, baseDmg:3,  letter:'R'},
+  brute:       {name:'Brute',        hp:45, dmg:8,  speed:5,   color:[140,40,40],  attackRate:1.5, baseDmg:10, letter:'B', smashWalls:true},
+  enemyArcher: {name:'Enemy Archer', hp:8,  dmg:6,  speed:6,   color:[160,80,130], attackRate:1.2, baseDmg:3,  letter:'A', ranged:true, range:5},
+  warchief:    {name:'Warchief',     hp:30, dmg:6,  speed:7,   color:[200,40,80],  attackRate:1.0, baseDmg:7,  letter:'W', buffAura:true, buffRadius:4, buffDmgMult:1.3, buffSpeedMult:1.2},
+  siegeRam:    {name:'Siege Ram',    hp:60, dmg:3,  speed:4,   color:[100,70,50],  attackRate:2.0, baseDmg:15, letter:'S', targetsStructures:true, structDmg:20},
+  swarm:       {name:'Swarm',        hp:3,  dmg:2,  speed:14,  color:[170,120,70], attackRate:0.5, baseDmg:2,  letter:'z'},
 };
 
 // ─── NOISE ───
@@ -542,9 +542,9 @@ function generateMap(){
     for(let r=0;r<ROWS;r++){
       tileVariant[c][r]=(hash(c*7+31,r*13+47)-0.5)*2;
       depositHP[c][r]=0;
-      const elev=fbm(c,r,4,0.06,2,0.5);
+      const elev=fbm(c,r,4,0.02,2,0.5);
       const ed=edgeDist(c,r);
-      if(elev<0.28&&ed>5){map[c][r]=T.WATER;continue;}
+      if(elev<0.28&&ed>8){map[c][r]=T.WATER;continue;}
       map[c][r]=T.GRASS;
     }
   }
@@ -563,40 +563,40 @@ function generateMap(){
 function placeResourceClusters(){
   const maxDist=Math.max(COLS,ROWS)/2;
   // Generate cluster seed points for each resource type
-  // Trees: everywhere, dense mid (0.15-0.7)
+  // Trees: everywhere, dense mid (0.15-0.7) — 4× clusters
   placeClusters(T.TREE, {
-    count:120, minSize:3, maxSize:7,
+    count:480, minSize:3, maxSize:7,
     minDist:0.05, maxDist:0.85,
     densityPeak:0.4, densityWidth:0.35,
-    noiseOctaves:3, noiseFreq:0.09, noiseThresh:0.42
+    noiseOctaves:3, noiseFreq:0.03, noiseThresh:0.42
   });
-  // Berry groves: scattered mid (0.15-0.6)
+  // Berry groves: scattered mid (0.15-0.6) — 4× clusters
   placeClusters(T.BERRY, {
-    count:40, minSize:2, maxSize:5,
+    count:160, minSize:2, maxSize:5,
     minDist:0.1, maxDist:0.6,
-    densityPeak:0.35, densityWidth:0.2,
-    noiseOctaves:2, noiseFreq:0.12, noiseThresh:0.55
+    densityPeak:0.35, densityWidth:0.25,
+    noiseOctaves:2, noiseFreq:0.04, noiseThresh:0.42
   });
-  // Stone quarries: clustered outer (0.45-0.85)
+  // Stone quarries: clustered outer (0.45-0.85) — 4× clusters
   placeClusters(T.STONE, {
-    count:50, minSize:3, maxSize:6,
+    count:200, minSize:3, maxSize:6,
     minDist:0.4, maxDist:0.85,
     densityPeak:0.65, densityWidth:0.2,
-    noiseOctaves:2, noiseFreq:0.1, noiseThresh:0.5
+    noiseOctaves:2, noiseFreq:0.035, noiseThresh:0.5
   });
-  // Iron veins: rare outer near edges (0.65-0.92)
+  // Iron veins: rare outer near edges (0.65-0.92) — 4× clusters
   placeClusters(T.ORE, {
-    count:20, minSize:2, maxSize:4,
-    minDist:0.6, maxDist:0.92,
-    densityPeak:0.78, densityWidth:0.15,
-    noiseOctaves:2, noiseFreq:0.15, noiseThresh:0.6
+    count:80, minSize:2, maxSize:4,
+    minDist:0.55, maxDist:0.92,
+    densityPeak:0.75, densityWidth:0.18,
+    noiseOctaves:2, noiseFreq:0.05, noiseThresh:0.45
   });
-  // Gold deposits: very rare, edge strip only (0.85-1.0)
+  // Gold deposits: very rare, edge strip only (0.80-1.0) — 4× clusters
   placeClusters(T.GOLD, {
-    count:8, minSize:2, maxSize:3,
-    minDist:0.82, maxDist:0.98,
-    densityPeak:0.92, densityWidth:0.08,
-    noiseOctaves:1, noiseFreq:0.2, noiseThresh:0.5
+    count:32, minSize:2, maxSize:3,
+    minDist:0.78, maxDist:0.99,
+    densityPeak:0.90, densityWidth:0.12,
+    noiseOctaves:1, noiseFreq:0.07, noiseThresh:0.45
   });
   // Initialize depositHP for all resource tiles
   for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
@@ -739,7 +739,7 @@ function findPath(sc,sr,tc,tr){
   const dirs=[[0,-1],[0,1],[-1,0],[1,0]]; // 4-directional
 
   let iterations=0;
-  while(open.size>0 && iterations<30000){
+  while(open.size>0 && iterations<200000){
     iterations++;
     const cur=open.pop();
     const ck=cur.c+','+cur.r;
@@ -778,11 +778,11 @@ function findPath(sc,sr,tc,tr){
 // ═══════════════════════════════════════════
 
 const WIN_WAVE=20; // survive this many waves to win
-const INITIAL_RESOURCES={wood:80,stone:45,metal:25,food:35,gold:0};
+const INITIAL_RESOURCES={wood:320,stone:180,metal:100,food:140,gold:0};
 
 const game={
   phase:'MENU', wave:0, baseHP:HQ_HP, baseMaxHP:HQ_HP,
-  resources:{wood:80,stone:45,metal:25,food:35,gold:0},
+  resources:{wood:320,stone:180,metal:100,food:140,gold:0},
   waveCountdown:-1, // -1 = not counting
   enemiesKilled:0,
   killsByTower:0,
@@ -2802,10 +2802,11 @@ function buildChunk(cx,cy){
   for(let dc=0;dc<tw;dc++)for(let dr=0;dr<th;dr++) renderTile(tc,cx*CHUNK_SIZE+dc,cy*CHUNK_SIZE+dr,dc*TILE_SIZE,dr*TILE_SIZE);
   return cc;
 }
-function buildTileCache(){tileChunks={};} // chunks built lazily on draw
+function buildTileCache(){tileChunks={};mmTerrainDirty=true;} // chunks built lazily on draw
 function rebuildTile(c,r){
   const cx=Math.floor(c/CHUNK_SIZE), cy=Math.floor(r/CHUNK_SIZE);
   delete tileChunks[chunkKey(cx,cy)]; // invalidate chunk
+  mmTerrainDirty=true;
 }
 
 
@@ -3587,25 +3588,46 @@ function drawParticles(){
   ctx.globalAlpha=1;
 }
 
-// ─── DRAW MINIMAP ───
+// ─── DRAW MINIMAP (cached terrain) ───
+let mmTerrainCache=null; // offscreen canvas for terrain layer
+let mmTerrainDirty=true;
+function invalidateMinimapTerrain(){mmTerrainDirty=true;}
+function buildMinimapTerrain(){
+  const mw=mmCanvas.width,mh=mmCanvas.height;
+  if(!mmTerrainCache){mmTerrainCache=document.createElement('canvas');mmTerrainCache.width=mw;mmTerrainCache.height=mh;}
+  const tc=mmTerrainCache.getContext('2d');
+  // Use ImageData for fast pixel writes
+  const id=tc.createImageData(mw,mh);
+  const d=id.data;
+  for(let py=0;py<mh;py++){
+    const r=Math.floor(py*ROWS/mh);
+    for(let px=0;px<mw;px++){
+      const c=Math.floor(px*COLS/mw);
+      const pal=TILE_COLORS[map[c][r]];
+      const off=(py*mw+px)*4;
+      d[off]=pal.base[0];d[off+1]=pal.base[1];d[off+2]=pal.base[2];d[off+3]=255;
+    }
+  }
+  tc.putImageData(id,0,0);
+  mmTerrainDirty=false;
+}
 function drawMinimap(){
   const mw=mmCanvas.width,mh=mmCanvas.height,sx=mw/COLS,sy=mh/ROWS;
-  mmCtx.fillStyle='#0a0a12';mmCtx.fillRect(0,0,mw,mh);
-  for(let c=0;c<COLS;c++)for(let r=0;r<ROWS;r++){
-    const pal=TILE_COLORS[map[c][r]];
-    mmCtx.fillStyle=`rgb(${pal.base[0]},${pal.base[1]},${pal.base[2]})`;
-    mmCtx.fillRect(c*sx,r*sy,sx+0.5,sy+0.5);
-  }
+  // Rebuild terrain cache if dirty
+  if(mmTerrainDirty||!mmTerrainCache) buildMinimapTerrain();
+  // Draw cached terrain
+  mmCtx.drawImage(mmTerrainCache,0,0);
+  // Structures overlay
   for(const[key,s]of Object.entries(structures)){
     const[c,r]=key.split(',').map(Number);const def=STRUCTS[s.type];
     mmCtx.fillStyle=`rgb(${def.color[0]+30},${def.color[1]+30},${def.color[2]+30})`;
-    mmCtx.fillRect(c*sx,r*sy,sx+0.5,sy+0.5);
+    mmCtx.fillRect(c*sx,r*sy,Math.max(sx,1),Math.max(sy,1));
   }
   // Units on minimap
   for(const u of units){
     const def=UNIT_TYPES[u.type];
     mmCtx.fillStyle=`rgb(${def.color[0]},${def.color[1]},${def.color[2]})`;
-    mmCtx.fillRect(u.col*sx,u.row*sy,sx+0.5,sy+0.5);
+    mmCtx.fillRect(u.col*sx,u.row*sy,Math.max(sx,1.5),Math.max(sy,1.5));
   }
   // Enemies on minimap
   mmCtx.fillStyle='rgba(220,60,50,0.9)';
@@ -3614,7 +3636,7 @@ function drawMinimap(){
     mmCtx.fillRect(ec-1,er-1,2.5,2.5);
   }
   // Base
-  if(hqPlaced){mmCtx.fillStyle='rgba(220,180,60,0.9)';mmCtx.fillRect(BASE_CX*sx-1,BASE_CY*sy-1,sx+2,sy+2);}
+  if(hqPlaced){mmCtx.fillStyle='rgba(220,180,60,0.9)';mmCtx.fillRect(BASE_CX*sx-1,BASE_CY*sy-1,Math.max(sx+2,3),Math.max(sy+2,3));}
   // Hero
   const hmc=(hero.x/TILE_SIZE)*sx,hmr=(hero.y/TILE_SIZE)*sy;
   mmCtx.fillStyle='#fff';mmCtx.beginPath();mmCtx.arc(hmc,hmr,3,0,Math.PI*2);mmCtx.fill();
