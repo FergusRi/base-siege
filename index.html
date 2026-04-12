@@ -134,6 +134,9 @@
   <span class="tb-sep">│</span>
   <button class="tool-btn recruit" data-tool="MILITIA" onclick="selectTool('MILITIA')"><span class="tool-key">Q</span> Militia <span class="tool-cost">5W 2F</span></button>
   <button class="tool-btn recruit" data-tool="ARCHER" onclick="selectTool('ARCHER')"><span class="tool-key">E</span> Archer <span class="tool-cost">5W 3M</span></button>
+  <button class="tool-btn recruit" data-tool="SPEARMAN" onclick="selectTool('SPEARMAN')"><span class="tool-key">R</span> Spear <span class="tool-cost">4W 3F</span></button>
+  <button class="tool-btn recruit" data-tool="CAVALRY" onclick="selectTool('CAVALRY')"><span class="tool-key">F</span> Cavalry <span class="tool-cost">8W 5F</span></button>
+  <button class="tool-btn recruit" data-tool="CATAPULT" onclick="selectTool('CATAPULT')"><span class="tool-key">T</span> Catapult <span class="tool-cost">12W 5S 4M</span></button>
   <span class="tb-sep">│</span>
   <button class="tool-btn" data-tool="DEMOLISH" onclick="selectTool('DEMOLISH')"><span class="tool-key">X</span> Demolish</button>
 </div>
@@ -148,14 +151,14 @@
 </div>
 <canvas id="game-canvas"></canvas>
 <canvas id="minimap" width="150" height="90"></canvas>
-<div id="hint">WASD to move · Click resources to gather · SPACE to start wave</div>
+<div id="hint">WASD move · Click to gather · Q/E/R/F/T units · 1-4 build · SPACE fight</div>
 <div id="wave-banner"></div>
 
 <script async src="https://vibej.am/2026/widget.js"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════
-//  BASE SIEGE — Step 7: Formation Bonuses
+//  BASE SIEGE — Step 8: Full Unit Roster
 // ═══════════════════════════════════════════════════
 
 // ─── CONSTANTS ───
@@ -188,10 +191,16 @@ const STRUCTS={
 
 // ─── UNIT DEFINITIONS ───
 const UNIT_TYPES={
-  MILITIA:{name:'Militia',hp:20,dmg:4,range:1.2,speed:0,cost:{wood:5,food:2},
-    color:[90,140,200],letter:'M',desc:'Sturdy melee fighter'},
+  MILITIA:{name:'Militia',hp:22,dmg:4,range:1.2,speed:0,cost:{wood:5,food:2},
+    color:[90,140,200],letter:'M',desc:'Sturdy melee fighter',melee:true},
   ARCHER:{name:'Archer',hp:12,dmg:5,range:4,speed:0,cost:{wood:5,metal:3},
-    color:[60,160,90],letter:'A',desc:'Ranged attacker'},
+    color:[60,160,90],letter:'A',desc:'Ranged attacker',melee:false},
+  SPEARMAN:{name:'Spearman',hp:16,dmg:3,range:1.5,speed:0,cost:{wood:4,food:3},
+    color:[180,160,60],letter:'S',desc:'Anti-fast, zone of control',melee:true},
+  CAVALRY:{name:'Cavalry',hp:18,dmg:6,range:1.3,speed:3.5,cost:{wood:8,food:5},
+    color:[160,100,60],letter:'C',desc:'Mobile patrol, charge bonus',melee:true},
+  CATAPULT:{name:'Catapult',hp:8,dmg:12,range:6,speed:0,cost:{wood:12,stone:5,metal:4},
+    color:[120,90,70],letter:'K',desc:'AOE siege, slow fire, fragile',melee:false},
 };
 const RANK_NAMES=['Recruit','Veteran','Elite','Champion'];
 function unitRank(xp){if(xp>=100)return 3;if(xp>=50)return 2;if(xp>=20)return 1;return 0;}
@@ -336,7 +345,7 @@ function findPath(sc,sr,tc,tr){
 
 const game={
   phase:'BUILD', wave:0, baseHP:100, baseMaxHP:100,
-  resources:{wood:50,stone:30,metal:15,food:20},
+  resources:{wood:60,stone:35,metal:20,food:25},
   waveCountdown:-1, // -1 = not counting
   enemiesKilled:0,
   killsByTower:0,
@@ -373,6 +382,8 @@ function updateHint(){
   if(game.phase==='COMBAT'){h.textContent='⚔️ COMBAT — WASD to move · Click to attack enemies · Defend the base!';return;}
   if(selectedTool==='gather')h.textContent='WASD to move · Click resources to gather · SPACE to start wave';
   else if(selectedTool==='DEMOLISH')h.textContent='Click a structure to demolish · ESC to cancel';
+  else if(cavalryPendingUnit){h.textContent='Click a patrol target (2-8 tiles from cavalry) · ESC to cancel';return;}
+  else if(selectedTool==='CAVALRY'){const u=UNIT_TYPES.CAVALRY;h.textContent=`Click to place ${u.name}, then click patrol target · ESC/G to cancel`;}
   else if(UNIT_TYPES[selectedTool]){const u=UNIT_TYPES[selectedTool];h.textContent=`Click to place ${u.name} · ESC/G to cancel`;}
   else{const s=STRUCTS[selectedTool];h.textContent=`Click to place ${s.name} · ESC/G to cancel`;}
 }
@@ -493,11 +504,12 @@ function endWave(){
   // Hero full heal on wave clear
   hero.hp=hero.maxHP;
   hero.stunTimer=0;
-  // Heal surviving units (50% of missing HP)
+  // Heal surviving units (50% of missing HP), reset cavalry charge
   for(const u of units){
     const missing=u.maxHP-u.hp;
     u.hp=Math.min(u.maxHP, u.hp+Math.ceil(missing*0.5));
     u.atkCooldown=0;
+    if(u.type==='CAVALRY')u.hasCharged=false; // reset charge for next wave
   }
 
   // Bonus resources
@@ -801,21 +813,52 @@ function updateProjectiles(dt){
     const dx=p.tx-p.x, dy=p.ty-p.y;
     const dist=Math.sqrt(dx*dx+dy*dy);
     if(dist<6){
-      // Hit
-      if(p.target&&p.target.hp>0){
-        p.target.hp-=p.dmg;
-        p.target.hitFlash=1;
-        const floatColor=p.source==='unit'?'#7ab0d8':'#ffaa44';
-        const partColor=p.source==='unit'?'rgba(80,180,110,0.7)':'rgba(255,180,80,0.7)';
-        addFloat(`-${p.dmg}`,p.target.x,p.target.y-10,floatColor);
-        addParticles(p.target.x,p.target.y,partColor,4);
-        if(p.target.hp<=0){
-          const idx=enemies.indexOf(p.target);
-          if(idx>=0){
-            if(p.source==='unit'&&p.sourceUnit){
-              killEnemy(p.target,idx,'unit',p.sourceUnit);
-            } else {
-              killEnemy(p.target,idx,'tower');
+      // Hit — check for AOE (catapult boulders)
+      if(p.aoe){
+        // AOE damage: hit all enemies within radius of impact point
+        const aoePx=CATAPULT_AOE_RADIUS*TILE_SIZE;
+        const impactX=p.tx, impactY=p.ty;
+        addParticles(impactX,impactY,'rgba(180,140,80,0.9)',12);
+        addParticles(impactX,impactY,'rgba(255,200,100,0.6)',8);
+        cam.shake=Math.max(cam.shake,4);
+        // Damage all enemies in AOE
+        for(let ei=enemies.length-1;ei>=0;ei--){
+          const ae=enemies[ei];
+          const adx=ae.x-impactX, ady=ae.y-impactY;
+          const adist=Math.sqrt(adx*adx+ady*ady);
+          if(adist<=aoePx){
+            // Damage falls off with distance: full at center, 50% at edge
+            const falloff=1-0.5*(adist/aoePx);
+            const aoeDmg=Math.max(1,Math.round(p.dmg*falloff));
+            ae.hp-=aoeDmg;
+            ae.hitFlash=1;
+            addFloat(`💥 −${aoeDmg}`,ae.x,ae.y-10,'#daa040');
+            if(ae.hp<=0){
+              if(p.source==='unit'&&p.sourceUnit){
+                killEnemy(ae,ei,'unit',p.sourceUnit);
+              } else {
+                killEnemy(ae,ei,'tower');
+              }
+            }
+          }
+        }
+      } else {
+        // Single-target hit
+        if(p.target&&p.target.hp>0){
+          p.target.hp-=p.dmg;
+          p.target.hitFlash=1;
+          const floatColor=p.source==='unit'?'#7ab0d8':'#ffaa44';
+          const partColor=p.source==='unit'?'rgba(80,180,110,0.7)':'rgba(255,180,80,0.7)';
+          addFloat(`−${p.dmg}`,p.target.x,p.target.y-10,floatColor);
+          addParticles(p.target.x,p.target.y,partColor,4);
+          if(p.target.hp<=0){
+            const idx=enemies.indexOf(p.target);
+            if(idx>=0){
+              if(p.source==='unit'&&p.sourceUnit){
+                killEnemy(p.target,idx,'unit',p.sourceUnit);
+              } else {
+                killEnemy(p.target,idx,'tower');
+              }
             }
           }
         }
@@ -833,11 +876,21 @@ function updateProjectiles(dt){
 
 
 // ═══════════════════════════════════════════
-//  UNIT AI (Step 6)
+//  UNIT AI (Step 8: Full Unit Roster)
 // ═══════════════════════════════════════════
 
-const UNIT_ATK_RATE_MILITIA=0.8;  // seconds between militia swings
-const UNIT_ATK_RATE_ARCHER=1.2;   // seconds between archer shots
+const UNIT_ATK_RATES={
+  MILITIA:0.8,    // seconds between militia swings
+  ARCHER:1.2,     // seconds between archer shots
+  SPEARMAN:0.9,   // spear thrusts
+  CAVALRY:0.7,    // fast mounted strikes
+  CATAPULT:3.0,   // slow siege fire
+};
+const SPEAR_FAST_MULT=2.0;   // 2× damage vs fast enemies
+const SPEAR_SLOW_RADIUS=1.5; // zone of control radius in tiles
+const SPEAR_SLOW_DUR=0.6;    // slow duration applied by zone
+const CAVALRY_CHARGE_MULT=2.5; // first-hit charge bonus multiplier
+const CATAPULT_AOE_RADIUS=1.5; // AOE radius in tiles (covers ~3×3)
 
 function updateUnits(dt){
   if(game.phase!=='COMBAT')return;
@@ -845,6 +898,57 @@ function updateUnits(dt){
   for(let i=units.length-1;i>=0;i--){
     const u=units[i];
     u.atkCooldown=Math.max(0,u.atkCooldown-dt);
+
+    // ── CAVALRY PATROL MOVEMENT ──
+    if(u.type==='CAVALRY'&&u.patrol&&u.patrol.length===2){
+      const wp=u.patrol[u.patrolIdx||0];
+      const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
+      const tx=wp.col*TILE_SIZE+TILE_SIZE/2, ty=wp.row*TILE_SIZE+TILE_SIZE/2;
+      const ddx=tx-ux, ddy=ty-uy, dist=Math.sqrt(ddx*ddx+ddy*ddy);
+
+      // Check for enemies to attack while moving
+      const rangePx=u.range*TILE_SIZE;
+      let nearest=null, nearDist=Infinity;
+      for(const e of enemies){
+        const edx=e.x-ux, edy=e.y-uy, ed=Math.sqrt(edx*edx+edy*edy);
+        if(ed<=rangePx&&ed<nearDist){nearDist=ed;nearest=e;}
+      }
+      if(nearest&&u.atkCooldown<=0){
+        // Attack! Apply charge bonus if first hit
+        let dmg=u.dmg;
+        if(!u.hasCharged){dmg=Math.round(u.dmg*CAVALRY_CHARGE_MULT);u.hasCharged=true;}
+        u.atkCooldown=getUnitAtkRate(u);
+        nearest.hp-=dmg;
+        nearest.hitFlash=1;
+        const isCharge=dmg>u.dmg;
+        addFloat(`${isCharge?'⚡ ':''}−${dmg}`,nearest.x,nearest.y-14,isCharge?'#ffcc44':'#c88040');
+        addParticles(nearest.x,nearest.y,isCharge?'rgba(255,200,60,0.8)':'rgba(160,100,60,0.7)',isCharge?8:4);
+        if(isCharge)cam.shake=Math.max(cam.shake,3);
+        if(nearest.hp<=0){
+          const idx=enemies.indexOf(nearest);
+          if(idx>=0){killEnemy(nearest,idx,'unit',u);u.xp+=10;}
+        } else { u.xp+=1; }
+      }
+
+      // Move toward waypoint
+      if(dist>TILE_SIZE*0.5){
+        const speed=UNIT_TYPES.CAVALRY.speed*TILE_SIZE*dt;
+        const ncol=Math.floor((ux+ddx/dist*speed)/TILE_SIZE);
+        const nrow=Math.floor((uy+ddy/dist*speed)/TILE_SIZE);
+        // Only move if target tile is walkable and not occupied by another unit
+        if(ncol>=0&&ncol<COLS&&nrow>=0&&nrow<ROWS&&
+           map[ncol][nrow]!==T.WATER&&!structures[ncol+','+nrow]&&
+           (ncol===u.col&&nrow===u.row||!unitAt(ncol,nrow))){
+          u.col=ncol; u.row=nrow;
+        }
+      } else {
+        // Reached waypoint — switch to other
+        u.patrolIdx=(u.patrolIdx||0)===0?1:0;
+        u.hasCharged=false; // reset charge for next pass
+      }
+      continue; // cavalry handled, skip normal attack logic
+    }
+
     if(u.atkCooldown>0)continue;
 
     const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
@@ -863,32 +967,86 @@ function updateUnits(dt){
       u.atkCooldown=getUnitAtkRate(u);
       nearest.hp-=u.dmg;
       nearest.hitFlash=1;
-      addFloat(`-${u.dmg}`,nearest.x,nearest.y-14,'#7ab0d8');
+      addFloat(`−${u.dmg}`,nearest.x,nearest.y-14,'#7ab0d8');
       addParticles(nearest.x,nearest.y,'rgba(90,140,200,0.7)',4);
-
       if(nearest.hp<=0){
         const idx=enemies.indexOf(nearest);
         if(idx>=0){killEnemy(nearest,idx,'unit',u);u.xp+=10;}
-      } else {
-        u.xp+=1; // XP for hitting
-      }
+      } else { u.xp+=1; }
     }
     else if(u.type==='ARCHER'){
-      // Ranged attack — fire a projectile (Protected Fire = 20% faster)
+      // Ranged attack — fire a projectile
       u.atkCooldown=getUnitAtkRate(u);
       projectiles.push({
-        x:ux, y:uy,
-        tx:nearest.x, ty:nearest.y,
-        speed:250,
-        dmg:u.dmg,
-        target:nearest,
-        age:0,
-        source:'unit',  // mark as unit projectile
-        sourceUnit:u,    // reference to the unit that fired
-        color:'rgba(80,180,110,0.9)',   // green-teal for archer projectiles
-        trailColor:'rgba(80,180,110,0.3)',
+        x:ux, y:uy, tx:nearest.x, ty:nearest.y,
+        speed:250, dmg:u.dmg, target:nearest, age:0,
+        source:'unit', sourceUnit:u,
+        color:'rgba(80,180,110,0.9)', trailColor:'rgba(80,180,110,0.3)',
       });
-      u.xp+=1; // XP for shooting
+      u.xp+=1;
+    }
+    else if(u.type==='SPEARMAN'){
+      // Spear thrust — 2× damage vs fast enemies (runners), zone of control slow
+      u.atkCooldown=getUnitAtkRate(u);
+      const isFast=ENEMY_TYPES[nearest.type]&&ENEMY_TYPES[nearest.type].speed>=5;
+      const dmg=isFast?Math.round(u.dmg*SPEAR_FAST_MULT):u.dmg;
+      nearest.hp-=dmg;
+      nearest.hitFlash=1;
+      addFloat(`${isFast?'🔱 ':''}−${dmg}`,nearest.x,nearest.y-14,isFast?'#ffe040':'#c0b040');
+      addParticles(nearest.x,nearest.y,isFast?'rgba(255,220,60,0.8)':'rgba(180,160,60,0.7)',isFast?6:4);
+      // Zone of control: slow all enemies within radius
+      const zocPx=SPEAR_SLOW_RADIUS*TILE_SIZE;
+      for(const e of enemies){
+        const edx=e.x-ux, edy=e.y-uy;
+        if(Math.sqrt(edx*edx+edy*edy)<=zocPx){
+          e.slowTimer=Math.max(e.slowTimer,SPEAR_SLOW_DUR);
+        }
+      }
+      if(nearest.hp<=0){
+        const idx=enemies.indexOf(nearest);
+        if(idx>=0){killEnemy(nearest,idx,'unit',u);u.xp+=10;}
+      } else { u.xp+=isFast?2:1; }
+    }
+    else if(u.type==='CAVALRY'){
+      // Stationary cavalry (no patrol set) — melee attack with charge bonus
+      u.atkCooldown=getUnitAtkRate(u);
+      let dmg=u.dmg;
+      if(!u.hasCharged){dmg=Math.round(u.dmg*CAVALRY_CHARGE_MULT);u.hasCharged=true;}
+      nearest.hp-=dmg;
+      nearest.hitFlash=1;
+      const isCharge=dmg>u.dmg;
+      addFloat(`${isCharge?'⚡ ':''}−${dmg}`,nearest.x,nearest.y-14,isCharge?'#ffcc44':'#c88040');
+      addParticles(nearest.x,nearest.y,isCharge?'rgba(255,200,60,0.8)':'rgba(160,100,60,0.7)',isCharge?8:4);
+      if(isCharge)cam.shake=Math.max(cam.shake,3);
+      if(nearest.hp<=0){
+        const idx=enemies.indexOf(nearest);
+        if(idx>=0){killEnemy(nearest,idx,'unit',u);u.xp+=10;}
+      } else { u.xp+=1; }
+    }
+    else if(u.type==='CATAPULT'){
+      // Catapult — AOE boulder, slow fire, area damage
+      u.atkCooldown=getUnitAtkRate(u);
+      projectiles.push({
+        x:ux, y:uy, tx:nearest.x, ty:nearest.y,
+        speed:160, dmg:u.dmg, target:nearest, age:0,
+        source:'unit', sourceUnit:u, aoe:true,
+        color:'rgba(160,120,80,0.95)', trailColor:'rgba(140,100,60,0.4)',
+        size:5, // bigger projectile
+      });
+      u.xp+=2;
+    }
+  }
+
+  // ── SPEARMAN ZONE OF CONTROL: passive slow aura each frame ──
+  for(const u of units){
+    if(u.type!=='SPEARMAN'||u.hp<=0)continue;
+    const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
+    const zocPx=SPEAR_SLOW_RADIUS*TILE_SIZE;
+    for(const e of enemies){
+      const dx=e.x-ux, dy=e.y-uy;
+      if(Math.sqrt(dx*dx+dy*dy)<=zocPx){
+        e.slowTimer=Math.max(e.slowTimer,0.2); // constant light slow while in zone
+      }
     }
   }
 }
@@ -948,6 +1106,11 @@ const SHIELD_WALL_DR=0.3;       // 30% damage reduction
 const PROTECTED_FIRE_RATE=0.2;  // 20% faster fire rate
 const SHIELD_WALL_MIN=3;        // 3+ melee in a line for Shield Wall
 
+// Is this unit type considered melee for formation purposes?
+function isMeleeUnit(type){ return UNIT_TYPES[type]&&UNIT_TYPES[type].melee; }
+// Is this unit type ranged (benefits from Protected Fire)?
+function isRangedUnit(type){ return type==='ARCHER'||type==='CATAPULT'; }
+
 // Check all formation bonuses — called once per frame (in update)
 function checkFormations(){
   // Reset all formation flags
@@ -956,25 +1119,24 @@ function checkFormations(){
     u.protectedFire=false;
   }
 
-  // Gather militia and archers by grid position
-  const militiaByCol={}, militiaByRow={};
+  // Gather melee units (Militia, Spearman, Cavalry) by grid position
+  const meleeByCol={}, meleeByRow={};
   const meleeGrid={};
   for(const u of units){
-    if(u.type==='MILITIA'&&u.hp>0){
+    if(isMeleeUnit(u.type)&&u.hp>0){
       const ck='c'+u.col, rk='r'+u.row;
-      (militiaByCol[ck]=militiaByCol[ck]||[]).push(u);
-      (militiaByRow[rk]=militiaByRow[rk]||[]).push(u);
+      (meleeByCol[ck]=meleeByCol[ck]||[]).push(u);
+      (meleeByRow[rk]=meleeByRow[rk]||[]).push(u);
       meleeGrid[u.col+','+u.row]=u;
     }
   }
 
   // ── SHIELD WALL: 3+ melee in a horizontal or vertical line ──
   // Check columns (vertical lines)
-  for(const ck in militiaByCol){
-    const col=militiaByCol[ck];
+  for(const ck in meleeByCol){
+    const col=meleeByCol[ck];
     if(col.length<SHIELD_WALL_MIN)continue;
     col.sort((a,b)=>a.row-b.row);
-    // Find consecutive runs
     let run=[col[0]];
     for(let i=1;i<col.length;i++){
       if(col[i].row===run[run.length-1].row+1){
@@ -987,8 +1149,8 @@ function checkFormations(){
     if(run.length>=SHIELD_WALL_MIN)run.forEach(u=>u.shieldWall=true);
   }
   // Check rows (horizontal lines)
-  for(const rk in militiaByRow){
-    const row=militiaByRow[rk];
+  for(const rk in meleeByRow){
+    const row=meleeByRow[rk];
     if(row.length<SHIELD_WALL_MIN)continue;
     row.sort((a,b)=>a.col-b.col);
     let run=[row[0]];
@@ -1003,11 +1165,9 @@ function checkFormations(){
     if(run.length>=SHIELD_WALL_MIN)run.forEach(u=>u.shieldWall=true);
   }
 
-  // ── PROTECTED FIRE: archer adjacent to (behind) a melee unit ──
-  // "Behind" = melee unit is between archer and nearest enemy direction (simplified: any adjacent melee)
+  // ── PROTECTED FIRE: ranged unit (Archer/Catapult) adjacent to a melee unit ──
   for(const u of units){
-    if(u.type!=='ARCHER'||u.hp<=0)continue;
-    // Check 4 adjacent tiles for a melee unit
+    if(!isRangedUnit(u.type)||u.hp<=0)continue;
     const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
     for(const[dc,dr] of dirs){
       const mk=(u.col+dc)+','+(u.row+dr);
@@ -1024,11 +1184,9 @@ function unitInFormation(u){return u.shieldWall||u.protectedFire;}
 
 // Get the effective attack rate for a unit (factoring Protected Fire bonus)
 function getUnitAtkRate(u){
-  if(u.type==='ARCHER'&&u.protectedFire){
-    return UNIT_ATK_RATE_ARCHER*(1-PROTECTED_FIRE_RATE);
-  }
-  if(u.type==='MILITIA')return UNIT_ATK_RATE_MILITIA;
-  return UNIT_ATK_RATE_ARCHER;
+  const base=UNIT_ATK_RATES[u.type]||1.0;
+  if(u.type==='ARCHER'&&u.protectedFire) return base*(1-PROTECTED_FIRE_RATE);
+  return base;
 }
 
 // Get damage reduction multiplier for a unit (factoring Shield Wall)
@@ -1058,8 +1216,11 @@ window.addEventListener('keydown',e=>{
     if(e.key==='4')selectTool('GATE');
     if(e.key==='q'||e.key==='Q')selectTool('MILITIA');
     if(e.key==='e'||e.key==='E')selectTool('ARCHER');
+    if(e.key==='r'||e.key==='R')selectTool('SPEARMAN');
+    if(e.key==='f'||e.key==='F')selectTool('CAVALRY');
+    if(e.key==='t'||e.key==='T')selectTool('CATAPULT');
     if(e.key==='x'||e.key==='X')selectTool('DEMOLISH');
-    if(e.key==='Escape')selectTool('gather');
+    if(e.key==='Escape'){cavalryPendingUnit=null;selectTool('gather');}
   }
 });
 window.addEventListener('keyup',e=>{keys[e.key]=false;});
@@ -1150,7 +1311,34 @@ function handleBuild(col,row){
   structures[sk]={type:selectedTool,hp:def.hp,maxHP:def.hp,cooldown:0,active:true};
   addFloat(`${def.name} built!`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#7aca7a');
 }
+// Cavalry patrol waypoint state
+let cavalryPendingUnit=null; // unit waiting for second waypoint click
+
 function handleRecruit(col,row){
+  // If we're placing a cavalry patrol waypoint (2nd click)
+  if(cavalryPendingUnit){
+    const u=cavalryPendingUnit;
+    // Validate waypoint: must be walkable grass, not too far from origin
+    if(map[col][row]===T.GRASS&&!structures[col+','+row]){
+      const wDist=Math.abs(col-u.col)+Math.abs(row-u.row);
+      if(wDist>=2&&wDist<=8){
+        u.patrol=[{col:u.col,row:u.row},{col,row}];
+        u.patrolIdx=0;
+        u.hasCharged=false;
+        cavalryPendingUnit=null;
+        addFloat('Patrol set!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#c88040');
+        addParticles(col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE+TILE_SIZE/2,'rgba(160,100,60,0.7)',6);
+        return;
+      } else {
+        addFloat('2-8 tiles away!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');
+        return;
+      }
+    } else {
+      addFloat('Invalid waypoint!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');
+      return;
+    }
+  }
+
   const def=UNIT_TYPES[selectedTool];if(!def)return;
   const sk=col+','+row;
   // Must be grass, no structure, no existing unit, not on base
@@ -1160,14 +1348,22 @@ function handleRecruit(col,row){
   if(dist>BUILD_RANGE){addFloat('Too far!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
   if(!canAfford(selectedTool)){addFloat('Can\'t afford!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
   for(const[r,a]of Object.entries(def.cost))game.resources[r]-=a;
-  units.push({
+  const newUnit={
     type:selectedTool, col, row,
     hp:def.hp, maxHP:def.hp, dmg:def.dmg, range:def.range,
     xp:0, morale:100, state:'idle',
     atkCooldown:0,
-  });
-  addFloat(`${def.name} recruited!`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#8ac0e8');
-  addParticles(col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE+TILE_SIZE/2,'rgba(100,160,220,0.7)',6);
+  };
+  units.push(newUnit);
+
+  if(selectedTool==='CAVALRY'){
+    cavalryPendingUnit=newUnit;
+    addFloat(`${def.name} placed — click patrol target!`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#c88040');
+    addParticles(col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE+TILE_SIZE/2,'rgba(160,100,60,0.7)',6);
+  } else {
+    addFloat(`${def.name} recruited!`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#8ac0e8');
+    addParticles(col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE+TILE_SIZE/2,'rgba(100,160,220,0.7)',6);
+  }
 }
 
 function unitAt(col,row){return units.find(u=>u.col===col&&u.row===row);}
@@ -1198,6 +1394,7 @@ document.getElementById('game-canvas').addEventListener('click',e=>{
   const col=Math.floor((cam.x+e.clientX/z)/TILE_SIZE);
   const row=Math.floor((cam.y+e.clientY/z)/TILE_SIZE);
   if(col<0||col>=COLS||row<0||row>=ROWS)return;
+  if(cavalryPendingUnit){handleRecruit(col,row);return;}
   if(selectedTool==='gather')handleGather(col,row);
   else if(selectedTool==='DEMOLISH')handleDemolish(col,row);
   else if(UNIT_TYPES[selectedTool])handleRecruit(col,row);
@@ -1402,14 +1599,66 @@ function drawUnits(now){
       ctx.strokeRect(sx+z*1.5,sy+z*1.5,sw-z*3,sw-z*3);
     }
 
+    // Unit-specific body details
+    if(u.type==='SPEARMAN'){
+      // Spear line across tile (diagonal)
+      ctx.strokeStyle='rgba(220,200,60,0.5)';ctx.lineWidth=z*1.5;
+      ctx.beginPath();ctx.moveTo(sx+sw*0.2,sy+sw*0.8);ctx.lineTo(sx+sw*0.8,sy+sw*0.15);ctx.stroke();
+      // Spear tip
+      ctx.fillStyle='rgba(240,230,120,0.7)';
+      ctx.beginPath();ctx.moveTo(sx+sw*0.75,sy+sw*0.15);ctx.lineTo(sx+sw*0.85,sy+sw*0.2);ctx.lineTo(sx+sw*0.8,sy+sw*0.25);ctx.fill();
+    }
+    if(u.type==='CAVALRY'){
+      // Horse silhouette hint (chevron shape under letter)
+      ctx.fillStyle='rgba(120,80,40,0.3)';
+      ctx.beginPath();ctx.moveTo(sx+sw*0.3,sy+sw*0.7);ctx.lineTo(sx+sw*0.5,sy+sw*0.55);ctx.lineTo(sx+sw*0.7,sy+sw*0.7);ctx.lineTo(sx+sw*0.5,sy+sw*0.85);ctx.fill();
+    }
+    if(u.type==='CATAPULT'){
+      // Catapult arm line
+      ctx.strokeStyle='rgba(100,80,60,0.5)';ctx.lineWidth=z*2;
+      ctx.beginPath();ctx.moveTo(sx+sw*0.25,sy+sw*0.7);ctx.lineTo(sx+sw*0.75,sy+sw*0.3);ctx.stroke();
+      // Wheels
+      ctx.strokeStyle='rgba(90,70,50,0.4)';ctx.lineWidth=z;
+      ctx.beginPath();ctx.arc(sx+sw*0.3,sy+sw*0.75,3*z,0,Math.PI*2);ctx.stroke();
+      ctx.beginPath();ctx.arc(sx+sw*0.7,sy+sw*0.75,3*z,0,Math.PI*2);ctx.stroke();
+    }
+
     // Letter icon
     ctx.fillStyle='rgba(255,255,255,0.85)';ctx.font=`bold ${14*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
     ctx.fillText(def.letter,sx+sw/2,sy+sw/2);
 
-    // Range indicator for archers (subtle ring)
+    // Range indicator for ranged units (subtle ring)
     if(def.range>1.5&&game.phase==='COMBAT'){
       ctx.strokeStyle=`rgba(${cr},${cg},${cb},0.1)`;ctx.lineWidth=z;
       ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,def.range*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+    }
+
+    // Spearman zone of control indicator (yellow ring)
+    if(u.type==='SPEARMAN'&&game.phase==='COMBAT'){
+      ctx.strokeStyle='rgba(220,200,60,0.12)';ctx.lineWidth=z;
+      ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,SPEAR_SLOW_RADIUS*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+    }
+
+    // Cavalry patrol path line
+    if(u.type==='CAVALRY'&&u.patrol&&u.patrol.length===2){
+      const p0=u.patrol[0], p1=u.patrol[1];
+      const lx0=(p0.col*TILE_SIZE+TILE_SIZE/2-cam.x)*z, ly0=(p0.row*TILE_SIZE+TILE_SIZE/2-cam.y)*z;
+      const lx1=(p1.col*TILE_SIZE+TILE_SIZE/2-cam.x)*z, ly1=(p1.row*TILE_SIZE+TILE_SIZE/2-cam.y)*z;
+      ctx.strokeStyle='rgba(160,100,60,0.25)';ctx.lineWidth=z*1.5;
+      ctx.setLineDash([4*z,4*z]);
+      ctx.beginPath();ctx.moveTo(lx0,ly0);ctx.lineTo(lx1,ly1);ctx.stroke();
+      ctx.setLineDash([]);
+      // Waypoint markers
+      ctx.fillStyle='rgba(160,100,60,0.4)';
+      ctx.beginPath();ctx.arc(lx0,ly0,3*z,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.arc(lx1,ly1,3*z,0,Math.PI*2);ctx.fill();
+    }
+
+    // Catapult AOE indicator during combat (splash radius)
+    if(u.type==='CATAPULT'&&game.phase==='COMBAT'){
+      // Show AOE radius on the catapult's current target direction (subtle)
+      ctx.strokeStyle='rgba(180,140,80,0.08)';ctx.lineWidth=z;
+      ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,CATAPULT_AOE_RADIUS*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
     }
 
     // HP bar — always visible during combat, or when damaged
@@ -1489,8 +1738,9 @@ function drawProjectiles(){
   for(const p of projectiles){
     const px=(p.x-cam.x)*z, py=(p.y-cam.y)*z;
     // Use unit projectile color if available, else tower gold
+    const pSize=p.size||3;
     ctx.fillStyle=p.color||'rgba(255,200,80,0.9)';
-    ctx.beginPath();ctx.arc(px,py,3*z,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(px,py,pSize*z,0,Math.PI*2);ctx.fill();
     // Trail
     const dx=p.tx-p.x,dy=p.ty-p.y,d=Math.sqrt(dx*dx+dy*dy)||1;
     ctx.strokeStyle=p.trailColor||'rgba(255,200,80,0.3)';ctx.lineWidth=2*z;
@@ -1587,7 +1837,35 @@ function cachedWouldSeal(col,row,tool){
 }
 
 function drawGhostPreview(){
-  if(game.phase!=='BUILD'||selectedTool==='gather'||selectedTool==='DEMOLISH'||isTouching)return;
+  if(game.phase!=='BUILD'||isTouching)return;
+  // Cavalry waypoint mode: show the patrol line preview instead of normal ghost
+  if(cavalryPendingUnit){
+    const z=cam.zoom;
+    const col=Math.floor((cam.x+mouseX/z)/TILE_SIZE),row=Math.floor((cam.y+mouseY/z)/TILE_SIZE);
+    if(col<0||col>=COLS||row<0||row>=ROWS)return;
+    const sx=(col*TILE_SIZE-cam.x)*z,sy=(row*TILE_SIZE-cam.y)*z,sw=TILE_SIZE*z;
+    const pu=cavalryPendingUnit;
+    const wDist=Math.abs(col-pu.col)+Math.abs(row-pu.row);
+    const valid=map[col][row]===T.GRASS&&!structures[col+','+row]&&wDist>=2&&wDist<=8;
+    // Draw patrol line
+    const pux=(pu.col*TILE_SIZE+TILE_SIZE/2-cam.x)*z, puy=(pu.row*TILE_SIZE+TILE_SIZE/2-cam.y)*z;
+    ctx.strokeStyle=valid?'rgba(160,100,60,0.5)':'rgba(200,50,50,0.4)';ctx.lineWidth=z*2;ctx.setLineDash([4*z,4*z]);
+    ctx.beginPath();ctx.moveTo(pux,puy);ctx.lineTo(sx+sw/2,sy+sw/2);ctx.stroke();ctx.setLineDash([]);
+    // Waypoint marker
+    ctx.fillStyle=valid?'rgba(160,100,60,0.5)':'rgba(200,50,50,0.3)';
+    ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,5*z,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle=valid?'rgba(160,100,60,0.6)':'rgba(200,50,50,0.5)';ctx.lineWidth=z;ctx.strokeRect(sx+z,sy+z,sw-2*z,sw-2*z);
+    // Distance label
+    ctx.fillStyle='rgba(10,10,18,0.8)';ctx.font=`bold ${10*z}px system-ui`;ctx.textAlign='center';
+    const distLabel=valid?`🐎 ${wDist} tiles`:`${wDist<2?'Too close':'Too far'} (2-8)`;
+    const tw2=ctx.measureText(distLabel).width+12;
+    ctx.fillRect(sx+sw/2-tw2/2,sy+sw+z*2,tw2,14*z);
+    ctx.fillStyle=valid?'rgba(200,160,80,0.9)':'rgba(255,100,80,0.9)';
+    ctx.fillText(distLabel,sx+sw/2,sy+sw+z*2+10*z);
+    ctx.textAlign='start';
+    return;
+  }
+  if(selectedTool==='gather'||selectedTool==='DEMOLISH')return;
   const z=cam.zoom;
   const col=Math.floor((cam.x+mouseX/z)/TILE_SIZE),row=Math.floor((cam.y+mouseY/z)/TILE_SIZE);
   if(col<0||col>=COLS||row<0||row>=ROWS)return;
@@ -1612,10 +1890,29 @@ function drawGhostPreview(){
   const borderColor=isUnit?(valid?'rgba(100,160,220,0.5)':'rgba(200,50,50,0.4)'):(valid?'rgba(90,180,90,0.4)':'rgba(200,50,50,0.4)');
   ctx.strokeStyle=borderColor;ctx.lineWidth=z*1.5;ctx.strokeRect(sx+z,sy+z,sw-2*z,sw-2*z);
 
-  // Show range preview for archers
+  // Show range preview for ranged units
   if(isUnit&&valid&&def.range>1.5){
     ctx.strokeStyle=`rgba(${cr},${cg},${cb},0.15)`;ctx.lineWidth=z;
     ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,def.range*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+  }
+  // Spearman zone of control preview
+  if(isUnit&&valid&&selectedTool==='SPEARMAN'){
+    ctx.strokeStyle='rgba(220,200,60,0.15)';ctx.lineWidth=z;
+    ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,SPEAR_SLOW_RADIUS*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+  }
+  // Catapult AOE splash radius preview (at max range)
+  if(isUnit&&valid&&selectedTool==='CATAPULT'){
+    ctx.strokeStyle='rgba(180,140,80,0.12)';ctx.lineWidth=z;ctx.setLineDash([3*z,3*z]);
+    ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,CATAPULT_AOE_RADIUS*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  // Cavalry pending waypoint line preview
+  if(cavalryPendingUnit){
+    const pu=cavalryPendingUnit;
+    const pux=(pu.col*TILE_SIZE+TILE_SIZE/2-cam.x)*z, puy=(pu.row*TILE_SIZE+TILE_SIZE/2-cam.y)*z;
+    ctx.strokeStyle='rgba(160,100,60,0.4)';ctx.lineWidth=z*2;ctx.setLineDash([4*z,4*z]);
+    ctx.beginPath();ctx.moveTo(pux,puy);ctx.lineTo(sx+sw/2,sy+sw/2);ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   // Formation preview: show what bonus this placement would create
@@ -1640,17 +1937,15 @@ function previewFormationBonus(col,row,unitType){
   const bonuses=[];
   const meleeGrid={};
   for(const u of units){
-    if(u.type==='MILITIA'&&u.hp>0)meleeGrid[u.col+','+u.row]=u;
+    if(isMeleeUnit(u.type)&&u.hp>0)meleeGrid[u.col+','+u.row]=u;
   }
 
-  if(unitType==='MILITIA'){
+  if(isMeleeUnit(unitType)){
     // Would this complete a Shield Wall? (check both directions)
-    meleeGrid[col+','+row]={type:'MILITIA',col,row}; // temp add
-    // Check horizontal run through this tile
+    meleeGrid[col+','+row]={type:unitType,col,row};
     let hRun=1;
     for(let dc=1;meleeGrid[(col+dc)+','+row];dc++)hRun++;
     for(let dc=-1;meleeGrid[(col+dc)+','+row];dc--)hRun++;
-    // Check vertical run through this tile
     let vRun=1;
     for(let dr=1;meleeGrid[col+','+(row+dr)];dr++)vRun++;
     for(let dr=-1;meleeGrid[col+','+(row+dr)];dr--)vRun++;
@@ -1658,7 +1953,7 @@ function previewFormationBonus(col,row,unitType){
     delete meleeGrid[col+','+row];
   }
 
-  if(unitType==='ARCHER'){
+  if(isRangedUnit(unitType)){
     // Would this have Protected Fire? (adjacent to any melee)
     const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
     for(const[dc,dr] of dirs){
@@ -1666,14 +1961,21 @@ function previewFormationBonus(col,row,unitType){
     }
   }
 
-  if(unitType==='MILITIA'){
-    // Would placing melee here give any adjacent archer Protected Fire?
+  if(isMeleeUnit(unitType)){
+    // Would placing melee here give any adjacent ranged unit Protected Fire?
     const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
     for(const[dc,dr] of dirs){
       const adj=unitAt(col+dc,row+dr);
-      if(adj&&adj.type==='ARCHER'&&!adj.protectedFire){bonuses.push('🏹 Enables Protected Fire');break;}
+      if(adj&&isRangedUnit(adj.type)&&!adj.protectedFire){bonuses.push('🏹 Enables Protected Fire');break;}
     }
   }
+
+  // Spearman zone of control preview
+  if(unitType==='SPEARMAN') bonuses.push('🔱 Zone of Control');
+  // Cavalry charge preview
+  if(unitType==='CAVALRY') bonuses.push('⚡ Charge Bonus');
+  // Catapult AOE preview
+  if(unitType==='CATAPULT') bonuses.push('💥 AOE Splash');
 
   return bonuses;
 }
@@ -1720,10 +2022,16 @@ function updateUnitInfoPanel(){
   document.getElementById('ui-range').textContent=def.range>1.5?def.range+' tiles':'Melee';
   document.getElementById('ui-xp').textContent=u.xp;
   document.getElementById('ui-rank').textContent=RANK_NAMES[rank]+(rank>0?' '+'★'.repeat(rank):'');
-  // Formation bonus display
+  // Formation bonus display + special abilities
   const bonusParts=[];
   if(u.shieldWall)bonusParts.push('🛡️ Shield Wall (-30% DMG)');
   if(u.protectedFire)bonusParts.push('🏹 Protected Fire (+20% Rate)');
+  if(u.type==='SPEARMAN')bonusParts.push('🔱 Anti-fast ×2, Zone Slow');
+  if(u.type==='CAVALRY'){
+    bonusParts.push('⚡ Charge: '+(u.hasCharged?'Used':'Ready'));
+    if(u.patrol)bonusParts.push('🐎 Patrolling');
+  }
+  if(u.type==='CATAPULT')bonusParts.push('💥 AOE 3×3 Splash');
   const bonusEl=document.getElementById('ui-formation');
   if(bonusEl)bonusEl.textContent=bonusParts.length>0?bonusParts.join(' · '):'None';
   panel.classList.add('show');
