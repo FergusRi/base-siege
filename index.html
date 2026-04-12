@@ -8,6 +8,7 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #08080d; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #c8c8d0; user-select: none; -webkit-user-select: none; }
   #game-canvas { display: block; position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; }
+  #game-canvas.combat-cursor { cursor: pointer; }
 
   #top-bar {
     position: fixed; top: 0; left: 0; right: 0; z-index: 10;
@@ -24,9 +25,10 @@
   .r-wood .icon { background: #6b8a3a; } .r-stone .icon { background: #7a7a82; }
   .r-metal .icon { background: #5a7a9a; } .r-food .icon { background: #a85a70; }
   .base-hp-wrap { display: flex; align-items: center; gap: 6px; }
-  .base-hp-bar { width: 100px; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; }
-  .base-hp-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
-  .base-hp-text { font-size: 11px; opacity: 0.7; }
+  .hp-bar { width: 100px; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; }
+  .hp-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+  .hp-text { font-size: 11px; opacity: 0.7; }
+  .hero-hp-wrap { display: flex; align-items: center; gap: 6px; }
   .wave-info { display: flex; align-items: center; gap: 6px; font-weight: 600; }
   .wave-num { color: #e8c56a; font-size: 15px; }
   .phase-badge { padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; transition: all 0.3s; }
@@ -85,10 +87,15 @@
     <div class="resource r-food"><span class="icon"></span><span class="val" id="res-food">0</span></div>
   </div>
   <div class="bar-section">
+    <div class="hero-hp-wrap">
+      <span style="font-size:14px;">⚔️</span>
+      <div class="hp-bar"><div class="hp-fill" id="hero-hp-fill" style="width:100%;background:linear-gradient(90deg,#4a4,#6c6)"></div></div>
+      <span class="hp-text" id="hero-hp-text">50/50</span>
+    </div>
     <div class="base-hp-wrap">
       <span style="font-size:14px;">🏰</span>
-      <div class="base-hp-bar"><div class="base-hp-fill" id="base-hp-fill" style="width:100%"></div></div>
-      <span class="base-hp-text" id="base-hp-text">100/100</span>
+      <div class="hp-bar"><div class="hp-fill" id="base-hp-fill" style="width:100%"></div></div>
+      <span class="hp-text" id="base-hp-text">100/100</span>
     </div>
   </div>
   <div class="bar-section">
@@ -115,7 +122,7 @@
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════
-//  BASE SIEGE — Step 3: Enemies, A*, & Combat Phase
+//  BASE SIEGE — Step 4: Hero Combat
 // ═══════════════════════════════════════════════════
 
 // ─── CONSTANTS ───
@@ -126,6 +133,8 @@ const BASE_CLEAR_RADIUS=6;
 const CAM_LERP=0.1, MIN_ZOOM=0.5, MAX_ZOOM=2.0;
 const HERO_SPEED=4*TILE_SIZE;
 const HARVEST_RANGE=3, BUILD_RANGE=5;
+const HERO_ATK_DMG=8, HERO_ATK_RATE=0.4, HERO_ATK_RANGE=1.2*TILE_SIZE;
+const HERO_KNOCKDOWN_TIME=10, HERO_REVIVE_PCT=0.25;
 
 // Tile types
 const T={GRASS:0,TREE:1,STONE:2,ORE:3,BERRY:4,WATER:5,BASE:6};
@@ -295,6 +304,11 @@ const hero={
   x:BASE_CX*TILE_SIZE+TILE_SIZE/2,
   y:(BASE_CY-3)*TILE_SIZE+TILE_SIZE/2,
   hp:50, maxHP:50,
+  atkCooldown:0,     // time until next attack
+  atkAnim:0,         // attack animation timer (flash)
+  stunTimer:0,       // knockdown timer (>0 = knocked out)
+  hitFlash:0,        // damage flash
+  kills:0,           // hero kill count
 };
 
 const structures={}; // "c,r" => { type, hp, maxHP, cooldown }
@@ -312,7 +326,7 @@ function selectTool(tool){
 }
 function updateHint(){
   const h=document.getElementById('hint');
-  if(game.phase==='COMBAT'){h.textContent='⚔️ COMBAT — Enemies attacking! Towers are firing!';return;}
+  if(game.phase==='COMBAT'){h.textContent='⚔️ COMBAT — WASD to move · Click to attack enemies · Defend the base!';return;}
   if(selectedTool==='gather')h.textContent='WASD to move · Click resources to gather · SPACE to start wave';
   else if(selectedTool==='DEMOLISH')h.textContent='Click a structure to demolish · ESC to cancel';
   else{const s=STRUCTS[selectedTool];h.textContent=`Click to place ${s.name} · ESC/G to cancel`;}
@@ -398,6 +412,7 @@ function startWave(){
   const badge=document.getElementById('phase-badge');
   badge.textContent='COMBAT';badge.className='phase-badge phase-combat';
   document.getElementById('toolbar').classList.add('combat-mode');
+  document.getElementById('game-canvas').classList.add('combat-cursor');
   updateHint();
 
   // Reset trap cooldowns
@@ -420,10 +435,14 @@ function endWave(){
   const badge=document.getElementById('phase-badge');
   badge.textContent='BUILD';badge.className='phase-badge phase-build';
   document.getElementById('toolbar').classList.remove('combat-mode');
+  document.getElementById('game-canvas').classList.remove('combat-cursor');
   selectTool('gather');
 
   // Base regen
   game.baseHP=Math.min(game.baseMaxHP, game.baseHP+5);
+  // Hero full heal on wave clear
+  hero.hp=hero.maxHP;
+  hero.stunTimer=0;
 
   // Bonus resources
   const bonus=2+game.wave;
@@ -489,6 +508,71 @@ function killEnemy(e,i,source){
   enemies.splice(i,1);
 }
 
+// ═══════════════════════════════════════════
+//  HERO COMBAT
+// ═══════════════════════════════════════════
+
+function heroAttack(){
+  if(game.phase!=='COMBAT'||hero.atkCooldown>0||hero.stunTimer>0)return;
+  // Find nearest enemy within melee range
+  let nearest=null, nearDist=Infinity;
+  for(const e of enemies){
+    const dx=e.x-hero.x, dy=e.y-hero.y, d=Math.sqrt(dx*dx+dy*dy);
+    if(d<=HERO_ATK_RANGE&&d<nearDist){nearDist=d;nearest=e;}
+  }
+  if(!nearest)return;
+
+  // Deal damage
+  hero.atkCooldown=HERO_ATK_RATE;
+  hero.atkAnim=0.2;
+  nearest.hp-=HERO_ATK_DMG;
+  nearest.hitFlash=1;
+  addFloat(`-${HERO_ATK_DMG}`,nearest.x,nearest.y-14,'#ffe066');
+  addParticles(nearest.x,nearest.y,'rgba(255,230,100,0.8)',6);
+  cam.shake=Math.max(cam.shake,2);
+
+  if(nearest.hp<=0){
+    const idx=enemies.indexOf(nearest);
+    if(idx>=0){killEnemy(nearest,idx,'hero');hero.kills++;}
+  }
+}
+
+function updateHeroCombat(dt){
+  hero.atkCooldown=Math.max(0,hero.atkCooldown-dt);
+  hero.atkAnim=Math.max(0,hero.atkAnim-dt);
+  hero.hitFlash=Math.max(0,hero.hitFlash-dt*4);
+
+  // Knockdown state
+  if(hero.stunTimer>0){
+    hero.stunTimer=Math.max(0,hero.stunTimer-dt);
+    if(hero.stunTimer<=0){
+      // Revive at 25% HP
+      hero.hp=Math.ceil(hero.maxHP*HERO_REVIVE_PCT);
+      hero.hitFlash=0;
+      addFloat('Revived!',hero.x,hero.y-TILE_SIZE,'#7aca7a');
+      addParticles(hero.x,hero.y,'rgba(120,200,120,0.8)',10);
+    }
+    return;
+  }
+}
+
+function damageHero(dmg){
+  if(hero.stunTimer>0)return; // already knocked down
+  hero.hp=Math.max(0,hero.hp-dmg);
+  hero.hitFlash=1;
+  addFloat(`-${dmg}`,hero.x,hero.y-14,'#ff4444');
+  addParticles(hero.x,hero.y,'rgba(255,80,60,0.7)',4);
+  cam.shake=Math.max(cam.shake,3);
+  if(hero.hp<=0){
+    // Knockdown
+    hero.stunTimer=HERO_KNOCKDOWN_TIME;
+    hero.hp=0;
+    addFloat('KNOCKED DOWN!',hero.x,hero.y-TILE_SIZE*1.5,'#ff2222');
+    addParticles(hero.x,hero.y,'rgba(255,40,30,0.9)',15);
+    cam.shake=Math.max(cam.shake,8);
+  }
+}
+
 function updateEnemies(dt){
   // Spawn from queue
   if(spawnQueue.length>0){
@@ -506,6 +590,18 @@ function updateEnemies(dt){
     e.attackCooldown=Math.max(0,e.attackCooldown-dt);
 
     const eCol=Math.floor(e.x/TILE_SIZE), eRow=Math.floor(e.y/TILE_SIZE);
+
+    // Enemy attacks hero if adjacent (within 1.2 tiles) and hero is alive
+    if(hero.stunTimer<=0){
+      const hdx=hero.x-e.x, hdy=hero.y-e.y;
+      const heroDist=Math.sqrt(hdx*hdx+hdy*hdy);
+      if(heroDist<TILE_SIZE*1.3&&e.attackCooldown<=0){
+        // Prioritize attacking hero over moving
+        const eDmg=ENEMY_TYPES[e.type].dmg;
+        damageHero(eDmg);
+        e.attackCooldown=e.attackRate;
+      }
+    }
 
     // Check if enemy is standing on a base tile
     const onBase=eCol>=BASE_CX-1&&eCol<=BASE_CX+1&&eRow>=BASE_CY-1&&eRow<=BASE_CY+1;
@@ -712,6 +808,7 @@ function heroCanWalkTo(wx,wy){
 
 function updateHero(dt){
   if(game.phase==='GAMEOVER')return;
+  if(hero.stunTimer>0)return; // knocked down — can't move
   let dx=0,dy=0;
   if(keys['w']||keys['W'])dy=-1;
   if(keys['s']||keys['S'])dy=1;
@@ -776,6 +873,8 @@ function handleDemolish(col,row){
 }
 
 document.getElementById('game-canvas').addEventListener('click',e=>{
+  // Hero attack during combat
+  if(game.phase==='COMBAT'){heroAttack();return;}
   if(game.phase!=='BUILD')return;
   if(e.clientY<88)return;
   const z=cam.zoom;
@@ -982,26 +1081,77 @@ function drawHero(now){
   const z=cam.zoom;
   const hx=(hero.x-TILE_SIZE/2-cam.x)*z,hy=(hero.y-TILE_SIZE/2-cam.y)*z;
   const sw=TILE_SIZE*z;
+  const isKnockedDown=hero.stunTimer>0;
 
-  // Glow
+  // Glow (dimmed when knocked down)
   const pulse=Math.sin(now*0.003)*0.2+0.5;
+  const glowAlpha=isKnockedDown?0.05:pulse*0.18;
   const grad=ctx.createRadialGradient(hx+sw/2,hy+sw/2,0,hx+sw/2,hy+sw/2,sw*1.6);
-  grad.addColorStop(0,`rgba(255,230,150,${pulse*0.18})`);grad.addColorStop(1,'rgba(255,230,150,0)');
+  grad.addColorStop(0,`rgba(${isKnockedDown?'180,60,40':255+',230,150'},${glowAlpha})`);
+  grad.addColorStop(1,`rgba(${isKnockedDown?'180,60,40':255+',230,150'},0)`);
   ctx.fillStyle=grad;ctx.fillRect(hx+sw/2-sw*1.6,hy+sw/2-sw*1.6,sw*3.2,sw*3.2);
 
   const p=z*2;
-  ctx.fillStyle='rgba(245,235,210,0.92)';ctx.fillRect(hx+p,hy+p,sw-p*2,sw-p*2);
-  ctx.strokeStyle=`rgba(220,180,60,${0.7+Math.sin(now*0.004)*0.15})`;ctx.lineWidth=z*2;
-  ctx.strokeRect(hx+p,hy+p,sw-p*2,sw-p*2);
-  ctx.strokeStyle='rgba(160,130,40,0.4)';ctx.lineWidth=z*1.5;ctx.beginPath();
-  ctx.moveTo(hx+sw/2,hy+p*2.5);ctx.lineTo(hx+sw/2,hy+sw-p*2.5);
-  ctx.moveTo(hx+p*2.5,hy+sw/2);ctx.lineTo(hx+sw-p*2.5,hy+sw/2);ctx.stroke();
+
+  // Attack flash (hero body flashes bright gold on swing)
+  if(hero.atkAnim>0){
+    ctx.fillStyle=`rgba(255,240,120,${hero.atkAnim*3})`;
+    ctx.fillRect(hx+p-z,hy+p-z,sw-p*2+z*2,sw-p*2+z*2);
+  }
+
+  // Hero body — knocked down state: reddish, transparent
+  if(isKnockedDown){
+    const knockPulse=Math.sin(now*0.006)*0.15+0.4;
+    ctx.globalAlpha=knockPulse;
+    ctx.fillStyle='rgba(160,80,70,0.7)';ctx.fillRect(hx+p,hy+p,sw-p*2,sw-p*2);
+    ctx.strokeStyle='rgba(180,50,40,0.6)';ctx.lineWidth=z*2;
+    ctx.strokeRect(hx+p,hy+p,sw-p*2,sw-p*2);
+    // Skull/X marker
+    ctx.fillStyle='rgba(255,80,60,0.8)';ctx.font=`bold ${14*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('💀',hx+sw/2,hy+sw/2);
+    ctx.globalAlpha=1;
+  } else {
+    // Damage flash
+    if(hero.hitFlash>0){
+      ctx.fillStyle=`rgba(255,60,40,${hero.hitFlash*0.5})`;
+      ctx.fillRect(hx+p-z,hy+p-z,sw-p*2+z*2,sw-p*2+z*2);
+    }
+    ctx.fillStyle='rgba(245,235,210,0.92)';ctx.fillRect(hx+p,hy+p,sw-p*2,sw-p*2);
+    ctx.strokeStyle=`rgba(220,180,60,${0.7+Math.sin(now*0.004)*0.15})`;ctx.lineWidth=z*2;
+    ctx.strokeRect(hx+p,hy+p,sw-p*2,sw-p*2);
+    ctx.strokeStyle='rgba(160,130,40,0.4)';ctx.lineWidth=z*1.5;ctx.beginPath();
+    ctx.moveTo(hx+sw/2,hy+p*2.5);ctx.lineTo(hx+sw/2,hy+sw-p*2.5);
+    ctx.moveTo(hx+p*2.5,hy+sw/2);ctx.lineTo(hx+sw-p*2.5,hy+sw/2);ctx.stroke();
+  }
+
+  // Hero HP bar above head (always visible)
+  const bw=sw*0.9, bh=4*z;
+  const bx=hx+(sw-bw)/2, by=hy-bh-z*3;
+  ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(bx,by,bw,bh);
+  const hpPct=hero.hp/hero.maxHP;
+  ctx.fillStyle=hpPct>0.6?'#4a4':hpPct>0.25?'#da4':'#d44';
+  ctx.fillRect(bx,by,bw*hpPct,bh);
+  ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=z*0.5;ctx.strokeRect(bx,by,bw,bh);
+
+  // Knockdown timer above HP bar
+  if(isKnockedDown){
+    ctx.fillStyle='rgba(255,80,60,0.9)';ctx.font=`bold ${11*z}px system-ui`;ctx.textAlign='center';
+    ctx.fillText(`💀 ${Math.ceil(hero.stunTimer)}s`,hx+sw/2,by-z*3);
+  }
 
   // Range indicators
   if(game.phase==='BUILD'){
     if(selectedTool==='gather'){ctx.strokeStyle='rgba(120,200,120,0.08)';ctx.lineWidth=z;ctx.beginPath();ctx.arc(hx+sw/2,hy+sw/2,HARVEST_RANGE*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();}
     else if(selectedTool!=='DEMOLISH'){ctx.strokeStyle='rgba(120,180,220,0.08)';ctx.lineWidth=z;ctx.beginPath();ctx.arc(hx+sw/2,hy+sw/2,BUILD_RANGE*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();}
   }
+  // Attack range ring during combat (subtle)
+  if(game.phase==='COMBAT'&&!isKnockedDown){
+    const atkPulse=Math.sin(now*0.005)*0.04+0.06;
+    ctx.strokeStyle=`rgba(255,220,80,${atkPulse})`;ctx.lineWidth=z;
+    ctx.beginPath();ctx.arc(hx+sw/2,hy+sw/2,HERO_ATK_RANGE*z,0,Math.PI*2);ctx.stroke();
+  }
+
+  ctx.textAlign='start';ctx.textBaseline='alphabetic';
 }
 
 // ─── DRAW GHOST PREVIEW ───
@@ -1110,11 +1260,19 @@ function updateUI(){
   document.getElementById('res-stone').textContent=game.resources.stone;
   document.getElementById('res-metal').textContent=game.resources.metal;
   document.getElementById('res-food').textContent=game.resources.food;
+  // Base HP bar
   const pct=game.baseHP/game.baseMaxHP*100;
   const fill=document.getElementById('base-hp-fill');
   fill.style.width=pct+'%';
   fill.style.background=pct>60?'linear-gradient(90deg,#4a4,#6c6)':pct>30?'linear-gradient(90deg,#da4,#ec6)':'linear-gradient(90deg,#d44,#e66)';
   document.getElementById('base-hp-text').textContent=game.baseHP+'/'+game.baseMaxHP;
+  // Hero HP bar
+  const hpPct=hero.hp/hero.maxHP*100;
+  const hFill=document.getElementById('hero-hp-fill');
+  hFill.style.width=hpPct+'%';
+  hFill.style.background=hpPct>60?'linear-gradient(90deg,#4a4,#6c6)':hpPct>30?'linear-gradient(90deg,#da4,#ec6)':'linear-gradient(90deg,#d44,#e66)';
+  const heroHPText=hero.stunTimer>0?`💀 ${Math.ceil(hero.stunTimer)}s`:`${hero.hp}/${hero.maxHP}`;
+  document.getElementById('hero-hp-text').textContent=heroHPText;
   document.getElementById('wave-num').textContent=game.wave;
   document.querySelectorAll('.tool-btn[data-tool]').forEach(btn=>{const t=btn.dataset.tool;if(STRUCTS[t])btn.style.opacity=canAfford(t)?'1':'0.5';});
 }
@@ -1132,6 +1290,7 @@ function draw(now){
 
   // Update
   updateHero(dt);
+  updateHeroCombat(dt);
   if(game.phase==='COMBAT'){
     updateEnemies(dt);
     updateTowers(dt);
