@@ -378,7 +378,8 @@ const COLS=80, ROWS=50, TILE_SIZE=32;
 const MAP_PX_W=COLS*TILE_SIZE, MAP_PX_H=ROWS*TILE_SIZE;
 const BASE_CX=Math.floor(COLS/2), BASE_CY=Math.floor(ROWS/2);
 const BASE_CLEAR_RADIUS=8;
-const CAM_LERP=0.1, MIN_ZOOM=0.35, MAX_ZOOM=2.0;
+const CAM_LERP=0.1, MAX_ZOOM=2.0;
+function getMinZoom(){const c=document.getElementById('game-canvas');if(!c)return 0.3;return Math.max(c.width/MAP_PX_W,c.height/MAP_PX_H);}
 const HERO_SPEED=5*TILE_SIZE;
 const HARVEST_RANGE=4, BUILD_RANGE=7;
 const HERO_ATK_DMG=8, HERO_ATK_RATE=0.4, HERO_ATK_RANGE=1.2*TILE_SIZE;
@@ -700,6 +701,8 @@ function updateParticles(dt){for(let i=particles.length-1;i>=0;i--){const p=part
 const cam={x:0,y:0,tx:0,ty:0,zoom:1,tZoom:1,shake:0};
 function clampCam(){
   const c=document.getElementById('game-canvas');
+  const mz=getMinZoom();
+  if(cam.tZoom<mz)cam.tZoom=mz;
   const vw=c.width/cam.tZoom,vh=c.height/cam.tZoom;
   cam.tx=Math.max(0,Math.min(MAP_PX_W-vw,cam.tx));
   cam.ty=Math.max(0,Math.min(MAP_PX_H-vh,cam.ty));
@@ -2324,7 +2327,7 @@ window.addEventListener('keydown',e=>{
 });
 window.addEventListener('keyup',e=>{keys[e.key]=false;});
 window.addEventListener('mousemove',e=>{mouseX=e.clientX;mouseY=e.clientY;});
-window.addEventListener('wheel',e=>{e.preventDefault();cam.tZoom=Math.max(MIN_ZOOM,Math.min(MAX_ZOOM,cam.tZoom+(e.deltaY>0?-0.08:0.08)));},{passive:false});
+window.addEventListener('wheel',e=>{e.preventDefault();cam.tZoom=Math.max(getMinZoom(),Math.min(MAX_ZOOM,cam.tZoom+(e.deltaY>0?-0.08:0.08)));},{passive:false});
 
 // Touch
 let touchStartX=0,touchStartY=0,touchHeroX=0,touchHeroY=0;
@@ -2522,7 +2525,7 @@ const canvas=document.getElementById('game-canvas');
 const ctx=canvas.getContext('2d');
 const mmCanvas=document.getElementById('minimap');
 const mmCtx=mmCanvas.getContext('2d');
-function resize(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;}
+function resize(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;const mz=getMinZoom();if(cam.tZoom<mz)cam.tZoom=mz;if(cam.zoom<mz)cam.zoom=mz;clampCam();}
 window.addEventListener('resize',resize);resize();
 
 let tileCache=null;
