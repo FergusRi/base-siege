@@ -92,6 +92,48 @@
   .ui-name { font-weight: 700; font-size: 14px; }
   .ui-hp { color: #7aca7a; } .ui-dmg { color: #e87a6a; } .ui-range { color: #7ab0d8; }
 
+  /* Aftermath screen overlay */
+  #aftermath-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 25;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(5,5,12,0.88); backdrop-filter: blur(6px);
+  }
+  #aftermath-overlay.show { display: flex; }
+  .aftermath-panel {
+    background: rgba(15,15,25,0.95); border: 1px solid rgba(120,120,160,0.2);
+    border-radius: 16px; padding: 28px 36px; min-width: 420px; max-width: 560px;
+    max-height: 80vh; overflow-y: auto; text-align: center;
+  }
+  .aftermath-panel h2 { color: #e8c56a; font-size: 22px; margin-bottom: 4px; letter-spacing: 1px; }
+  .aftermath-panel .wave-label { color: rgba(200,200,210,0.5); font-size: 12px; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1.5px; }
+  .aftermath-section { margin: 14px 0; text-align: left; }
+  .aftermath-section h3 { color: rgba(200,200,210,0.7); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; border-bottom: 1px solid rgba(120,120,160,0.1); padding-bottom: 4px; }
+  .aftermath-unit {
+    display: flex; align-items: center; gap: 10px; padding: 6px 10px; margin: 3px 0;
+    border-radius: 8px; background: rgba(255,255,255,0.03); font-size: 13px;
+  }
+  .aftermath-unit.promoted { background: rgba(255,215,0,0.08); border: 1px solid rgba(255,215,0,0.15); }
+  .aftermath-unit.died { background: rgba(220,50,30,0.08); border: 1px solid rgba(220,50,30,0.12); opacity: 0.7; }
+  .au-icon { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; color: rgba(255,255,255,0.85); }
+  .au-info { flex: 1; }
+  .au-name { font-weight: 600; }
+  .au-detail { font-size: 11px; opacity: 0.5; }
+  .au-xp { font-variant-numeric: tabular-nums; color: #e8c56a; font-weight: 600; min-width: 50px; text-align: right; }
+  .au-rank { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+  .au-rank.rank-0 { background: rgba(100,100,120,0.2); color: rgba(160,160,170,0.7); }
+  .au-rank.rank-1 { background: rgba(180,180,100,0.15); color: #b4b464; }
+  .au-rank.rank-2 { background: rgba(200,160,60,0.15); color: #c8a03c; }
+  .au-rank.rank-3 { background: rgba(255,200,80,0.2); color: #ffd700; }
+  .aftermath-btn {
+    margin-top: 20px; padding: 10px 32px; border-radius: 10px;
+    background: rgba(90,180,90,0.15); border: 1px solid rgba(90,180,90,0.35);
+    color: #7aca7a; font-size: 14px; font-weight: 700; cursor: pointer;
+    font-family: inherit; letter-spacing: 0.5px; transition: all 0.15s;
+  }
+  .aftermath-btn:hover { background: rgba(90,180,90,0.25); }
+  .promo-flash { animation: promoGlow 1.5s ease-in-out infinite; }
+  @keyframes promoGlow { 0%,100% { box-shadow: 0 0 0 rgba(255,215,0,0); } 50% { box-shadow: 0 0 12px rgba(255,215,0,0.3); } }
+
   /* Recruit toolbar styling */
   .tool-btn.recruit { border-color: rgba(100,160,220,0.25); }
   .tool-btn.recruit:hover { background: rgba(100,160,220,0.12); color: #8ac0e8; }
@@ -154,12 +196,15 @@
 <canvas id="minimap" width="150" height="90"></canvas>
 <div id="hint">WASD move · Click to gather · Q/E/R/F/T units · 1-4 build · SPACE fight · Stay near troops for morale!</div>
 <div id="wave-banner"></div>
+<div id="aftermath-overlay">
+  <div class="aftermath-panel" id="aftermath-panel"></div>
+</div>
 
 <script async src="https://vibej.am/2026/widget.js"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════
-//  BASE SIEGE — Step 9: Morale System
+//  BASE SIEGE — Step 10: Veterancy & XP
 // ═══════════════════════════════════════════════════
 
 // ─── CONSTANTS ───
@@ -204,7 +249,71 @@ const UNIT_TYPES={
     color:[120,90,70],letter:'K',desc:'AOE siege, slow fire, fragile',melee:false},
 };
 const RANK_NAMES=['Recruit','Veteran','Elite','Champion'];
-function unitRank(xp){if(xp>=100)return 3;if(xp>=50)return 2;if(xp>=20)return 1;return 0;}
+const RANK_THRESHOLDS=[0,10,30,60]; // XP needed: Rank 1=10, Rank 2=30, Rank 3=60
+function unitRank(xp){if(xp>=60)return 3;if(xp>=30)return 2;if(xp>=10)return 1;return 0;}
+
+// ─── VETERANCY BONUSES ───
+// Rank 1: +20% HP | Rank 2: +20% DMG | Rank 3: special ability per unit type
+const RANK_HP_BONUS=0.2;   // +20% max HP at Rank 1+
+const RANK_DMG_BONUS=0.2;  // +20% damage at Rank 2+
+
+// Rank 3 special abilities (passive, always active for Champions)
+// MILITIA: Last Stand — 50% damage reduction when below 30% HP
+// ARCHER: Double Shot — fires 2 arrows per attack
+// SPEARMAN: Impale — 3× vs fast (instead of 2×), extended zone
+// CAVALRY: Thundercharge — charge does 4× (instead of 2.5×), stuns enemies
+// CATAPULT: Firestorm — AOE radius 2× and leaves burning ground for 3s
+
+// Apply rank bonuses to a unit (called on rank-up and on wave start)
+function applyRankBonuses(u){
+  const def=UNIT_TYPES[u.type];
+  const rank=unitRank(u.xp);
+  const prevMaxHP=u.maxHP;
+
+  // Rank 1+: +20% HP
+  if(rank>=1){
+    u.maxHP=Math.ceil(def.hp*(1+RANK_HP_BONUS));
+    // Heal the bonus HP if we just ranked up
+    if(u.maxHP>prevMaxHP) u.hp+=u.maxHP-prevMaxHP;
+  } else {
+    u.maxHP=def.hp;
+  }
+
+  // Rank 2+: +20% DMG
+  if(rank>=2){
+    u.dmg=Math.ceil(def.dmg*(1+RANK_DMG_BONUS));
+  } else {
+    u.dmg=def.dmg;
+  }
+}
+
+// Check if a unit just ranked up (returns new rank or -1)
+function checkRankUp(u){
+  const oldRank=u._lastRank||0;
+  const newRank=unitRank(u.xp);
+  if(newRank>oldRank){
+    u._lastRank=newRank;
+    applyRankBonuses(u);
+    return newRank;
+  }
+  return -1;
+}
+
+// Show rank-up effects
+function showRankUpEffect(u,newRank){
+  const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
+  const def=UNIT_TYPES[u.type];
+  const rankName=RANK_NAMES[newRank];
+  addFloat(`⭐ ${rankName}!`,ux,uy-TILE_SIZE*1.5,'#ffd700');
+  if(newRank===1) addFloat('+20% HP',ux,uy-TILE_SIZE*2,'#7aca7a');
+  if(newRank===2) addFloat('+20% DMG',ux,uy-TILE_SIZE*2,'#e87a6a');
+  if(newRank===3) addFloat('★ SPECIAL ABILITY ★',ux,uy-TILE_SIZE*2,'#ffd700');
+  // Dramatic gold particle burst
+  const burstCount=8+newRank*6;
+  addParticles(ux,uy,'rgba(255,215,0,0.9)',burstCount);
+  addParticles(ux,uy,'rgba(255,240,150,0.6)',burstCount/2);
+  cam.shake=Math.max(cam.shake,2+newRank);
+}
 
 // ─── ENEMY DEFINITIONS ───
 const ENEMY_TYPES={
@@ -482,6 +591,10 @@ function startWave(){
   // Reset tower cooldowns
   for(const[k,s] of Object.entries(structures)){if(s.type==='TOWER')s.cooldown=0;}
 
+  // Snapshot unit XP/rank before combat for aftermath comparison
+  game._waveDeaths=[];
+  game._preWaveUnits=units.map(u=>({id:u,type:u.type,xp:u.xp,rank:unitRank(u.xp),name:UNIT_TYPES[u.type].name}));
+
   // Build spawn queue
   spawnQueue=getWaveComposition(game.wave);
   // Shuffle
@@ -493,35 +606,140 @@ function startWave(){
 }
 
 function endWave(){
-  game.phase='BUILD';
-  const badge=document.getElementById('phase-badge');
-  badge.textContent='BUILD';badge.className='phase-badge phase-build';
-  document.getElementById('toolbar').classList.remove('combat-mode');
-  document.getElementById('game-canvas').classList.remove('combat-cursor');
-  selectTool('gather');
+  game.phase='AFTERMATH';
 
   // Base regen
   game.baseHP=Math.min(game.baseMaxHP, game.baseHP+5);
   // Hero full heal on wave clear
   hero.hp=hero.maxHP;
   hero.stunTimer=0;
-  // Heal surviving units (50% of missing HP), reset cavalry charge, restore morale
+
+  // Heal surviving units, reset charge, restore morale, apply rank bonuses
   for(const u of units){
+    applyRankBonuses(u); // ensure bonuses are applied before healing
     const missing=u.maxHP-u.hp;
     u.hp=Math.min(u.maxHP, u.hp+Math.ceil(missing*0.5));
     u.atkCooldown=0;
-    u.morale=MORALE_MAX; // full morale restore between waves
+    u.morale=MORALE_MAX;
     u.moraleState='normal';
     u.fleeTimer=0;
-    if(u.type==='CAVALRY')u.hasCharged=false; // reset charge for next wave
+    if(u.type==='CAVALRY')u.hasCharged=false;
+    if(!u._lastRank) u._lastRank=unitRank(u.xp); // sync rank tracking
   }
 
   // Bonus resources
   const bonus=2+game.wave;
   game.resources.wood+=bonus;
   game.resources.food+=bonus;
-  addFloat(`+${bonus} Wood, +${bonus} Food`, hero.x, hero.y-TILE_SIZE, '#e8c56a');
 
+  // Show aftermath screen
+  showAftermathScreen();
+}
+
+function showAftermathScreen(){
+  const panel=document.getElementById('aftermath-panel');
+  const overlay=document.getElementById('aftermath-overlay');
+
+  // Build aftermath data
+  const preMap=new Map();
+  if(game._preWaveUnits){
+    for(const pu of game._preWaveUnits) preMap.set(pu.id,pu);
+  }
+
+  // Survivors with XP changes
+  const survivors=[];
+  for(const u of units){
+    const pre=preMap.get(u);
+    const xpGain=pre?u.xp-pre.xp:u.xp;
+    const oldRank=pre?pre.rank:0;
+    const newRank=unitRank(u.xp);
+    const promoted=newRank>oldRank;
+    survivors.push({unit:u,type:u.type,name:UNIT_TYPES[u.type].name,
+      xp:u.xp,xpGain,oldRank,newRank,promoted,
+      color:UNIT_TYPES[u.type].color});
+  }
+  // Sort: promoted first, then by XP gain desc
+  survivors.sort((a,b)=>{
+    if(a.promoted!==b.promoted) return a.promoted?-1:1;
+    return b.xpGain-a.xpGain;
+  });
+
+  const deaths=game._waveDeaths||[];
+  const bonus=2+game.wave;
+
+  let html=`<h2>⚔️ WAVE ${game.wave} CLEARED</h2>`;
+  html+=`<div class="wave-label">${game.enemiesKilled} total enemies defeated</div>`;
+
+  // Promotions section
+  const promoted=survivors.filter(s=>s.promoted);
+  if(promoted.length>0){
+    html+=`<div class="aftermath-section"><h3>⭐ Promotions</h3>`;
+    for(const s of promoted){
+      const[r,g,b]=s.color;
+      html+=`<div class="aftermath-unit promoted promo-flash">
+        <div class="au-icon" style="background:rgb(${r},${g},${b})">${UNIT_TYPES[s.type].letter}</div>
+        <div class="au-info"><span class="au-name">${s.name}</span>
+          <span class="au-detail">${RANK_NAMES[s.oldRank]} → ${RANK_NAMES[s.newRank]}</span></div>
+        <span class="au-xp">+${s.xpGain} XP</span>
+        <span class="au-rank rank-${s.newRank}">${RANK_NAMES[s.newRank]} ${'★'.repeat(s.newRank)}</span>
+      </div>`;
+    }
+    html+=`</div>`;
+  }
+
+  // Survivors section
+  const nonPromoted=survivors.filter(s=>!s.promoted&&s.xpGain>0);
+  if(nonPromoted.length>0){
+    html+=`<div class="aftermath-section"><h3>🛡️ Survivors (${survivors.length} units)</h3>`;
+    for(const s of nonPromoted){
+      const[r,g,b]=s.color;
+      const rank=s.newRank;
+      const nextRank=rank<3?RANK_THRESHOLDS[rank+1]:null;
+      const progress=nextRank?` (${s.xp}/${nextRank})`:'';
+      html+=`<div class="aftermath-unit">
+        <div class="au-icon" style="background:rgb(${r},${g},${b})">${UNIT_TYPES[s.type].letter}</div>
+        <div class="au-info"><span class="au-name">${s.name}</span>
+          <span class="au-detail">${RANK_NAMES[rank]}${progress}</span></div>
+        <span class="au-xp">+${s.xpGain} XP</span>
+        <span class="au-rank rank-${rank}">${'★'.repeat(rank)||'—'}</span>
+      </div>`;
+    }
+    html+=`</div>`;
+  }
+
+  // Fallen section
+  if(deaths.length>0){
+    html+=`<div class="aftermath-section"><h3>💀 Fallen (${deaths.length} lost)</h3>`;
+    for(const d of deaths){
+      const def=UNIT_TYPES[d.type];
+      const[r,g,b]=def.color;
+      html+=`<div class="aftermath-unit died">
+        <div class="au-icon" style="background:rgb(${r},${g},${b});opacity:0.5">${def.letter}</div>
+        <div class="au-info"><span class="au-name">${d.name}</span>
+          <span class="au-detail">${RANK_NAMES[d.rank]} · ${d.xp} XP lost</span></div>
+        <span class="au-rank rank-${d.rank}">${d.rank>0?'★'.repeat(d.rank):'—'}</span>
+      </div>`;
+    }
+    html+=`</div>`;
+  }
+
+  // Bonus resources
+  html+=`<div style="margin-top:14px;font-size:13px;color:rgba(200,200,210,0.6)">+${bonus} Wood, +${bonus} Food wave bonus</div>`;
+
+  html+=`<button class="aftermath-btn" onclick="closeAftermath()">Continue to Build Phase →</button>`;
+  panel.innerHTML=html;
+  overlay.classList.add('show');
+}
+
+function closeAftermath(){
+  document.getElementById('aftermath-overlay').classList.remove('show');
+  game.phase='BUILD';
+  const badge=document.getElementById('phase-badge');
+  badge.textContent='BUILD';badge.className='phase-badge phase-build';
+  document.getElementById('toolbar').classList.remove('combat-mode');
+  document.getElementById('game-canvas').classList.remove('combat-cursor');
+  selectTool('gather');
+  addFloat(`+${2+game.wave} Wood, +${2+game.wave} Food`, hero.x, hero.y-TILE_SIZE, '#e8c56a');
   showBanner(`✅ WAVE ${game.wave} CLEARED`);
 }
 
@@ -580,6 +798,9 @@ function killEnemy(e,i,source,sourceUnit){
   if(source==='unit'&&sourceUnit){
     sourceUnit.xp+=10; // bonus XP for kill
     game.killsByUnit=(game.killsByUnit||0)+1;
+    // Check for rank-up
+    const newRank=checkRankUp(sourceUnit);
+    if(newRank>0) showRankUpEffect(sourceUnit,newRank);
   }
   // Morale boost to nearby units when enemy dies
   onEnemyKillMoraleBoost(e.x,e.y);
@@ -822,7 +1043,8 @@ function updateProjectiles(dt){
       // Hit — check for AOE (catapult boulders)
       if(p.aoe){
         // AOE damage: hit all enemies within radius of impact point
-        const aoePx=CATAPULT_AOE_RADIUS*TILE_SIZE;
+        const aoeMult=p.aoeMultiplier||1.0;
+        const aoePx=CATAPULT_AOE_RADIUS*TILE_SIZE*aoeMult;
         const impactX=p.tx, impactY=p.ty;
         addParticles(impactX,impactY,'rgba(180,140,80,0.9)',12);
         addParticles(impactX,impactY,'rgba(255,200,100,0.6)',8);
@@ -924,19 +1146,37 @@ function updateUnits(dt){
       }
       if(nearest&&u.atkCooldown<=0){
         // Attack! Apply charge bonus if first hit
+        // Rank 3: Thundercharge — 4× charge, stuns nearby enemies 0.5s
+        const isThunder=unitRank(u.xp)>=3;
+        const chargeMult=isThunder?4.0:CAVALRY_CHARGE_MULT;
         let dmg=u.dmg;
-        if(!u.hasCharged){dmg=Math.round(u.dmg*CAVALRY_CHARGE_MULT);u.hasCharged=true;}
+        if(!u.hasCharged){dmg=Math.round(u.dmg*chargeMult);u.hasCharged=true;}
         u.atkCooldown=getUnitAtkRate(u);
         nearest.hp-=dmg;
         nearest.hitFlash=1;
         const isCharge=dmg>u.dmg;
-        addFloat(`${isCharge?'⚡ ':''}−${dmg}`,nearest.x,nearest.y-14,isCharge?'#ffcc44':'#c88040');
+        addFloat(`${isCharge?(isThunder?'⚡⚡ THUNDER ':'⚡ '):''}−${dmg}`,nearest.x,nearest.y-14,isCharge?'#ffcc44':'#c88040');
         addParticles(nearest.x,nearest.y,isCharge?'rgba(255,200,60,0.8)':'rgba(160,100,60,0.7)',isCharge?8:4);
-        if(isCharge)cam.shake=Math.max(cam.shake,3);
+        if(isCharge){
+          cam.shake=Math.max(cam.shake,isThunder?6:3);
+          // Thundercharge: stun (slow) nearby enemies
+          if(isThunder){
+            for(const se of enemies){
+              const sdx=se.x-nearest.x,sdy=se.y-nearest.y;
+              if(Math.sqrt(sdx*sdx+sdy*sdy)<=2*TILE_SIZE){
+                se.slowTimer=Math.max(se.slowTimer,0.8);
+              }
+            }
+            addParticles(nearest.x,nearest.y,'rgba(255,255,100,0.9)',10);
+          }
+        }
         if(nearest.hp<=0){
           const idx=enemies.indexOf(nearest);
           if(idx>=0){killEnemy(nearest,idx,'unit',u);u.xp+=10;}
-        } else { u.xp+=1; }
+        } else {
+          u.xp+=1;
+          const nr=checkRankUp(u); if(nr>0) showRankUpEffect(u,nr);
+        }
       }
 
       // Move toward waypoint
@@ -974,14 +1214,20 @@ function updateUnits(dt){
     if(u.type==='MILITIA'){
       // Melee attack — immediate damage
       u.atkCooldown=getUnitAtkRate(u);
-      nearest.hp-=u.dmg;
+      let dmg=u.dmg;
+      // Rank 3: Last Stand — 50% DR when below 30% HP
+      const isLastStand=unitRank(u.xp)>=3&&u.hp/u.maxHP<0.3;
+      nearest.hp-=dmg;
       nearest.hitFlash=1;
-      addFloat(`−${u.dmg}`,nearest.x,nearest.y-14,'#7ab0d8');
+      addFloat(`${isLastStand?'🛡️ ':''}−${dmg}`,nearest.x,nearest.y-14,'#7ab0d8');
       addParticles(nearest.x,nearest.y,'rgba(90,140,200,0.7)',4);
       if(nearest.hp<=0){
         const idx=enemies.indexOf(nearest);
         if(idx>=0){killEnemy(nearest,idx,'unit',u);u.xp+=10;}
-      } else { u.xp+=1; }
+      } else {
+        u.xp+=1;
+        const nr=checkRankUp(u); if(nr>0) showRankUpEffect(u,nr);
+      }
     }
     else if(u.type==='ARCHER'){
       // Ranged attack — fire a projectile
@@ -992,57 +1238,97 @@ function updateUnits(dt){
         source:'unit', sourceUnit:u,
         color:'rgba(80,180,110,0.9)', trailColor:'rgba(80,180,110,0.3)',
       });
+      // Rank 3: Double Shot — fire a second arrow at slight offset
+      if(unitRank(u.xp)>=3){
+        const spread=TILE_SIZE*0.3;
+        projectiles.push({
+          x:ux+spread*(Math.random()-0.5), y:uy+spread*(Math.random()-0.5),
+          tx:nearest.x, ty:nearest.y,
+          speed:260, dmg:u.dmg, target:nearest, age:0,
+          source:'unit', sourceUnit:u,
+          color:'rgba(120,220,140,0.9)', trailColor:'rgba(120,220,140,0.3)',
+        });
+      }
       u.xp+=1;
+      const nr=checkRankUp(u); if(nr>0) showRankUpEffect(u,nr);
     }
     else if(u.type==='SPEARMAN'){
       // Spear thrust — 2× damage vs fast enemies (runners), zone of control slow
+      // Rank 3: Impale — 3× vs fast, extended zone radius
       u.atkCooldown=getUnitAtkRate(u);
+      const isChampion=unitRank(u.xp)>=3;
       const isFast=ENEMY_TYPES[nearest.type]&&ENEMY_TYPES[nearest.type].speed>=5;
-      const dmg=isFast?Math.round(u.dmg*SPEAR_FAST_MULT):u.dmg;
+      const fastMult=isChampion?3.0:SPEAR_FAST_MULT;
+      const dmg=isFast?Math.round(u.dmg*fastMult):u.dmg;
       nearest.hp-=dmg;
       nearest.hitFlash=1;
-      addFloat(`${isFast?'🔱 ':''}−${dmg}`,nearest.x,nearest.y-14,isFast?'#ffe040':'#c0b040');
+      const impaleLabel=isChampion&&isFast?'⚔️ IMPALE ':'';
+      addFloat(`${impaleLabel}${isFast?'🔱 ':''}−${dmg}`,nearest.x,nearest.y-14,isFast?'#ffe040':'#c0b040');
       addParticles(nearest.x,nearest.y,isFast?'rgba(255,220,60,0.8)':'rgba(180,160,60,0.7)',isFast?6:4);
-      // Zone of control: slow all enemies within radius
-      const zocPx=SPEAR_SLOW_RADIUS*TILE_SIZE;
+      // Zone of control: slow all enemies within radius (Champion: 50% larger zone)
+      const zocMult=isChampion?1.5:1;
+      const zocPx=SPEAR_SLOW_RADIUS*TILE_SIZE*zocMult;
       for(const e of enemies){
         const edx=e.x-ux, edy=e.y-uy;
         if(Math.sqrt(edx*edx+edy*edy)<=zocPx){
-          e.slowTimer=Math.max(e.slowTimer,SPEAR_SLOW_DUR);
+          e.slowTimer=Math.max(e.slowTimer,isChampion?SPEAR_SLOW_DUR*1.5:SPEAR_SLOW_DUR);
         }
       }
       if(nearest.hp<=0){
         const idx=enemies.indexOf(nearest);
         if(idx>=0){killEnemy(nearest,idx,'unit',u);u.xp+=10;}
-      } else { u.xp+=isFast?2:1; }
+      } else {
+        u.xp+=isFast?2:1;
+        const nr=checkRankUp(u); if(nr>0) showRankUpEffect(u,nr);
+      }
     }
     else if(u.type==='CAVALRY'){
       // Stationary cavalry (no patrol set) — melee attack with charge bonus
+      // Rank 3: Thundercharge — 4× charge, stun nearby
+      const isThunder=unitRank(u.xp)>=3;
+      const chargeMult=isThunder?4.0:CAVALRY_CHARGE_MULT;
       u.atkCooldown=getUnitAtkRate(u);
       let dmg=u.dmg;
-      if(!u.hasCharged){dmg=Math.round(u.dmg*CAVALRY_CHARGE_MULT);u.hasCharged=true;}
+      if(!u.hasCharged){dmg=Math.round(u.dmg*chargeMult);u.hasCharged=true;}
       nearest.hp-=dmg;
       nearest.hitFlash=1;
       const isCharge=dmg>u.dmg;
-      addFloat(`${isCharge?'⚡ ':''}−${dmg}`,nearest.x,nearest.y-14,isCharge?'#ffcc44':'#c88040');
+      addFloat(`${isCharge?(isThunder?'⚡⚡ THUNDER ':'⚡ '):''}−${dmg}`,nearest.x,nearest.y-14,isCharge?'#ffcc44':'#c88040');
       addParticles(nearest.x,nearest.y,isCharge?'rgba(255,200,60,0.8)':'rgba(160,100,60,0.7)',isCharge?8:4);
-      if(isCharge)cam.shake=Math.max(cam.shake,3);
+      if(isCharge){
+        cam.shake=Math.max(cam.shake,isThunder?6:3);
+        if(isThunder){
+          for(const se of enemies){
+            const sdx=se.x-nearest.x,sdy=se.y-nearest.y;
+            if(Math.sqrt(sdx*sdx+sdy*sdy)<=2*TILE_SIZE) se.slowTimer=Math.max(se.slowTimer,0.8);
+          }
+          addParticles(nearest.x,nearest.y,'rgba(255,255,100,0.9)',10);
+        }
+      }
       if(nearest.hp<=0){
         const idx=enemies.indexOf(nearest);
         if(idx>=0){killEnemy(nearest,idx,'unit',u);u.xp+=10;}
-      } else { u.xp+=1; }
+      } else {
+        u.xp+=1;
+        const nr=checkRankUp(u); if(nr>0) showRankUpEffect(u,nr);
+      }
     }
     else if(u.type==='CATAPULT'){
       // Catapult — AOE boulder, slow fire, area damage
+      // Rank 3: Firestorm — 2× AOE radius, fire-colored projectile
+      const isFirestorm=unitRank(u.xp)>=3;
       u.atkCooldown=getUnitAtkRate(u);
       projectiles.push({
         x:ux, y:uy, tx:nearest.x, ty:nearest.y,
         speed:160, dmg:u.dmg, target:nearest, age:0,
         source:'unit', sourceUnit:u, aoe:true,
-        color:'rgba(160,120,80,0.95)', trailColor:'rgba(140,100,60,0.4)',
-        size:5, // bigger projectile
+        aoeMultiplier:isFirestorm?2.0:1.0,
+        color:isFirestorm?'rgba(255,120,30,0.95)':'rgba(160,120,80,0.95)',
+        trailColor:isFirestorm?'rgba(255,80,20,0.5)':'rgba(140,100,60,0.4)',
+        size:isFirestorm?7:5,
       });
       u.xp+=2;
+      const nr=checkRankUp(u); if(nr>0) showRankUpEffect(u,nr);
     }
   }
 
@@ -1084,11 +1370,15 @@ function findAdjacentUnit(eCol,eRow){
 
 function damageUnit(u,dmg,e){
   // Apply Shield Wall damage reduction
-  const effectiveDmg=Math.max(1,Math.round(dmg*getUnitDR(u)));
+  let dr=getUnitDR(u);
+  // Rank 3 Militia: Last Stand — 50% DR when below 30% HP
+  const isLastStand=u.type==='MILITIA'&&unitRank(u.xp)>=3&&u.hp/u.maxHP<0.3;
+  if(isLastStand) dr*=0.5;
+  const effectiveDmg=Math.max(1,Math.round(dmg*dr));
   u.hp=Math.max(0,u.hp-effectiveDmg);
   const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
-  const drText=u.shieldWall?`-${effectiveDmg} 🛡️`:`-${effectiveDmg}`;
-  addFloat(drText,ux,uy-14,u.shieldWall?'#6aa0d8':'#ff6644');
+  const drText=isLastStand?`-${effectiveDmg} 🛡️💀`:u.shieldWall?`-${effectiveDmg} 🛡️`:`-${effectiveDmg}`;
+  addFloat(drText,ux,uy-14,isLastStand?'#ffd700':u.shieldWall?'#6aa0d8':'#ff6644');
   addParticles(ux,uy,'rgba(255,80,60,0.6)',3);
 
   if(u.hp<=0){
@@ -1096,13 +1386,46 @@ function damageUnit(u,dmg,e){
     const idx=units.indexOf(u);
     if(idx>=0){
       const def=UNIT_TYPES[u.type];
-      addFloat(`${def.name} fallen!`,ux,uy-TILE_SIZE,'#ff4444');
-      // Death particles — dramatic burst
-      addParticles(ux,uy,`rgba(${def.color[0]},${def.color[1]},${def.color[2]},0.8)`,15);
-      addParticles(ux,uy,'rgba(200,50,30,0.6)',8);
-      cam.shake=Math.max(cam.shake,3);
-      // Morale hit to nearby units on friendly death
-      onFriendlyDeath(u.col,u.row);
+      const rank=unitRank(u.xp);
+
+      // ── DRAMATIC VETERAN DEATH EFFECTS ──
+      if(rank>=2){
+        // Elite/Champion death — massive dramatic burst
+        addFloat(`💀 ${RANK_NAMES[rank]} ${def.name} FALLEN!`,ux,uy-TILE_SIZE*2,'#ff2222');
+        addFloat(`${u.xp} XP lost forever`,ux,uy-TILE_SIZE,'#ff8844');
+        // Huge particle explosion scaled by rank
+        const burstCount=20+rank*10;
+        addParticles(ux,uy,`rgba(${def.color[0]},${def.color[1]},${def.color[2]},0.9)`,burstCount);
+        addParticles(ux,uy,'rgba(255,50,30,0.8)',burstCount/2);
+        addParticles(ux,uy,'rgba(255,200,80,0.6)',burstCount/3);
+        cam.shake=Math.max(cam.shake,5+rank*2);
+        // Lingering gold sparkle particles (rank glow fading)
+        for(let p=0;p<rank*4;p++){
+          const angle=Math.random()*Math.PI*2, speed=15+Math.random()*40;
+          particles.push({x:ux,y:uy,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed-30,
+            color:'rgba(255,215,0,0.8)',alpha:1,age:0,life:1.0+Math.random()*0.8,size:2+Math.random()*2});
+        }
+      } else if(rank===1){
+        // Veteran death — notable but less dramatic
+        addFloat(`${def.name} fallen! (Veteran)`,ux,uy-TILE_SIZE,'#ff6644');
+        addParticles(ux,uy,`rgba(${def.color[0]},${def.color[1]},${def.color[2]},0.8)`,20);
+        addParticles(ux,uy,'rgba(200,50,30,0.6)',10);
+        addParticles(ux,uy,'rgba(255,200,80,0.5)',5);
+        cam.shake=Math.max(cam.shake,5);
+      } else {
+        // Recruit death — standard
+        addFloat(`${def.name} fallen!`,ux,uy-TILE_SIZE,'#ff4444');
+        addParticles(ux,uy,`rgba(${def.color[0]},${def.color[1]},${def.color[2]},0.8)`,15);
+        addParticles(ux,uy,'rgba(200,50,30,0.6)',8);
+        cam.shake=Math.max(cam.shake,3);
+      }
+
+      // Track deaths for aftermath screen
+      if(!game._waveDeaths) game._waveDeaths=[];
+      game._waveDeaths.push({type:u.type,rank,xp:u.xp,name:def.name});
+
+      // Morale hit — veterans dying hurts more
+      onFriendlyDeath(u.col,u.row,rank);
       units.splice(idx,1);
     }
   }
@@ -1292,12 +1615,14 @@ function updateMorale(dt){
 }
 
 // Called when a friendly unit dies — nearby units take morale hit
-function onFriendlyDeath(deadCol,deadRow){
+// Veterans dying causes bigger morale hit (rank multiplier)
+function onFriendlyDeath(deadCol,deadRow,deadRank){
+  const rankMult=1+(deadRank||0)*0.3; // Veteran death: 1.3×, Elite: 1.6×, Champion: 1.9×
   for(const u of units){
     if(u.hp<=0||u.moraleState==='broken')continue;
     const dist=Math.abs(u.col-deadCol)+Math.abs(u.row-deadRow);
     if(dist<=3){
-      u.morale=Math.max(0,u.morale-MORALE_DRAIN_NEARBY_DEATH);
+      u.morale=Math.max(0,u.morale-MORALE_DRAIN_NEARBY_DEATH*rankMult);
     }
   }
 }
@@ -1500,7 +1825,7 @@ function handleRecruit(col,row){
   const newUnit={
     type:selectedTool, col, row,
     hp:def.hp, maxHP:def.hp, dmg:def.dmg, range:def.range,
-    xp:0, morale:MORALE_MAX, state:'idle',
+    xp:0, _lastRank:0, morale:MORALE_MAX, state:'idle',
     moraleState:'normal', fleeTimer:0, _fleeMoveTimer:0,
     atkCooldown:0,
   };
@@ -1844,11 +2169,28 @@ function drawUnits(now){
       ctx.fillRect(sx+(sw-bw)/2,mby,bw*mPct,bh);
     }
 
-    // Rank stars
+    // Rank chevrons (1-3 dots below letter)
     if(rank>0){
-      ctx.fillStyle='rgba(255,220,80,0.7)';ctx.font=`${8*z}px system-ui`;
-      const stars='★'.repeat(rank);
-      ctx.fillText(stars,sx+sw/2,sy+sw-z*3);
+      const dotR=2*z;
+      const dotY=sy+sw-z*4;
+      const totalW=(rank-1)*dotR*3;
+      const startX=sx+sw/2-totalW/2;
+      const rankDotColors=['','rgba(180,180,100,0.9)','rgba(220,180,60,0.95)','rgba(255,215,0,1)'];
+      ctx.fillStyle=rankDotColors[rank];
+      for(let d=0;d<rank;d++){
+        ctx.beginPath();
+        ctx.arc(startX+d*dotR*3,dotY,dotR,0,Math.PI*2);
+        ctx.fill();
+      }
+      // Champion: extra glow ring around dots
+      if(rank===3){
+        ctx.strokeStyle='rgba(255,215,0,0.4)';ctx.lineWidth=z;
+        for(let d=0;d<rank;d++){
+          ctx.beginPath();
+          ctx.arc(startX+d*dotR*3,dotY,dotR+z,0,Math.PI*2);
+          ctx.stroke();
+        }
+      }
     }
 
     // White flag on broken units
@@ -2211,8 +2553,11 @@ function updateUnitInfoPanel(){
   document.getElementById('ui-hp').textContent=`${u.hp}/${u.maxHP}`;
   document.getElementById('ui-dmg').textContent=u.dmg;
   document.getElementById('ui-range').textContent=def.range>1.5?def.range+' tiles':'Melee';
-  document.getElementById('ui-xp').textContent=u.xp;
-  document.getElementById('ui-rank').textContent=RANK_NAMES[rank]+(rank>0?' '+'★'.repeat(rank):'');
+  // XP with progress to next rank
+  const nextThreshold=rank<3?RANK_THRESHOLDS[rank+1]:null;
+  const xpText=nextThreshold?`${u.xp}/${nextThreshold}`:`${u.xp} (MAX)`;
+  document.getElementById('ui-xp').textContent=xpText;
+  document.getElementById('ui-rank').textContent=RANK_NAMES[rank]+(rank>0?' '+'●'.repeat(rank):'');
   // Morale display
   const moraleEl=document.getElementById('ui-morale');
   if(moraleEl){
@@ -2225,12 +2570,26 @@ function updateUnitInfoPanel(){
   const bonusParts=[];
   if(u.shieldWall)bonusParts.push('🛡️ Shield Wall (-30% DMG)');
   if(u.protectedFire)bonusParts.push('🏹 Protected Fire (+20% Rate)');
-  if(u.type==='SPEARMAN')bonusParts.push('🔱 Anti-fast ×2, Zone Slow');
+  if(u.type==='SPEARMAN'){
+    const isChamp=rank>=3;
+    bonusParts.push(`🔱 Anti-fast ×${isChamp?3:2}, Zone Slow${isChamp?' (Extended)':''}`);
+  }
   if(u.type==='CAVALRY'){
-    bonusParts.push('⚡ Charge: '+(u.hasCharged?'Used':'Ready'));
+    const isThunder=rank>=3;
+    bonusParts.push(`⚡ Charge: ${u.hasCharged?'Used':'Ready'}${isThunder?' (Thunder ×4)':''}`);
     if(u.patrol)bonusParts.push('🐎 Patrolling');
   }
-  if(u.type==='CATAPULT')bonusParts.push('💥 AOE 3×3 Splash');
+  if(u.type==='CATAPULT'){
+    const isFS=rank>=3;
+    bonusParts.push(`💥 AOE ${isFS?'6×6 Firestorm':'3×3'} Splash`);
+  }
+  // Rank bonuses display
+  if(rank>=1) bonusParts.push('⬆ +20% HP');
+  if(rank>=2) bonusParts.push('⬆ +20% DMG');
+  if(rank>=3){
+    const abilities={MILITIA:'Last Stand',ARCHER:'Double Shot',SPEARMAN:'Impale',CAVALRY:'Thundercharge',CATAPULT:'Firestorm'};
+    bonusParts.push(`★ ${abilities[u.type]||'Special'}`);
+  }
   const bonusEl=document.getElementById('ui-formation');
   if(bonusEl)bonusEl.textContent=bonusParts.length>0?bonusParts.join(' · '):'None';
   panel.classList.add('show');
