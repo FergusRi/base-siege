@@ -1163,12 +1163,12 @@ function draw(now){
     ctx.fillRect(0,0,canvas.width,canvas.height);
   }
 
-  // DEBUG HUD
-  ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(0,canvas.height-60,340,60);
-  ctx.fillStyle='#0f0';ctx.font='13px monospace';
-  ctx.fillText(`Phase: ${game.phase} | Enemies: ${enemies.length} | Queue: ${spawnQueue.length} | Wave: ${game.wave}`,8,canvas.height-40);
-  if(enemies.length>0){const e0=enemies[0];ctx.fillText(`E0 pos:(${e0.x.toFixed(0)},${e0.y.toFixed(0)}) pathIdx:${e0.pathIdx} pathLen:${e0.path?e0.path.length:'null'}`,8,canvas.height-20);}
-  else{ctx.fillText('No enemies alive',8,canvas.height-20);}
+  // DEBUG DOM HUD (readable by accessibility tree)
+  let dbgEl=document.getElementById('debug-hud');
+  if(!dbgEl){dbgEl=document.createElement('div');dbgEl.id='debug-hud';dbgEl.setAttribute('role','status');dbgEl.setAttribute('aria-live','polite');dbgEl.style.cssText='position:fixed;bottom:70px;left:10px;z-index:9999;background:rgba(0,0,0,0.85);color:#0f0;padding:8px 12px;font:13px monospace;pointer-events:none;border-radius:4px;max-width:500px;';document.body.appendChild(dbgEl);}
+  let dbgText=`Phase:${game.phase} Wave:${game.wave} Enemies:${enemies.length} Queue:${spawnQueue.length}`;
+  if(enemies.length>0){const e0=enemies[0];dbgText+=` | E0:(${e0.x.toFixed(0)},${e0.y.toFixed(0)}) idx:${e0.pathIdx} pLen:${e0.path?e0.path.length:'null'}`;}
+  dbgEl.textContent=dbgText;
 
   updateUI();
   drawMinimap();
