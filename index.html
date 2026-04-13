@@ -3804,21 +3804,39 @@ function handleGather(col,row){
   }
 }
 // Check if placing a blocking structure would seal ALL paths to base
+// Uses fast BFS flood-fill outward from base — escapes through first gap
 function wouldSealBase(col,row,structType){
   // Only walls and towers block pathfinding — gates don't
   if(structType!=='WALL'&&structType!=='TOWER') return false;
   const sk=col+','+row;
   // Temporarily add the structure
   structures[sk]={type:structType,hp:1,maxHP:1};
-  // Check from 4 carved spawn lane positions
-  const spawnPoints=[[BASE_CX,0],[BASE_CX,ROWS-1],[0,BASE_CY],[COLS-1,BASE_CY]];
-  let anyPath=false;
-  for(const[sc,sr] of spawnPoints){
-    if(findPath(sc,sr,BASE_CX,BASE_CY)){anyPath=true;break;}
+  // BFS outward from base: if we reach any map edge, path exists
+  const visited=new Set();
+  const queue=[BASE_CX+','+BASE_CY];
+  visited.add(queue[0]);
+  const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
+  let reachedEdge=false;
+  let head=0;
+  const MAX_BFS=200000; // safety cap — still much cheaper than 4× A*
+  while(head<queue.length && head<MAX_BFS){
+    const k=queue[head++];
+    const[cc,cr]=k.split(',').map(Number);
+    // If we hit a map edge, enemies can reach the base — not sealed
+    if(cc<=0||cc>=COLS-1||cr<=0||cr>=ROWS-1){reachedEdge=true;break;}
+    for(const[dc,dr] of dirs){
+      const nc=cc+dc, nr=cr+dr;
+      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
+      const nk=nc+','+nr;
+      if(visited.has(nk)) continue;
+      if(!isWalkable(nc,nr)) continue;
+      visited.add(nk);
+      queue.push(nk);
+    }
   }
   // Remove temp structure
   delete structures[sk];
-  return !anyPath;  // sealed if NO path exists from any spawn lane
+  return !reachedEdge;  // sealed if BFS couldn't reach any map edge
 }
 
 function handleBuild(col,row){
