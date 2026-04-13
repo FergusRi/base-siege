@@ -449,6 +449,26 @@ const DEPOSITS={
 let depositHP=[];
 // regrowth tracking: {key:'c,r', originalTile, wavesLeft}
 let regrowthQueue=[];
+
+// ─── CITIZEN ENTITIES ───
+// Citizens are autonomous workers that auto-gather resources near their settlement
+let citizens=[];
+const CITIZEN_SPEED=2*TILE_SIZE; // pixels per second (2 tiles/s)
+const CITIZEN_GATHER_TIME=1.5;   // seconds standing on resource to harvest
+const CITIZEN_GATHER_RADIUS=10;  // tile radius citizens search for resources
+const CITIZENS_PER_BLOCK=2;      // citizens spawned per settlement
+// Resource priority: food > wood > stone > metal > gold (higher index = lower priority)
+const CITIZEN_RES_PRIORITY=['food','wood','stone','metal','gold'];
+// Pastel colors per resource type for citizen rendering
+const CITIZEN_COLORS={
+  idle:[180,180,200],
+  food:[220,140,160],  // pastel pink
+  wood:[140,200,140],  // pastel green
+  stone:[170,170,190], // pastel grey-blue
+  metal:[140,170,210], // pastel blue
+  gold:[220,200,120],  // pastel gold
+};
+
 // Legacy compat
 const HARVEST={[T.TREE]:{res:'wood',amt:2},[T.STONE]:{res:'stone',amt:2},[T.ORE]:{res:'metal',amt:1},[T.BERRY]:{res:'food',amt:3},[T.GOLD]:{res:'gold',amt:1}};
 const STRUCTS={
@@ -836,6 +856,8 @@ function placeHQ(col,row){
   // Center camera on settlement
   cam.x=col*TILE_SIZE-canvas.width/2; cam.y=row*TILE_SIZE-canvas.height/2;
   cam.tx=cam.x; cam.ty=cam.y;
+  // Spawn citizens for first settlement
+  spawnCitizensForBlock(col,row);
 }
 // Helper: count remaining settlements
 function getSettlementCount(){
@@ -859,6 +881,333 @@ function carveSpawnPaths(){
   for(let c=BASE_CX+1;c<COLS;c++){if(map[c][BASE_CY]===T.WATER)map[c][BASE_CY]=T.GRASS;if(BASE_CY<ROWS-1&&map[c][BASE_CY+1]===T.WATER)map[c][BASE_CY+1]=T.GRASS;}
 }
 
+
+// ═══════════════════════════════════════════
+//  CITIZEN ENTITY SYSTEM
+// ═══════════════════════════════════════════
+
+function spawnCitizensForBlock(blockCol,blockRow){
+  const blockKey=blockCol+','+blockRow;
+  // Find 2 nearby walkable tiles to spawn citizens
+  const offsets=[[0,1],[1,0],[0,-1],[-1,0],[1,1],[-1,1],[1,-1],[-1,-1]];
+  let spawned=0;
+  for(const[dc,dr] of offsets){
+    if(spawned>=CITIZENS_PER_BLOCK) break;
+    const sc=blockCol+dc, sr=blockRow+dr;
+    if(sc<0||sc>=COLS||sr<0||sr>=ROWS) continue;
+    if(map[sc][sr]!==T.GRASS||structures[sc+','+sr]) continue;
+    citizens.push({
+      x:sc*TILE_SIZE+TILE_SIZE/2,
+      y:sr*TILE_SIZE+TILE_SIZE/2,
+      col:sc, row:sr,
+      blockKey:blockKey,          // which settlement owns this citizen
+      state:'idle',               // idle | walking | gathering
+      targetCol:-1, targetRow:-1, // destination tile
+      path:null, pathIdx:0,       // A* path and current step
+      gatherTimer:0,              // time spent gathering current tile
+      gatherRes:null,             // resource type being gathered
+      idleTimer:0,                // small delay before seeking next resource
+      bobPhase:Math.random()*Math.PI*2, // animation offset
+    });
+    spawned++;
+  }
+  // Float to show citizens spawned
+  if(spawned>0){
+    addFloat(`+${spawned} Citizens`,blockCol*TILE_SIZE+TILE_SIZE/2,blockRow*TILE_SIZE-TILE_SIZE,'#c8e0ff');
+  }
+}
+
+function removeCitizensForBlock(blockKey){
+  for(let i=citizens.length-1;i>=0;i--){
+    if(citizens[i].blockKey===blockKey){
+      // Death particles
+      addParticles(citizens[i].x,citizens[i].y,'rgba(180,180,200,0.7)',4);
+      citizens.splice(i,1);
+    }
+  }
+}
+
+// Find nearest harvestable resource tile within radius of a citizen's home settlement
+function findCitizenResource(citizen){
+  const[bCol,bRow]=citizen.blockKey.split(',').map(Number);
+  const radius=CITIZEN_GATHER_RADIUS;
+  let best=null, bestPriority=999, bestDist=Infinity;
+
+  // Scan tiles in radius around the settlement (not the citizen)
+  const minC=Math.max(0,bCol-radius), maxC=Math.min(COLS-1,bCol+radius);
+  const minR=Math.max(0,bRow-radius), maxR=Math.min(ROWS-1,bRow+radius);
+
+  for(let c=minC;c<=maxC;c++){
+    for(let r=minR;r<=maxR;r++){
+      const tileDist=Math.abs(c-bCol)+Math.abs(r-bRow);
+      if(tileDist>radius) continue;
+      // Must be a harvestable deposit with HP remaining
+      const dep=DEPOSITS[map[c][r]];
+      if(!dep||!depositHP[c]||depositHP[c][r]<=0) continue;
+      // Must be in VISIBLE fog (citizens can only gather what's visible)
+      if(fogMap[c]&&fogMap[c][r]<FOG_VISIBLE) continue;
+      // Check if another citizen is already targeting this tile
+      let taken=false;
+      for(let j=0;j<citizens.length;j++){
+        if(citizens[j]!==citizen&&citizens[j].targetCol===c&&citizens[j].targetRow===r&&
+           (citizens[j].state==='walking'||citizens[j].state==='gathering')){
+          taken=true; break;
+        }
+      }
+      if(taken) continue;
+      // Priority based on resource type
+      const pri=CITIZEN_RES_PRIORITY.indexOf(dep.res);
+      const dist=Math.abs(c-citizen.col)+Math.abs(r-citizen.row);
+      // Prefer higher priority resource, then closer distance
+      if(pri<bestPriority||(pri===bestPriority&&dist<bestDist)){
+        bestPriority=pri; bestDist=dist; best={c,r,dep};
+      }
+    }
+  }
+  return best;
+}
+
+// Lightweight citizen pathfinding (BFS with limited iterations — citizens don't need long paths)
+function citizenFindPath(sc,sr,tc,tr){
+  if(sc===tc&&sr===tr) return [{c:tc,r:tr}];
+  // Quick sanity — if target isn't near, skip expensive pathfinding
+  const manhattan=Math.abs(sc-tc)+Math.abs(sr-tr);
+  if(manhattan>CITIZEN_GATHER_RADIUS*3) return null;
+
+  const open=[{c:sc,r:sr}];
+  const visited=new Set();
+  const parent=new Map();
+  visited.add(sc+','+sr);
+  const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
+  let iterations=0;
+  const maxIter=2000; // citizens have short paths, don't need huge search
+
+  while(open.length>0&&iterations<maxIter){
+    iterations++;
+    const cur=open.shift();
+    for(const[dc,dr] of dirs){
+      const nc=cur.c+dc, nr=cur.r+dr;
+      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
+      const nk=nc+','+nr;
+      if(visited.has(nk)) continue;
+      // Citizens can walk on grass and resource tiles (not structures, water)
+      const tile=map[nc][nr];
+      const isTarget=(nc===tc&&nr===tr);
+      // Allow walking on grass, or the target resource tile itself
+      if(!isTarget){
+        if(tile===T.WATER) continue;
+        if(structures[nk]) continue;
+      } else {
+        // Target tile: must still exist as resource
+        if(tile===T.WATER) continue;
+      }
+      visited.add(nk);
+      parent.set(nk,cur.c+','+cur.r);
+      if(nc===tc&&nr===tr){
+        // Reconstruct
+        const path=[];
+        let k=nk;
+        while(k){
+          const[pc,pr]=k.split(',').map(Number);
+          path.push({c:pc,r:pr});
+          k=parent.get(k);
+        }
+        path.reverse();
+        return path;
+      }
+      open.push({c:nc,r:nr});
+    }
+  }
+  return null; // no path found
+}
+
+function updateCitizens(dt){
+  // Citizens only work during BUILD phase
+  if(game.phase!=='BUILD'&&game.phase!=='PLACE_HQ') return;
+
+  for(let i=0;i<citizens.length;i++){
+    const cit=citizens[i];
+
+    // Update tile position from pixel position
+    cit.col=Math.floor(cit.x/TILE_SIZE);
+    cit.row=Math.floor(cit.y/TILE_SIZE);
+
+    if(cit.state==='idle'){
+      cit.idleTimer+=dt;
+      if(cit.idleTimer<0.5) continue; // brief pause before seeking
+      cit.idleTimer=0;
+      // Find a resource to gather
+      const target=findCitizenResource(cit);
+      if(target){
+        // Path to adjacent tile (not ON the resource — stand next to it)
+        const adjTiles=[[0,-1],[0,1],[-1,0],[1,0]];
+        let bestAdj=null, bestAdjDist=Infinity;
+        for(const[dc,dr] of adjTiles){
+          const ac=target.c+dc, ar=target.r+dr;
+          if(ac<0||ac>=COLS||ar<0||ar>=ROWS) continue;
+          if(map[ac][ar]===T.WATER||structures[ac+','+ar]) continue;
+          const d=Math.abs(ac-cit.col)+Math.abs(ar-cit.row);
+          if(d<bestAdjDist){bestAdjDist=d;bestAdj={c:ac,r:ar};}
+        }
+        if(!bestAdj) continue; // no reachable adjacent tile
+        // If already adjacent to target, start gathering immediately
+        if(Math.abs(cit.col-target.c)<=1&&Math.abs(cit.row-target.r)<=1&&
+           Math.abs(cit.col-target.c)+Math.abs(cit.row-target.r)===1){
+          cit.state='gathering';
+          cit.targetCol=target.c; cit.targetRow=target.r;
+          cit.gatherTimer=0;
+          cit.gatherRes=target.dep.res;
+          continue;
+        }
+        const path=citizenFindPath(cit.col,cit.row,bestAdj.c,bestAdj.r);
+        if(path&&path.length>1){
+          cit.path=path;
+          cit.pathIdx=1; // skip first node (current position)
+          cit.targetCol=target.c;
+          cit.targetRow=target.r;
+          cit.gatherRes=target.dep.res;
+          cit.state='walking';
+        }
+      }
+    }
+
+    else if(cit.state==='walking'){
+      if(!cit.path||cit.pathIdx>=cit.path.length){
+        // Reached end of path — check if adjacent to target
+        if(Math.abs(cit.col-cit.targetCol)<=1&&Math.abs(cit.row-cit.targetRow)<=1&&
+           Math.abs(cit.col-cit.targetCol)+Math.abs(cit.row-cit.targetRow)===1){
+          // Check target still valid
+          const dep=DEPOSITS[map[cit.targetCol][cit.targetRow]];
+          if(dep&&depositHP[cit.targetCol]&&depositHP[cit.targetCol][cit.targetRow]>0){
+            cit.state='gathering';
+            cit.gatherTimer=0;
+          } else {
+            cit.state='idle'; cit.path=null; cit.idleTimer=0;
+          }
+        } else {
+          cit.state='idle'; cit.path=null; cit.idleTimer=0;
+        }
+        continue;
+      }
+      // Move toward next path node
+      const next=cit.path[cit.pathIdx];
+      const tx=next.c*TILE_SIZE+TILE_SIZE/2;
+      const ty=next.r*TILE_SIZE+TILE_SIZE/2;
+      const dx=tx-cit.x, dy=ty-cit.y;
+      const dist=Math.sqrt(dx*dx+dy*dy);
+      const step=CITIZEN_SPEED*dt;
+      if(dist<=step){
+        cit.x=tx; cit.y=ty;
+        cit.pathIdx++;
+      } else {
+        cit.x+=dx/dist*step;
+        cit.y+=dy/dist*step;
+      }
+    }
+
+    else if(cit.state==='gathering'){
+      // Verify resource is still valid
+      const origTile=map[cit.targetCol][cit.targetRow];
+      const dep=DEPOSITS[origTile];
+      if(!dep||!depositHP[cit.targetCol]||depositHP[cit.targetCol][cit.targetRow]<=0){
+        cit.state='idle'; cit.gatherTimer=0; cit.idleTimer=0;
+        continue;
+      }
+      cit.gatherTimer+=dt;
+      if(cit.gatherTimer>=CITIZEN_GATHER_TIME){
+        // Harvest!
+        depositHP[cit.targetCol][cit.targetRow]--;
+        game.resources[dep.res]+=dep.amt;
+        const remaining=depositHP[cit.targetCol][cit.targetRow];
+        const label=dep.res.charAt(0).toUpperCase()+dep.res.slice(1);
+        const resColor=RES_COLORS[dep.res]||'#ffffff';
+
+        if(remaining>0){
+          addFloat(`+${dep.amt} ${label}`,cit.targetCol*TILE_SIZE+TILE_SIZE/2,cit.targetRow*TILE_SIZE,resColor);
+        } else {
+          // Depleted
+          addFloat(`+${dep.amt} ${label} (Depleted!)`,cit.targetCol*TILE_SIZE+TILE_SIZE/2,cit.targetRow*TILE_SIZE,'#aa8855');
+          map[cit.targetCol][cit.targetRow]=dep.depletedTile;
+          if(dep.regrowAfter>0){
+            regrowthQueue.push({col:cit.targetCol,row:cit.targetRow,originalTile:origTile,wavesLeft:dep.regrowAfter});
+          }
+          rebuildTile(cit.targetCol,cit.targetRow);
+        }
+        addParticles(cit.targetCol*TILE_SIZE+TILE_SIZE/2,cit.targetRow*TILE_SIZE+TILE_SIZE/2,resColor,2);
+        // Reset — look for next resource
+        cit.state='idle';
+        cit.gatherTimer=0;
+        cit.idleTimer=0;
+        cit.path=null;
+      }
+    }
+  }
+}
+
+function drawCitizens(now){
+  const z=cam.zoom;
+  const citSize=TILE_SIZE*0.5; // 50% tile size — small workers
+  for(let i=0;i<citizens.length;i++){
+    const cit=citizens[i];
+    // Fog check — only draw if citizen's tile is VISIBLE or EXPLORED
+    const citCol=Math.floor(cit.x/TILE_SIZE), citRow=Math.floor(cit.y/TILE_SIZE);
+    if(fogMap[citCol]&&fogMap[citCol][citRow]<FOG_EXPLORED) continue;
+
+    const sx=(cit.x-cam.x)*z, sy=(cit.y-cam.y)*z;
+    const sz=citSize*z;
+
+    // Bob animation
+    const bob=Math.sin((now*0.004)+cit.bobPhase)*2*z;
+
+    // Color based on what they're gathering or idle
+    let col=CITIZEN_COLORS.idle;
+    if(cit.gatherRes&&cit.state!=='idle'){
+      col=CITIZEN_COLORS[cit.gatherRes]||CITIZEN_COLORS.idle;
+    }
+
+    // Body circle
+    ctx.beginPath();
+    ctx.arc(sx, sy+bob-sz*0.2, sz*0.55, 0, Math.PI*2);
+    ctx.fillStyle=`rgba(${col[0]},${col[1]},${col[2]},0.85)`;
+    ctx.fill();
+    ctx.strokeStyle=`rgba(${col[0]+40},${col[1]+40},${col[2]+40},0.6)`;
+    ctx.lineWidth=z*1.2;
+    ctx.stroke();
+
+    // "C" letter
+    ctx.fillStyle=`rgba(40,35,50,0.8)`;
+    ctx.font=`bold ${Math.max(8,sz*0.7)|0}px system-ui`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('C', sx, sy+bob-sz*0.2);
+
+    // Gathering progress ring
+    if(cit.state==='gathering'){
+      const progress=cit.gatherTimer/CITIZEN_GATHER_TIME;
+      ctx.beginPath();
+      ctx.arc(sx, sy+bob-sz*0.2, sz*0.7, -Math.PI/2, -Math.PI/2+Math.PI*2*progress);
+      ctx.strokeStyle=`rgba(255,255,150,0.7)`;
+      ctx.lineWidth=z*2;
+      ctx.stroke();
+    }
+
+    // Walking: small direction indicator (tiny line showing movement)
+    if(cit.state==='walking'&&cit.path&&cit.pathIdx<cit.path.length){
+      const next=cit.path[cit.pathIdx];
+      const nx=(next.c*TILE_SIZE+TILE_SIZE/2-cam.x)*z;
+      const ny=(next.r*TILE_SIZE+TILE_SIZE/2-cam.y)*z;
+      const dx=nx-sx, dy=(ny+bob)-sy;
+      const len=Math.sqrt(dx*dx+dy*dy);
+      if(len>0){
+        ctx.beginPath();
+        ctx.moveTo(sx,sy+bob-sz*0.2);
+        ctx.lineTo(sx+dx/len*sz*0.8, sy+bob-sz*0.2+dy/len*sz*0.8);
+        ctx.strokeStyle='rgba(255,255,255,0.25)';
+        ctx.lineWidth=z;
+        ctx.stroke();
+      }
+    }
+  }
+}
 
 // ═══════════════════════════════════════════
 //  A* PATHFINDING
@@ -1707,6 +2056,7 @@ function destroyStructure(key){
   // Remove permanent fog vision from this building (re-fog uncovered tiles)
   if(structures[key].type==='CITIZEN_BLOCK'){
     removeCitizenBlockVision(c,r);
+    removeCitizensForBlock(key); // Remove citizens belonging to this settlement
     citizenBlockCount=Math.max(0,citizenBlockCount-1);
     updateCitizenCostUI();
   } else {
@@ -2055,6 +2405,7 @@ function updateEnemies(dt){
           cam.shake=Math.max(cam.shake,4);
           if(structures[sk].type==='CITIZEN_BLOCK'){
             removeCitizenBlockVision(gc,gr);
+            removeCitizensForBlock(sk);
             citizenBlockCount=Math.max(0,citizenBlockCount-1);
             updateCitizenCostUI();
           } else {
@@ -3015,6 +3366,10 @@ function handleBuild(col,row){
     addStructureVision(col,row);
   }
   addFloat(`${def.name} built!`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#7aca7a');
+  // Spawn citizens for new settlements
+  if(selectedTool==='CITIZEN_BLOCK'){
+    spawnCitizensForBlock(col,row);
+  }
 }
 // Cavalry patrol waypoint state
 let cavalryPendingUnit=null; // unit waiting for second waypoint click
@@ -3094,6 +3449,7 @@ function handleDemolish(col,row){
   if(s.type==='CITIZEN_BLOCK'){
     for(const[r,a]of Object.entries(def.cost))game.resources[r]+=Math.floor(a*0.5);
     removeCitizenBlockVision(col,row);
+    removeCitizensForBlock(sk);
     citizenBlockCount=Math.max(0,citizenBlockCount-1);
     updateCitizenCostUI();
   } else {
@@ -4251,6 +4607,12 @@ function drawMinimap(){
     mmCtx.fillStyle=`rgb(${def.color[0]},${def.color[1]},${def.color[2]})`;
     mmCtx.fillRect(u.col*sx,u.row*sy,Math.max(sx,1.5),Math.max(sy,1.5));
   }
+  // Citizens on minimap
+  mmCtx.fillStyle='rgba(180,200,230,0.8)';
+  for(const cit of citizens){
+    const cc=(cit.x/TILE_SIZE)*sx,cr=(cit.y/TILE_SIZE)*sy;
+    mmCtx.fillRect(cc-0.5,cr-0.5,1.5,1.5);
+  }
   // Enemies on minimap (only if on VISIBLE tiles)
   mmCtx.fillStyle='rgba(220,60,50,0.9)';
   for(const e of enemies){
@@ -4301,7 +4663,7 @@ function updateUI(){
   fill.style.width=sPct+'%';
   fill.style.background=sPct>60?'linear-gradient(90deg,#4a4,#6c6)':sPct>30?'linear-gradient(90deg,#da4,#ec6)':'linear-gradient(90deg,#d44,#e66)';
   const sCount=getSettlementCount();
-  document.getElementById('base-hp-text').textContent=`${sHP.hp}HP · ${sCount} settlement${sCount!==1?'s':''}`;
+  document.getElementById('base-hp-text').textContent=`${sHP.hp}HP · ${sCount} settlement${sCount!==1?'s':''} · ${citizens.length}👷`;
   // Hero HP bar
   const hpPct=hero.hp/hero.maxHP*100;
   const hFill=document.getElementById('hero-hp-fill');
@@ -4408,7 +4770,7 @@ function restartGame(){
   hero.stunTimer=0; hero.hitFlash=0; hero.kills=0;
   // Clear entities
   enemies.length=0; units.length=0; projectiles.length=0;
-  floats.length=0; particles.length=0; spawnQueue.length=0;
+  floats.length=0; particles.length=0; spawnQueue.length=0; citizens.length=0;
   for(const k in structures) delete structures[k];
   citizenBlockCount=0; updateCitizenCostUI();
   cavalryPendingUnit=null;
@@ -4520,6 +4882,7 @@ function draw(now){
   updateBuildTimer(dt);
   updateHero(dt);
   updateHeroCombat(dt);
+  updateCitizens(dt);
   checkFormations(); // Update formation bonuses every frame
   if(game.phase==='PREVIEW'){
     updateWavePreview(dt);
@@ -4570,6 +4933,7 @@ function draw(now){
   drawBaseGlow(now);
   drawStructures();
   drawUnits(now);
+  drawCitizens(now);
   drawCamps(now);
   drawEnemies(now);
   drawProjectiles();
