@@ -943,63 +943,171 @@ function centerDist(c,r){
 function generateMap(){
   map=[];tileVariant=[];depositHP=[];
   initFogMap();
-  // Pass 1: terrain (water + grass base)
+
+  // ─── BIOME NOISE LAYERS ───
+  // Layer 1: elevation (base terrain — water vs land)
+  // Layer 2: moisture (forest vs dry)
+  // Layer 3: rockiness (mountain vs plains)
+  // Layer 4: river paths (thin winding waterways)
+
+  // Pass 1: Base terrain + biome assignment
   for(let c=0;c<COLS;c++){map[c]=[];tileVariant[c]=[];depositHP[c]=[];
     for(let r=0;r<ROWS;r++){
       tileVariant[c][r]=(hash(c*7+31,r*13+47)-0.5)*2;
       depositHP[c][r]=0;
-      const elev=fbm(c,r,4,0.01,2,0.5);
+
       const ed=edgeDist(c,r);
-      if(elev<0.28&&ed>8){map[c][r]=T.WATER;continue;}
+      const cd=centerDist(c,r);
+
+      // Elevation — controls water placement
+      const elev=fbm(c,r,4,0.01,2,0.5);
+
+      // River noise — thin winding channels using high-freq noise
+      const riverRaw=fbm(c+500,r+500,3,0.008,2.2,0.45);
+      const riverWidth=0.015+cd*0.008; // slightly wider toward edges
+      const isRiver=Math.abs(riverRaw-0.45)<riverWidth && ed>6;
+
+      // Ocean/lake water
+      if(elev<0.26&&ed>10){map[c][r]=T.WATER;continue;}
+      // River water
+      if(isRiver){map[c][r]=T.WATER;continue;}
+
       map[c][r]=T.GRASS;
     }
   }
-  // Pass 2: distance-based resource placement with clustering
-  // Distance bands based on centerDist:
-  //   Inner (0-0.2):  sparse trees only
-  //   Mid   (0.2-0.55): trees + berries (moderate)
-  //   Outer (0.55-0.85): stone clusters + scattered trees
-  //   Edge  (0.85-1.0): iron + gold + camps (later)
-  
-  // Place resource clusters using seed points
-  placeResourceClusters();
+
+  // Pass 2: Biome-based resource placement
+  placeBiomeResources();
 }
 
-// Random edge-weighted resource generation
-// Each tile independently rolls for resources; probability scales with centerDist
-// (0 at center, 1 at edges). Trees/berries spawn everywhere, stone/ore/gold favor edges.
-function placeResourceClusters(){
-  // Resource configs: tileType, baseProb (at dist=0), edgeMult (extra prob at dist=1), minDist (no spawn below)
-  const RES_CFG=[
-    {tile:T.TREE,  baseProb:0.025, edgeMult:0.04,  minDist:0.0},  // trees everywhere, denser at edges
-    {tile:T.BERRY, baseProb:0.008, edgeMult:0.012, minDist:0.0},  // berries everywhere, moderate
-    {tile:T.STONE, baseProb:0.003, edgeMult:0.025, minDist:0.15}, // stone sparse center, dense edges
-    {tile:T.ORE,   baseProb:0.001, edgeMult:0.018, minDist:0.25}, // ore mostly outer half
-    {tile:T.GOLD,  baseProb:0.0,   edgeMult:0.012, minDist:0.5},  // gold only outer half, edges rich
-  ];
+// ─── BIOME RESOURCE PLACEMENT ───
+// Uses noise layers to create distinct biome zones with natural resource clusters
+function placeBiomeResources(){
+  // Biome noise channels (offset from base to get independent patterns)
+  // moisture: high = forest, low = dry plains
+  // rockiness: high = mountains, low = flatlands
+
   for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
     if(map[c][r]!==T.GRASS) continue;
+
     const cd=centerDist(c,r);
-    const rng=hash(c*131+7,r*173+13); // deterministic per-tile roll
-    for(let i=0;i<RES_CFG.length;i++){
-      const cfg=RES_CFG[i];
-      if(cd<cfg.minDist) continue;
-      // Probability ramps linearly: baseProb at center → baseProb+edgeMult at edges
-      const prob=cfg.baseProb + cfg.edgeMult * cd;
-      // Use a different hash channel per resource so they don't overlap
-      const roll=hash(c*131+i*997+7, r*173+i*853+13);
-      if(roll<prob){
-        map[c][r]=cfg.tile;
-        break; // one resource per tile, priority order (tree>berry>stone>ore>gold)
+    const ed=edgeDist(c,r);
+
+    // Biome noise values
+    const moisture=fbm(c+1000,r+1000,3,0.006,2,0.5);
+    const rockiness=fbm(c+2000,r+2000,3,0.005,2.2,0.5);
+    // Detail noise for micro-variation within biomes
+    const detail=hash(c*131+7,r*173+13);
+    const detail2=hash(c*37+997,r*53+853);
+
+    // ─── BIOME CLASSIFICATION ───
+    // Mountains: high rockiness + further from center
+    const isMountain=rockiness>0.52 && cd>0.2;
+    const isMountainCore=rockiness>0.58 && cd>0.25;
+    // Forest: high moisture, not mountain
+    const isForest=moisture>0.50 && !isMountain;
+    const isDenseForest=moisture>0.58 && !isMountain;
+    // Meadow: moderate moisture near center (berry-rich)
+    const isMeadow=moisture>0.38 && moisture<0.52 && cd<0.5 && !isMountain;
+    // Gold zone: map edges only (dangerous, far from base)
+    const isGoldZone=cd>0.75 && isMountainCore;
+
+    // ─── RESOURCE PLACEMENT BY BIOME ───
+
+    // GOLD — rare, only in mountain cores at map edges
+    if(isGoldZone && detail<0.04){
+      map[c][r]=T.GOLD; continue;
+    }
+
+    // MOUNTAINS — stone and ore clusters on rocky terrain
+    if(isMountainCore){
+      // Dense stone + ore in mountain cores
+      if(detail<0.18){
+        map[c][r]=T.STONE; continue;
       }
+      if(detail<0.28 && detail2>0.4){
+        map[c][r]=T.ORE; continue;
+      }
+      // Scattered trees in mountain passes
+      if(detail>0.85 && moisture>0.45){
+        map[c][r]=T.TREE; continue;
+      }
+      continue;
+    }
+    if(isMountain){
+      // Outer mountain slopes — moderate stone, less ore
+      if(detail<0.08){
+        map[c][r]=T.STONE; continue;
+      }
+      if(detail<0.12 && cd>0.35){
+        map[c][r]=T.ORE; continue;
+      }
+      // Mountain edge trees
+      if(detail>0.82 && moisture>0.48){
+        map[c][r]=T.TREE; continue;
+      }
+      continue;
+    }
+
+    // DENSE FOREST — thick tree clusters with occasional berries
+    if(isDenseForest){
+      if(detail<0.45){
+        map[c][r]=T.TREE; continue;
+      }
+      // Berry bushes in forest clearings
+      if(detail>0.88){
+        map[c][r]=T.BERRY; continue;
+      }
+      continue;
+    }
+
+    // FOREST — moderate tree coverage
+    if(isForest){
+      if(detail<0.25){
+        map[c][r]=T.TREE; continue;
+      }
+      // Occasional berries at forest edges
+      if(detail>0.92){
+        map[c][r]=T.BERRY; continue;
+      }
+      continue;
+    }
+
+    // MEADOW — berry-rich grassland near center (ideal for early farms)
+    if(isMeadow){
+      // Berry patches in meadows
+      if(detail<0.12){
+        map[c][r]=T.BERRY; continue;
+      }
+      // Light tree scattering
+      if(detail>0.90){
+        map[c][r]=T.TREE; continue;
+      }
+      continue;
+    }
+
+    // PLAINS (default) — sparse resources, mostly open grass
+    // Light tree scattering
+    if(detail<0.03+cd*0.02){
+      map[c][r]=T.TREE; continue;
+    }
+    // Very rare berries in open plains
+    if(detail>0.96 && cd<0.4){
+      map[c][r]=T.BERRY; continue;
+    }
+    // Occasional stone outcrops in outer plains
+    if(detail2<0.015 && cd>0.45){
+      map[c][r]=T.STONE; continue;
     }
   }
+
   // Initialize depositHP for all resource tiles
   for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
     const dep=DEPOSITS[map[c][r]];
     if(dep) depositHP[c][r]=dep.maxHP;
   }
 }
+
 // Place first Settlement — clear area, set BASE_CX/CY, carve spawn paths
 // Settlements ARE the base now (no separate HQ tile type)
 function placeHQ(col,row){
