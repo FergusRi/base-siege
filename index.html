@@ -403,7 +403,7 @@
 </div>
 <canvas id="game-canvas"></canvas>
 <canvas id="minimap" width="300" height="200"></canvas>
-<div id="hint">WASD move · G gather · B build mode · SPACE start wave · Tab cycle units</div>
+<div id="hint">WASD move · G gather · B build mode · M map · SPACE start wave · Tab cycle units</div>
 <div id="wave-banner"></div>
 <div id="wave-preview-overlay"></div>
 <div id="aftermath-overlay">
@@ -491,7 +491,7 @@ const HQ_VISION_RADIUS=12;
 const FIRST_BUILD_TIME=300; // 5 minutes first wave
 const BUILD_TIME=120;      // 2 minutes subsequent waves
 const CAM_LERP=0.1, MAX_ZOOM=2.0;
-function getMinZoom(){const c=document.getElementById('game-canvas');if(!c)return 0.1;return Math.max(c.width/MAP_PX_W,c.height/MAP_PX_H);}
+function getMinZoom(){return 0.3;}
 const HERO_SPEED=8*TILE_SIZE;
 const HARVEST_RANGE=14, BUILD_RANGE=30;
 const HERO_ATK_DMG=8, HERO_ATK_RATE=0.4, HERO_ATK_RANGE=1.2*TILE_SIZE;
@@ -3732,6 +3732,8 @@ window.addEventListener('keydown',e=>{
     }
     return;
   }
+  // M: toggle full map overlay
+  if(e.key==='m'||e.key==='M'){if(game.phase!=='MENU'){showFullMap=!showFullMap;}return;}
   if(game.phase==='BUILD'){
     // B: toggle build mode
     if(e.key==='b'||e.key==='B'){
@@ -4160,7 +4162,10 @@ function rebuildTile(c,r){
 
 // ─── DRAW OVERLAYS ───
 function drawWaterOverlay(now){
-  const wt=now*0.001,z=cam.zoom;
+  const z=cam.zoom;
+  // Skip animated water at low zoom — too many per-tile calls
+  if(z<0.4) return;
+  const wt=now*0.001;
   const sc=Math.max(0,Math.floor(cam.x/TILE_SIZE)),sr=Math.max(0,Math.floor(cam.y/TILE_SIZE));
   const ec=Math.min(COLS-1,Math.ceil((cam.x+canvas.width/z)/TILE_SIZE));
   const er=Math.min(ROWS-1,Math.ceil((cam.y+canvas.height/z)/TILE_SIZE));
@@ -4210,14 +4215,18 @@ function drawBaseGlow(now){
 function drawFogOverlay(){
   if(game.phase==='MENU') return;
   const z=cam.zoom;
-  const sc=Math.max(0,Math.floor(cam.x/TILE_SIZE)),sr=Math.max(0,Math.floor(cam.y/TILE_SIZE));
+  // LOD: at low zoom use larger step to reduce fill calls
+  const step=z<0.35?4:z<0.5?2:1;
+  const stepPx=TILE_SIZE*step;
+  const sc=Math.max(0,Math.floor(cam.x/TILE_SIZE/step)*step);
+  const sr=Math.max(0,Math.floor(cam.y/TILE_SIZE/step)*step);
   const ec=Math.min(COLS-1,Math.ceil((cam.x+canvas.width/z)/TILE_SIZE));
   const er=Math.min(ROWS-1,Math.ceil((cam.y+canvas.height/z)/TILE_SIZE));
-  const ts=TILE_SIZE*z, ts1=ts+1;
+  const ts=stepPx*z, ts1=ts+1;
   // Batch unexplored and explored into separate paths
   ctx.beginPath();
-  for(let c=sc;c<=ec;c++){
-    for(let r=sr;r<=er;r++){
+  for(let c=sc;c<=ec;c+=step){
+    for(let r=sr;r<=er;r+=step){
       const fog=fogMap[c]?fogMap[c][r]:FOG_UNEXPLORED;
       if(fog===FOG_UNEXPLORED){
         const sx=(c*TILE_SIZE-cam.x)*z,sy=(r*TILE_SIZE-cam.y)*z;
@@ -4228,8 +4237,8 @@ function drawFogOverlay(){
   ctx.fillStyle='rgba(5,5,12,0.97)';
   ctx.fill();
   ctx.beginPath();
-  for(let c=sc;c<=ec;c++){
-    for(let r=sr;r<=er;r++){
+  for(let c=sc;c<=ec;c+=step){
+    for(let r=sr;r<=er;r+=step){
       const fog=fogMap[c]?fogMap[c][r]:FOG_UNEXPLORED;
       if(fog===FOG_EXPLORED){
         const sx=(c*TILE_SIZE-cam.x)*z,sy=(r*TILE_SIZE-cam.y)*z;
@@ -5270,6 +5279,38 @@ function drawMinimap(){
   mmCtx.strokeRect((cam.x/MAP_PX_W)*mw,(cam.y/MAP_PX_H)*mh,(canvas.width/z/MAP_PX_W)*mw,(canvas.height/z/MAP_PX_H)*mh);
 }
 
+// ─── FULL MAP OVERLAY (M key) ───
+let showFullMap=false;
+function drawFullMapOverlay(){
+  if(!showFullMap||game.phase==='MENU') return;
+  const pad=40;
+  const maxW=canvas.width-pad*2, maxH=canvas.height-pad*2;
+  const mapAspect=COLS/ROWS;
+  let dw,dh;
+  if(maxW/maxH>mapAspect){dh=maxH;dw=dh*mapAspect;}
+  else{dw=maxW;dh=dw/mapAspect;}
+  const dx=(canvas.width-dw)/2, dy=(canvas.height-dh)/2;
+  // Dim background
+  ctx.fillStyle='rgba(0,0,0,0.75)';ctx.fillRect(0,0,canvas.width,canvas.height);
+  // Draw minimap canvas scaled up
+  ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(mmCanvas,dx,dy,dw,dh);
+  ctx.imageSmoothingEnabled=true;
+  // Border
+  ctx.strokeStyle='rgba(200,180,120,0.6)';ctx.lineWidth=2;
+  ctx.strokeRect(dx,dy,dw,dh);
+  // Label
+  ctx.fillStyle='rgba(232,197,106,0.9)';ctx.font='bold 16px system-ui';ctx.textAlign='center';
+  ctx.fillText('MAP OVERVIEW — press M to close',canvas.width/2,dy-12);
+  // Viewport rect
+  const z=cam.zoom;
+  const vx=dx+(cam.x/MAP_PX_W)*dw, vy=dy+(cam.y/MAP_PX_H)*dh;
+  const vw=(canvas.width/z/MAP_PX_W)*dw, vh=(canvas.height/z/MAP_PX_H)*dh;
+  ctx.strokeStyle='rgba(255,255,255,0.7)';ctx.lineWidth=2;
+  ctx.strokeRect(vx,vy,vw,vh);
+}
+
+
 // ─── UI UPDATE ───
 function updateUI(){
   document.getElementById('res-wood').textContent=game.resources.wood;
@@ -5637,7 +5678,14 @@ function draw(now){
 
   updateUI();
   updateKillHUD();
+  // FPS counter
+  if(!window._fpsFrames){window._fpsFrames=0;window._fpsLast=performance.now();window._fpsCur=60;}
+  window._fpsFrames++;
+  if(performance.now()-window._fpsLast>=1000){window._fpsCur=window._fpsFrames;window._fpsFrames=0;window._fpsLast=performance.now();}
+  ctx.fillStyle=window._fpsCur<30?'rgba(255,80,60,0.8)':'rgba(120,200,120,0.6)';ctx.font='bold 12px monospace';ctx.textAlign='left';
+  ctx.fillText(window._fpsCur+' FPS',10,canvas.height-10);
   drawMinimap();
+  drawFullMapOverlay();
   requestAnimationFrame(draw);
 }
 
