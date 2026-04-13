@@ -1,6 +1,6 @@
 # Base Siege — Gameplay Overhaul Plan
 **Date:** 2026-04-13  
-**Status:** Draft — awaiting approval before implementation
+**Status:** ✅ APPROVED — ready for implementation
 
 ---
 
@@ -11,9 +11,9 @@ Three interconnected changes that shift the game from "turtle & spam" to
 
 | # | Change | One-liner |
 |---|--------|-----------|
-| A | **Resource Buildings** | Citizens build mines/farms/lumber camps instead of hand-gathering |
+| A | **Resource Buildings** | Citizens build & repair mines/farms on resource tiles; resource chain gates progression |
 | B | **Enemy Building Targeting** | Enemies attack the *nearest* player structure, not just the base |
-| C | **Metal Upkeep for Units** | Army upkeep costs metal too, forcing expansion to ore |
+| C | **Multi-Resource Upkeep** | Army upkeep costs multiple resources, forcing expansion |
 
 These create a strategic triangle:
 > You NEED resource buildings to fund an army →  
@@ -22,100 +22,135 @@ These create a strategic triangle:
 
 ---
 
-## A — Resource Buildings (Mine / Farm / Lumber Camp)
+## A — Resource Buildings
 
-### A1. New Structure Definitions
+### A1. Resource Chain
 
-| Structure | Built On | Build Cost | HP | Production per Wave | Letter |
-|-----------|----------|------------|----|---------------------|--------|
-| **Lumber Camp** | `TREE` tile | `{wood:15, food:5}` | 30 | +4 wood | `L` |
-| **Farm** | `BERRY` tile | `{wood:10, food:3}` | 25 | +5 food | `F` |
-| **Quarry** | `STONE` tile | `{wood:15, stone:5}` | 35 | +3 stone | `Q` |
-| **Mine** | `ORE` tile | `{wood:20, stone:10}` | 40 | +2 metal | `M` |
-| **Gold Mine** | `GOLD` tile | `{wood:25, stone:10, metal:5}` | 40 | +1 gold | `$` |
+Buildings unlock in a chain — each requires the *previous* resource to build:
 
-> Costs are intentionally front-loaded so losing a building *hurts*.
+| # | Structure | Built On | Build Cost | Production | Letter |
+|---|-----------|----------|------------|------------|--------|
+| 1 | **Farm** | `BERRY` tile | **Free** | +3 food/wave | `F` |
+| 2 | **Lumber Camp** | `TREE` tile | `{food:10}` | +3 wood/wave | `L` |
+| 3 | **Quarry** | `STONE` tile | `{wood:15}` | +3 stone/wave | `Q` |
+| 4 | **Mine** | `ORE` tile | `{stone:20}` | +3 metal/wave | `M` |
+| 5 | **Gold Mine** | `GOLD` tile | `{metal:25}` | +3 gold/wave | `$` |
 
-### A2. Building Mechanics
+> **Chain logic**: food is free → food buys wood → wood buys stone →
+> stone buys metal → metal buys gold. Each tier requires expanding
+> further from base to find the next resource.
 
-- **Placement**: Hero clicks resource tile in Build mode → new "Resources"
-  category tab alongside Defenses / Army.
-- **Tile replacement**: The resource tile becomes the building tile (new tile
-  types: `T.LUMBER_CAMP`, `T.FARM`, `T.QUARRY`, `T.MINE`, `T.GOLD_MINE`).
-  Stored in `structures{}` like walls/towers.
-- **Production**: At end of each wave (`endWave()`), iterate all resource
-  buildings and add their output to `game.resources`.
-- **Destruction**: 3-hit system (details in A3).
-- **Vision**: Each resource building grants a small vision radius (4 tiles)
-  so you can see enemies approaching.
-- **Build range**: Same as other structures (`BUILD_RANGE = 30` Manhattan
-  from hero). This naturally gates early expansion.
-- **No limit**: You can build as many as you can afford and defend.
+All buildings produce **3 resources per wave** (uniform, easy to reason about).
 
-### A3. 3-Hit Destruction System
+### A2. Building HP & Damage Model
 
-Resource buildings use a simplified damage model:
+Resource buildings use a real HP system (not hit-count):
 
-```
-hitsTaken: 0          // starts at 0
-MAX_HITS: 3           // destroyed after 3 enemy attacks
-```
+| Structure | HP |
+|-----------|----|
+| Farm | 25 |
+| Lumber Camp | 30 |
+| Quarry | 35 |
+| Mine | 40 |
+| Gold Mine | 40 |
 
-- Any enemy attack on a resource building increments `hitsTaken` by 1
-  (regardless of damage amount — a swarm and a brute each count as 1 hit).
-- At `hitsTaken === 3`: building is **permanently destroyed**. The tile
-  reverts to its depleted variant (`T.TREE_DEPLETED`, etc.). It does NOT
-  regrow — the resource spot is gone forever.
-- Between waves, buildings do NOT auto-repair (unlike settlements which
-  heal +10). This means damage accumulates across waves.
-- **Optional repair action**: Hero can spend resources to repair a damaged
-  building (50% of original build cost per hit restored). This gives the
-  player agency without making buildings invulnerable.
+- Enemies deal their normal damage to buildings (same as vs walls/towers).
+- When HP reaches **0** → building is **destroyed**.
+  - Production stops immediately.
+  - Visual changes to **cracked/destroyed** sprite (darker, broken overlay).
+  - Building remains on the tile in its destroyed state.
 
-### A4. What Happens to Citizens?
+### A3. Repair System
 
-Citizens shift from gatherers to **builders/couriers**:
+- **Repairable up to 3 times**. Each building tracks `repairsUsed: 0` (max 3).
+- **Repair cost = full original build cost** each time.
+  - Farm repair: free (it was free to build).
+  - Lumber Camp repair: `{food:10}`.
+  - Quarry repair: `{wood:15}`.
+  - Mine repair: `{stone:20}`.
+  - Gold Mine repair: `{metal:25}`.
+- After **3 repairs used**, the next time HP reaches 0 → building is
+  **permanently destroyed**. Tile reverts to depleted variant
+  (`T.TREE_DEPLETED`, etc.) — resource spot gone forever.
+- **Citizens handle repairs** (see A4). Player schedules a repair job the
+  same way they schedule a build job.
 
-- Citizens still exist and are spawned by settlements.
-- Instead of wandering to gather, citizens now handle **construction
-  delivery**: when you place a resource building, the nearest idle citizen
-  walks to the site and "builds" it (visual: hammering animation timer of
-  3 seconds). Building only completes when citizen arrives.
-- Between waves, citizens are idle at their settlement (safe).
-- Citizens can still be killed if caught outside during a wave (exposed
-  state is unchanged).
+### A4. Citizen Builder & Repair System
+
+Citizens shift from gatherers to **builders and repairers**:
+
+**Build cycle:**
+1. Player clicks a resource tile anywhere on the map → **build job is scheduled**
+   (ghost/blueprint appears on the tile).
+2. When a citizen becomes free, it **claims the nearest queued job** and walks
+   to the site — no matter where on the map.
+3. Citizen arrives → 3-second build timer → building complete.
+4. Citizen returns to nearest settlement (or claims next job if queue isn't empty).
+
+**Repair cycle:**
+1. When a building is destroyed (HP=0, cracked visual), player can click it
+   to **schedule a repair job** (if `repairsUsed < 3`).
+2. A free citizen claims the repair job, walks to the building.
+3. Citizen arrives → 3-second repair timer → HP fully restored,
+   `repairsUsed++`.
+4. Citizen returns to nearest settlement.
+
+**Citizen rules:**
+- Citizens still spawned by settlements (unchanged).
 - `CITIZEN_UPKEEP_RATE` stays at 0.5 food/citizen/wave.
+- Citizens can be killed if caught outside during a wave.
 - Gather priority per settlement is **removed** (no longer relevant).
+- **Job queue is global** — any free citizen from any settlement can claim
+  any pending build/repair job.
+- Jobs are claimed nearest-first (citizen picks the closest available job).
 
-> **Alternative (simpler)**: Remove citizens entirely. Buildings place
-> instantly like walls. This is simpler to implement and removes an entire
-> system. The downside is losing the "settler" feel.  
-> **Recommendation**: Go with instant placement (simpler). Citizens were
-> only interesting because of gathering — without that, they're just a
-> delay mechanic. Settlements still provide vision and army recruitment
-> range.
+### A5. Building Walkability
 
-### A5. Economy Rebalance
+- **Resource buildings are walkable** — they do NOT block pathing.
+- Enemies target buildings (pathfind to them, attack when adjacent) but can
+  walk through the tile.
+- This prevents exploits where players use cheap farms as free walls.
+- Walls, gates, towers, and settlements remain solid (block pathing as before).
 
-| Resource | Current Sources | New Sources |
-|----------|----------------|-------------|
-| Wood | Citizens gather TREE (2/harvest) + wave bonus | Lumber Camps (+4/wave) + wave bonus |
-| Food | Citizens gather BERRY (3/harvest) + wave bonus | Farms (+5/wave) + wave bonus |
-| Stone | Citizens gather STONE (2/harvest) | Quarries (+3/wave) |
-| Metal | Citizens gather ORE (1/harvest) | Mines (+2/wave) |
-| Gold | Citizens gather GOLD (1/harvest) | Gold Mines (+1/wave) |
+### A6. Economy Rebalance
 
-**Wave bonus stays**: `2 + game.wave` wood and food (represents foraging/scavenging).
+**No free wave bonus.** All resources come from buildings only.
 
-**Starting resources adjusted**:
+| Resource | Old Source | New Source |
+|----------|-----------|-----------|
+| Food | Citizens + wave bonus | Farms only (+3/wave each) |
+| Wood | Citizens + wave bonus | Lumber Camps only (+3/wave each) |
+| Stone | Citizens | Quarries only (+3/wave each) |
+| Metal | Citizens | Mines only (+3/wave each) |
+| Gold | Citizens | Gold Mines only (+3/wave each) |
+
+**Starting resources adjusted:**
 ```js
 INITIAL_RESOURCES = {wood:100, stone:50, metal:30, food:50, gold:0};
 ```
-Slightly more than current `{80, 45, 25, 35, 0}` to compensate for no
-immediate citizen gathering.
+Slightly more than current `{80, 45, 25, 35, 0}` to compensate for needing
+to build farms/lumber camps before any income flows.
 
-**First build time stays at 300s (5 min)** — plenty of time to place
-initial resource buildings and defenses.
+### A7. Map Rework — Natural Terrain
+
+Complete overhaul of map generation to create natural-feeling terrain:
+
+**Biome zones** (Perlin noise + distance from center):
+- **Plains** (near center): Flat grass, scattered berry bushes → Farm sites.
+- **Forests** (mid-range): Dense tree clusters with clearings → Lumber Camp sites.
+- **Mountains** (outer ring): Rocky terrain with stone/ore deposits clustered
+  on slopes → Quarry and Mine sites.
+- **River/water features**: Winding rivers across the map (impassable, create
+  natural chokepoints).
+- **Gold deposits**: Rare, always far from center (map edges/corners), often
+  in dangerous mountain passes → high risk/reward.
+
+**Key design goals:**
+- Resources naturally get rarer and further from center as you go up the chain.
+- Mountain ranges create natural walls and chokepoints.
+- Forests provide visual cover (fog-like feel even when explored).
+- Berry bushes near spawn make early Farms easy to reach.
+- Gold at edges forces maximum expansion for late-game economy.
 
 ---
 
@@ -123,34 +158,32 @@ initial resource buildings and defenses.
 
 ### B1. New Targeting Priority
 
-Currently enemies pathfind to `nearestSettlement()` (falls back to HQ).
-The new priority chain for **standard enemies** (raiders, runners, swarm,
-warchiefs):
+Currently enemies pathfind to `nearestSettlement()`. New priority chain:
 
 ```
 1. If adjacent to a player unit → attack it (30% chance, unchanged)
 2. If adjacent to hero → attack hero (unchanged)
 3. Pathfind to NEAREST player structure (any type)
-   - Resource buildings, walls, gates, towers, settlements, HQ
-   - "Nearest" = shortest Manhattan distance from spawn/current position
+   - Resource buildings, walls, gates, towers, settlements
+   - "Nearest" = shortest Manhattan distance from current position
 ```
 
 ### B2. Enemy Type Behavior Matrix
 
 | Enemy Type | Primary Target | Structure Damage | Notes |
 |------------|---------------|-----------------|-------|
-| **Raider** | Nearest structure | `baseDmg` (5) per hit | Generalist |
-| **Runner** | Nearest structure | `baseDmg` (3) per hit | Fast, fragile — will rush exposed farms |
-| **Swarm** | Nearest structure | `baseDmg` (2) per hit | Zerg rush on outer buildings |
-| **Brute** | Nearest WALL/GATE → then nearest structure | `dmg*2` (16) vs walls, `baseDmg` (10) vs others | Wall smasher, will pivot to buildings if no walls |
-| **Siege Ram** | Nearest structure (unchanged) | `structDmg` (20) | Already targets structures |
-| **Enemy Archer** | Nearest unit/hero in range → nearest structure | `baseDmg` (3) per hit | Ranged harass |
-| **Warchief** | Nearest structure (buffs nearby) | `baseDmg` (7) per hit | Buffs other enemies |
+| **Raider** | Nearest structure | `baseDmg` (5) | Generalist |
+| **Runner** | Nearest structure | `baseDmg` (3) | Fast, will rush exposed farms |
+| **Swarm** | Nearest structure | `baseDmg` (2) | Zerg rush on outer buildings |
+| **Brute** | Nearest WALL/GATE → then nearest | `dmg*2` (16) vs walls, `baseDmg` (10) vs others | Wall smasher |
+| **Siege Ram** | Nearest structure | `structDmg` (20) | Already targets structures |
+| **Enemy Archer** | Nearest unit in range → nearest structure | `baseDmg` (3) | Ranged harass |
+| **Warchief** | Nearest structure (buffs nearby) | `baseDmg` (7) | Buffs other enemies |
 
 ### B3. Pathfinding Changes
 
-**Replace** `nearestSettlement(eCol, eRow)` with `nearestPlayerStructure(eCol, eRow)`:
-```
+**Replace** `nearestSettlement()` with `nearestPlayerStructure()`:
+```js
 function nearestPlayerStructure(ec, er) {
   let best = null, bestDist = Infinity;
   for (const [key, s] of Object.entries(structures)) {
@@ -162,43 +195,39 @@ function nearestPlayerStructure(ec, er) {
 }
 ```
 
-**Re-pathing**: Enemies re-evaluate their target every 3-5 seconds (or when
-their current target is destroyed). This prevents all enemies from
-converging on one building after another is destroyed.
+**Re-pathing**: Enemies re-evaluate target every 3–5 seconds (or when current
+target is destroyed).
 
-### B4. Spawn Ring Implications
+### B4. Spawn Ring + Vision Implications
 
-The proximity spawn ring already spawns enemies near the player's vision
-boundary. With resource buildings granting vision (4 tiles), outer buildings
-will attract spawns nearby → natural risk/reward for expansion.
+Resource buildings grant a small vision radius (4 tiles). Outer buildings
+extend the vision boundary → enemies spawn near them → natural risk/reward.
 
-### B5. Wave Notification Enhancement
+### B5. Wave Notification
 
-When enemies target an outer building, flash a warning icon on the minimap
-at the targeted structure's location. Brief "⚠ Building under attack!"
-message.
+When enemies target an outer building, flash a warning on the minimap +
+"⚠ Building under attack!" message.
 
 ---
 
-## C — Metal Upkeep for Units
+## C — Multi-Resource Unit Upkeep
 
-### C1. Updated Upkeep Costs
+### C1. Updated Unit Costs & Upkeep
 
-Currently ALL units cost only food for upkeep (`upkeep: 1` or `2` = food
-per wave). New system adds metal upkeep for armored/equipped units:
+Unit recruitment costs and upkeep reworked to use the resource chain:
 
-| Unit | Current Upkeep | New Upkeep |
-|------|---------------|------------|
-| **Militia** | 1 food | 1 food |
-| **Archer** | 1 food | 1 food, **1 metal** |
-| **Spearman** | 1 food | 1 food, **1 metal** |
-| **Cavalry** | 2 food | 2 food, **2 metal** |
-| **Catapult** | 2 food | 1 food, **3 metal** |
+| Unit | Recruit Cost | Upkeep/Wave | Role |
+|------|-------------|-------------|------|
+| **Militia** | `{food:5, wood:3}` | `{food:1}` | Cheap frontline, food-only upkeep |
+| **Archer** | `{wood:8, metal:3}` | `{food:1, metal:1}` | Ranged DPS, needs metal |
+| **Spearman** | `{food:5, wood:5, metal:2}` | `{food:1, metal:1}` | Anti-cavalry, needs metal |
+| **Cavalry** | `{food:8, wood:5, metal:5}` | `{food:2, metal:2}` | Fast heavy hitter, expensive |
+| **Catapult** | `{wood:15, stone:8, metal:6}` | `{food:1, metal:3}` | Siege, metal-hungry |
 
-> Militia stays food-only (peasant levies, cheap to maintain).  
-> Metal upkeep represents weapon/armor maintenance.
+> Militia stays food-only upkeep (peasant levies). Everything else needs metal
+> → forces players to build and defend Mines.
 
-### C2. Upkeep Data Structure Change
+### C2. Upkeep Data Structure
 
 ```js
 // OLD: upkeep: 1  (single number = food)
@@ -206,18 +235,15 @@ per wave). New system adds metal upkeep for armored/equipped units:
 upkeep: { food: 1, metal: 1 }  // object with per-resource costs
 ```
 
-### C3. Updated payUpkeep() Logic
+### C3. Updated payUpkeep()
 
-```
+```js
 function payUpkeep() {
-  // Sort: highest rank first, then highest total upkeep
   const sorted = [...units].sort((a,b) => {
     const ra = a._lastRank || 0, rb = b._lastRank || 0;
     if (rb !== ra) return rb - ra;
-    const ua = totalUpkeep(a), ub = totalUpkeep(b);
-    return ub - ua;
+    return totalUpkeep(b) - totalUpkeep(a);
   });
-
   const unfed = [];
   for (const u of sorted) {
     const cost = UNIT_TYPES[u.type].upkeep;
@@ -236,60 +262,58 @@ function payUpkeep() {
 }
 ```
 
-### C4. Starvation Effects (keep existing)
+### C4. Starvation (unchanged)
 
-- Unfed units lose 30 morale per wave.
-- At 0 morale → fleeing state → cannot attack → can die.
-- This already works; just now it triggers on metal shortage too.
+- Unfed units lose 30 morale/wave → flee at 0 → can die.
+- Now also triggers on metal shortage.
 
 ### C5. UI: Upkeep Display
 
-The between-wave overlay already shows upkeep info. Update to show:
-```
-Army Upkeep: 8 🍖  5 ⛏️
-```
-(food icon + metal icon with amounts)
+Between-wave overlay shows: `Army Upkeep: 8 🍖  5 ⛏️`
 
 ---
 
 ## Implementation Order
 
-Execute in this order because each phase builds on the previous:
-
-### Phase 1: Resource Buildings (Change A) — ~400 lines
-1. Add 5 new tile types + structure definitions to STRUCTS
+### Phase 1: Resource Buildings + Citizens + Map (~500 lines)
+1. Add 5 new tile types + structure definitions
 2. Add "Resources" category tab to Build mode UI
-3. Implement placement validation (must be on matching resource tile)
-4. Implement production ticking in `endWave()`
-5. Implement 3-hit destruction system
-6. Add building rendering (colored squares with letters)
-7. Add repair action (hero click on damaged building)
-8. Decide: keep citizens as builders OR remove citizen gathering entirely
-9. Adjust starting resources
-10. Test: can place buildings, they produce, enemies destroy them
+3. Implement resource chain build costs & placement validation
+4. Implement citizen build queue (schedule → claim → walk → build)
+5. Implement citizen repair queue (schedule → claim → walk → repair)
+6. Implement production ticking in `endWave()` — 3 per building per wave
+7. Implement HP damage model + cracked/destroyed visual state
+8. Implement repair system (full cost, max 3 repairs, then permanent death)
+9. Make resource buildings walkable (not blocking pathing)
+10. Remove free wave bonus
+11. Remove citizen gathering AI (replace with builder/repairer AI)
+12. Rework map generation — biomes, mountains, forests, rivers, gold at edges
+13. Add building rendering (colored squares with letters, cracked overlay when destroyed)
+14. Adjust starting resources
+15. Test: full build→produce→damage→repair→destroy lifecycle
 
-### Phase 2: Enemy Building Targeting (Change B) — ~100 lines
+### Phase 2: Enemy Building Targeting (~100 lines)
 1. Replace `nearestSettlement()` with `nearestPlayerStructure()`
-2. Update all enemy movement code to use new targeting
-3. Add re-targeting timer (re-evaluate every 3-5s)
+2. Update all enemy movement code
+3. Add re-targeting timer (3–5s)
 4. Add "building under attack" minimap flash + notification
 5. Test: enemies path to outer buildings, re-target when destroyed
 
-### Phase 3: Metal Upkeep (Change C) — ~60 lines
+### Phase 3: Multi-Resource Upkeep (~60 lines)
 1. Change `upkeep` from number to object in UNIT_TYPES
-2. Update `payUpkeep()` to handle multi-resource costs
-3. Update `getTotalUpkeep()` display
-4. Update between-wave overlay to show metal upkeep
-5. Update recruit tooltip to show ongoing upkeep cost
-6. Test: metal runs out → units starve → need mines to sustain army
+2. Update recruit costs per new table
+3. Update `payUpkeep()` for multi-resource
+4. Update `getTotalUpkeep()` display
+5. Update between-wave overlay + recruit tooltips
+6. Test: metal shortage → starvation → need mines
 
-### Phase 4: Balance Pass — ~50 lines
-1. Playtest: Can you survive wave 5? Wave 10?
-2. Tune: resource building output rates
-3. Tune: build costs (too cheap = no tension, too expensive = frustrating)
-4. Tune: 3-hit threshold (maybe 4 for quarries/mines since they're expensive?)
-5. Tune: metal upkeep amounts
-6. Verify strategic triangle works: expand → defend → upgrade → expand
+### Phase 4: Balance Pass (~50 lines)
+1. Playtest waves 1–10
+2. Tune building output rates, build costs, HP values
+3. Tune repair costs (full cost feels right?)
+4. Tune unit recruit costs and upkeep amounts
+5. Verify strategic triangle: expand → defend → upgrade → expand
+6. Ensure resource chain pacing feels natural
 
 ---
 
@@ -297,24 +321,27 @@ Execute in this order because each phase builds on the previous:
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| Early game too hard (no resources before first wave) | Medium | High | Generous starting resources + 5 min build time |
-| All enemies rush one building | Medium | Medium | Re-target timer + multiple spawn ring points |
+| Early game too hard (no income until farms built) | Medium | High | Generous starting resources + farms are free to build |
+| All enemies rush one building | Medium | Medium | Re-target timer + multiple spawn points |
 | Metal upkeep makes army impossible | Low | High | Militia stays food-only as fallback |
-| Too many new tiles overwhelm map generation | Low | Low | Resource buildings replace existing resource tiles |
-| Citizens become useless without gathering | High | Medium | Remove citizens OR repurpose as builders |
-| Game becomes too complex for jam judges | Medium | Medium | Keep UI clean, add tooltips |
+| Citizen pathing across huge map is slow | Medium | Medium | Citizens use BFS (fast), visual feedback on walk |
+| 3-repair limit feels unfair | Low | Medium | Farm repairs are free; expensive buildings have more HP |
+| Map rework breaks existing balance | Medium | High | Test biome generation separately before integrating |
 
 ---
 
-## Open Questions for Fergus
+## Resolved Decisions
 
-1. **Citizens**: Keep as builders (citizen walks to site, 3s build time) or
-   remove gathering and make buildings place instantly like walls?
-2. **Repair**: Should the hero be able to repair damaged resource buildings,
-   or is "defend or lose it" the whole point?
-3. **Resource building HP**: 3 hits flat, or scale by building cost (cheap
-   lumber camp = 3 hits, expensive gold mine = 5 hits)?
-4. **Do resource buildings block pathing?** (Walls do, settlements do.
-   Should a farm block movement or can enemies walk through it?)
-5. **Wave bonus scaling**: Keep the `2 + wave` free wood/food, or reduce
-   it since resource buildings now exist?
+All open questions from the draft have been answered by Fergus:
+
+| Question | Decision |
+|----------|----------|
+| Citizens: keep or remove? | **Keep** — citizens build AND repair buildings |
+| Repair: allowed? | **Yes** — full build cost, up to 3 repairs per building |
+| Building HP model? | **Real HP** — destroyed at 0 HP, shows cracked visual |
+| Buildings block pathing? | **No** — walkable, enemies target but walk through |
+| Wave bonus? | **Removed entirely** — all resources from buildings only |
+| Resource production rate? | **3 per building per wave** (uniform) |
+| Resource chain? | **Yes** — food(free)→wood→stone→metal→gold |
+| Map rework? | **Yes** — natural biomes with mountains, forests, rivers |
+| Build cycle? | **Schedule anywhere** → citizen claims when free → walks there |
