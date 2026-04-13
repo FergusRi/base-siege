@@ -1007,121 +1007,90 @@ function generateMap(){
   placeBiomeResources();
 }
 
-// ─── BIOME RESOURCE PLACEMENT ───
-// Uses low-frequency noise for large biome blobs with sparse, natural resources
-// Target: 80%+ open grass, Rimworld-style natural look
+// ─── ZONE-PAINTING MAP GENERATION ───
+// Rimworld-inspired: seed random zones, fill densely inside, pure grass outside
+// Each zone type has N seeds placed randomly, with a radius and density
+
 function placeBiomeResources(){
-  // Biome noise channels — LOW frequency for big 100-200 tile blobs
-  // moisture: high = forest, low = dry plains
-  // rockiness: high = mountains, low = flatlands
+  // Zone definitions: type, count, radiusMin, radiusMax, densities
+  const ZONE_DEFS = [
+    { name:'denseForest',  count:7,  rMin:40, rMax:80,  tiles:{[T.TREE]:0.65, [T.BERRY]:0.03} },
+    { name:'lightForest',  count:5,  rMin:30, rMax:50,  tiles:{[T.TREE]:0.30, [T.BERRY]:0.02} },
+    { name:'mountain',     count:4,  rMin:30, rMax:60,  tiles:{[T.STONE]:0.35,[T.ORE]:0.15} },
+    { name:'berryMeadow',  count:6,  rMin:15, rMax:25,  tiles:{[T.BERRY]:0.40,[T.TREE]:0.05} },
+    { name:'goldVein',     count:3,  rMin:8,  rMax:12,  tiles:{[T.GOLD]:0.50, [T.STONE]:0.15} },
+  ];
 
-  for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
-    if(map[c][r]!==T.GRASS) continue;
+  // Seeded RNG for zone placement (deterministic per map seed)
+  let zSeed = _seed * 7 + 31;
+  function zRand(){ zSeed=(zSeed*1103515245+12345)&0x7fffffff; return zSeed/0x7fffffff; }
 
-    const ed=edgeDist(c,r);
+  // Build zone list: each zone = {cx, cy, r, tiles:{tileType: density}}
+  const zones = [];
+  const EDGE_MARGIN = 20; // keep zones away from map edge
 
-    // Biome noise — lower frequency = bigger blobs
-    const moisture=fbm(c+1000,r+1000,3,0.003,2,0.5);
-    const rockiness=fbm(c+2000,r+2000,3,0.0025,2.2,0.5);
-    // Detail noise for micro-variation within biomes
-    const detail=hash(c*131+7,r*173+13);
-    const detail2=hash(c*37+997,r*53+853);
+  for(const def of ZONE_DEFS){
+    for(let i=0; i<def.count; i++){
+      const cx = EDGE_MARGIN + Math.floor(zRand() * (COLS - 2*EDGE_MARGIN));
+      const cy = EDGE_MARGIN + Math.floor(zRand() * (ROWS - 2*EDGE_MARGIN));
+      const radius = def.rMin + Math.floor(zRand() * (def.rMax - def.rMin));
+      zones.push({ cx, cy, r:radius, rSq:radius*radius, tiles:def.tiles, name:def.name });
+    }
+  }
 
-    // ─── BIOME CLASSIFICATION (no centerDist) ───
-    // Mountains: high rockiness only
-    const isMountain=rockiness>0.56;
-    const isMountainCore=rockiness>0.62;
-    // Forest: high moisture, not mountain
-    const isForest=moisture>0.54 && !isMountain;
-    const isDenseForest=moisture>0.62 && !isMountain;
-    // Meadow: moderate moisture band (berry-rich clearings)
-    const isMeadow=moisture>0.42 && moisture<0.54 && !isMountain;
-    // Gold zone: mountain cores far from any edge (dangerous interior)
-    const isGoldZone=isMountainCore && ed>80;
+  // Paint zones onto map
+  // For each tile, check which zone(s) it belongs to.
+  // Use the STRONGEST zone (highest priority: gold > mountain > denseForest > lightForest > meadow)
+  // Within a zone, use noise-modulated edge softening
 
-    // ─── RESOURCE PLACEMENT BY BIOME ───
+  for(let c=0; c<COLS; c++) for(let r=0; r<ROWS; r++){
+    if(map[c][r] !== T.GRASS) continue;
 
-    // GOLD — very rare, deep in mountain cores
-    if(isGoldZone && detail<0.025){
-      map[c][r]=T.GOLD; continue;
+    // Find the best (strongest) zone this tile belongs to
+    let bestZone = null;
+    let bestStrength = 0; // 0-1, based on distance from zone center
+
+    for(const z of zones){
+      const dx = c - z.cx, dy = r - z.cy;
+      const distSq = dx*dx + dy*dy;
+      if(distSq > z.rSq) continue; // outside zone
+
+      // Strength: 1.0 at center, falls off toward edge
+      const dist = Math.sqrt(distSq);
+      const normDist = dist / z.r; // 0 at center, 1 at edge
+
+      // Smooth falloff with noise for organic edges
+      const edgeNoise = fbm(c*0.05+z.cx, r*0.05+z.cy, 2, 0.1, 2, 0.5) * 0.3;
+      const threshold = 0.85 + edgeNoise; // ~0.7-1.0
+
+      if(normDist > threshold) continue; // outside organic edge
+
+      const strength = 1.0 - (normDist / threshold);
+
+      // Priority ordering: gold > mountain > denseForest > lightForest > meadow
+      const priorityMap = { goldVein:5, mountain:4, denseForest:3, lightForest:2, berryMeadow:1 };
+      const priority = priorityMap[z.name] || 0;
+      const score = priority * 10 + strength;
+
+      if(score > bestStrength){
+        bestStrength = score;
+        bestZone = z;
+      }
     }
 
-    // MOUNTAINS — sparse stone and ore
-    if(isMountainCore){
-      if(detail<0.10){
-        map[c][r]=T.STONE; continue;
-      }
-      if(detail<0.15 && detail2>0.5){
-        map[c][r]=T.ORE; continue;
-      }
-      // Rare trees in mountain passes
-      if(detail>0.92 && moisture>0.45){
-        map[c][r]=T.TREE; continue;
-      }
-      continue;
-    }
-    if(isMountain){
-      // Outer slopes — light stone scattering
-      if(detail<0.04){
-        map[c][r]=T.STONE; continue;
-      }
-      if(detail<0.06){
-        map[c][r]=T.ORE; continue;
-      }
-      // Sparse mountain trees
-      if(detail>0.90 && moisture>0.48){
-        map[c][r]=T.TREE; continue;
-      }
-      continue;
-    }
+    if(!bestZone) continue; // pure grass — no zone
 
-    // DENSE FOREST — moderate tree clusters (NOT 45%, now ~20%)
-    if(isDenseForest){
-      if(detail<0.20){
-        map[c][r]=T.TREE; continue;
-      }
-      // Berry bushes in forest clearings
-      if(detail>0.94){
-        map[c][r]=T.BERRY; continue;
-      }
-      continue;
-    }
+    // Place tile based on zone densities
+    // Use hash for deterministic per-tile randomness
+    const roll = hash(c*173+11, r*251+37);
+    let cumulative = 0;
 
-    // FOREST — light tree coverage (~10%)
-    if(isForest){
-      if(detail<0.10){
-        map[c][r]=T.TREE; continue;
+    for(const [tileType, density] of Object.entries(bestZone.tiles)){
+      cumulative += density;
+      if(roll < cumulative){
+        map[c][r] = parseInt(tileType);
+        break;
       }
-      // Rare berries at forest edges
-      if(detail>0.96){
-        map[c][r]=T.BERRY; continue;
-      }
-      continue;
-    }
-
-    // MEADOW — berry-rich grassland
-    if(isMeadow){
-      if(detail<0.06){
-        map[c][r]=T.BERRY; continue;
-      }
-      // Light tree scattering
-      if(detail>0.94){
-        map[c][r]=T.TREE; continue;
-      }
-      continue;
-    }
-
-    // PLAINS (default) — mostly open grass, very sparse resources
-    if(detail<0.015){
-      map[c][r]=T.TREE; continue;
-    }
-    // Very rare berries
-    if(detail>0.98){
-      map[c][r]=T.BERRY; continue;
-    }
-    // Very rare stone outcrops
-    if(detail2<0.008){
-      map[c][r]=T.STONE; continue;
     }
   }
 
