@@ -267,6 +267,10 @@
   .kh-total { color: #e8c56a; font-weight: 800; border-top: 1px solid rgba(120,120,160,0.1); padding-top: 3px; margin-top: 1px; }
 
   /* Recruit toolbar styling */
+  .tool-btn.citizen { border-color: rgba(200,170,80,0.25); }
+  .tool-btn.citizen:hover { background: rgba(200,170,80,0.12); color: #d8c870; }
+  .tool-btn.citizen.active { background: rgba(200,170,80,0.18); border-color: rgba(200,170,80,0.4); color: #d8c870; }
+  .tool-btn.citizen.active .tool-key { background: rgba(200,170,80,0.25); color: #d8c870; }
   .tool-btn.recruit { border-color: rgba(100,160,220,0.25); }
   .tool-btn.recruit:hover { background: rgba(100,160,220,0.12); color: #8ac0e8; }
   .tool-btn.recruit.active { background: rgba(100,160,220,0.18); border-color: rgba(100,160,220,0.4); color: #8ac0e8; }
@@ -321,6 +325,7 @@
   <button class="tool-btn" data-tool="TOWER" onclick="selectTool('TOWER')"><span class="tool-key">2</span> Tower <span class="tool-cost">10W 5S 3M</span></button>
   <button class="tool-btn" data-tool="TRAP" onclick="selectTool('TRAP')"><span class="tool-key">3</span> Trap <span class="tool-cost">3W 1M</span></button>
   <button class="tool-btn" data-tool="GATE" onclick="selectTool('GATE')"><span class="tool-key">4</span> Gate <span class="tool-cost">5W 2S</span></button>
+  <button class="tool-btn citizen" data-tool="CITIZEN_BLOCK" onclick="selectTool('CITIZEN_BLOCK')"><span class="tool-key">C</span> Settlement <span class="tool-cost" id="citizen-cost">50W 30S</span></button>
   <span class="tb-sep">│</span>
   <button class="tool-btn recruit" data-tool="MILITIA" onclick="selectTool('MILITIA')"><span class="tool-key">Q</span> Militia <span class="tool-cost">5W 2F</span></button>
   <button class="tool-btn recruit" data-tool="ARCHER" onclick="selectTool('ARCHER')"><span class="tool-key">E</span> Archer <span class="tool-cost">5W 3M</span></button>
@@ -451,7 +456,19 @@ const STRUCTS={
   TOWER:{name:'Tower',cost:{wood:10,stone:5,metal:3},hp:40,color:[80,70,62],letter:'T',range:6,dmg:4,rate:0.8},
   TRAP:{name:'Spike Trap',cost:{wood:3,metal:1},hp:1,color:[55,50,45],letter:'X',dmg:8,slow:0.5},
   GATE:{name:'Gate',cost:{wood:5,stone:2},hp:30,color:[90,75,55],letter:'G',dmg:3,slow:0.6},
+  CITIZEN_BLOCK:{name:'Settlement',cost:{wood:50,stone:30},hp:80,color:[170,140,90],letter:'🏘',visRadius:2,visExp:3},
 };
+let citizenBlockCount=0; // tracks placed citizen blocks for scaling cost
+function getCitizenBlockCost(){
+  // Scaling: base × (1 + 0.3 × existingBlocks) — rounded up
+  const scale=1+0.3*citizenBlockCount;
+  return {wood:Math.ceil(50*scale),stone:Math.ceil(30*scale)};
+}
+function updateCitizenCostUI(){
+  const c=getCitizenBlockCost();
+  const el=document.getElementById('citizen-cost');
+  if(el) el.textContent=`${c.wood}W ${c.stone}S`;
+}
 
 // ─── UNIT DEFINITIONS ───
 const UNIT_TYPES={
@@ -615,6 +632,42 @@ function revealFogTracked(cx,cy,visRadius,expRadius){
     }
   }
 }
+// ─── CITIZEN BLOCK VISION (2-tile VISIBLE, 3-tile EXPLORED) ───
+function addCitizenBlockVision(col,row){
+  const vr=STRUCTS.CITIZEN_BLOCK.visRadius, er=STRUCTS.CITIZEN_BLOCK.visExp;
+  for(let dc=-er;dc<=er;dc++){
+    for(let dr=-er;dr<=er;dr++){
+      const nc=col+dc,nr=row+dr;
+      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
+      const dist=Math.sqrt(dc*dc+dr*dr);
+      if(dist<=vr){
+        visionCount[nc][nr]++;
+        fogMap[nc][nr]=FOG_VISIBLE;
+      } else if(dist<=er&&fogMap[nc][nr]<FOG_EXPLORED){
+        fogMap[nc][nr]=FOG_EXPLORED;
+      }
+    }
+  }
+  markSpawnRingDirty();
+}
+function removeCitizenBlockVision(col,row){
+  const vr=STRUCTS.CITIZEN_BLOCK.visRadius, er=STRUCTS.CITIZEN_BLOCK.visExp;
+  for(let dc=-er;dc<=er;dc++){
+    for(let dr=-er;dr<=er;dr++){
+      const nc=col+dc,nr=row+dr;
+      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
+      const dist=Math.sqrt(dc*dc+dr*dr);
+      if(dist<=vr){
+        visionCount[nc][nr]=Math.max(0,visionCount[nc][nr]-1);
+        if(visionCount[nc][nr]===0&&fogMap[nc][nr]===FOG_VISIBLE){
+          fogMap[nc][nr]=FOG_EXPLORED;
+        }
+      }
+    }
+  }
+  markSpawnRingDirty();
+}
+
 // ─── PERMANENT BUILDING VISION ───
 // Called when a building is placed — permanently reveals fog and increments visionCount
 function addStructureVision(col,row){
@@ -1087,9 +1140,16 @@ function updateHint(){
   else if(cavalryPendingUnit){h.textContent='Click a patrol target (2-12 tiles from cavalry) · ESC to cancel';return;}
   else if(selectedTool==='CAVALRY'){const u=UNIT_TYPES.CAVALRY;h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave), then click patrol target · ESC/G to cancel`;}
   else if(UNIT_TYPES[selectedTool]){const u=UNIT_TYPES[selectedTool];h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave) · ESC/G to cancel`;}
+  else if(selectedTool==='CITIZEN_BLOCK'){const c=getCitizenBlockCost();h.textContent=`Click VISIBLE tile to place Settlement (${c.wood}W ${c.stone}S) · ESC/G to cancel`;}
   else{const s=STRUCTS[selectedTool];h.textContent=`Click to place ${s.name} · ESC/G to cancel`;}
 }
 function canAfford(key){
+  // Citizen blocks use dynamic scaling cost
+  if(key==='CITIZEN_BLOCK'){
+    const cost=getCitizenBlockCost();
+    for(const[r,a]of Object.entries(cost)){if(game.resources[r]<a)return false;}
+    return true;
+  }
   const def=STRUCTS[key]||UNIT_TYPES[key];
   if(!def)return false;
   for(const[r,a]of Object.entries(def.cost)){if(game.resources[r]<a)return false;}
@@ -1619,8 +1679,8 @@ function spawnEnemy(typeKey){
 function findNearestStructure(ec,er,targetsStructuresOnly){
   let nearest=null, nearDist=Infinity;
   for(const[key,s] of Object.entries(structures)){
-    // Siege Rams target any structure; Brutes only smash walls and gates
-    if(targetsStructuresOnly || s.type==='WALL' || s.type==='GATE'){
+    // Siege Rams target any structure; Brutes smash walls, gates, and settlements
+    if(targetsStructuresOnly || s.type==='WALL' || s.type==='GATE' || s.type==='CITIZEN_BLOCK'){
       const[c,r]=key.split(',').map(Number);
       const dx=c-ec, dy=r-er, d=Math.sqrt(dx*dx+dy*dy);
       if(d<nearDist){nearDist=d;nearest={key,c,r,dist:d,struct:s};}
@@ -1638,7 +1698,13 @@ function destroyStructure(key){
   addParticles(c*TILE_SIZE+TILE_SIZE/2,r*TILE_SIZE+TILE_SIZE/2,'rgba(255,100,50,0.6)',8);
   cam.shake=Math.max(cam.shake,5);
   // Remove permanent fog vision from this building (re-fog uncovered tiles)
-  removeStructureVision(c,r);
+  if(structures[key].type==='CITIZEN_BLOCK'){
+    removeCitizenBlockVision(c,r);
+    citizenBlockCount=Math.max(0,citizenBlockCount-1);
+    updateCitizenCostUI();
+  } else {
+    removeStructureVision(c,r);
+  }
   delete structures[key];
 }
 
@@ -1859,7 +1925,7 @@ function updateEnemies(dt){
     // ── BRUTE: smash walls when path is blocked ──
     if(e.type==='brute'&&e.attackCooldown<=0){
       const nearWall=findNearestStructure(eCol,eRow,false);
-      if(nearWall&&nearWall.dist<=1.5&&(nearWall.struct.type==='WALL'||nearWall.struct.type==='GATE')){
+      if(nearWall&&nearWall.dist<=1.5&&(nearWall.struct.type==='WALL'||nearWall.struct.type==='GATE'||nearWall.struct.type==='CITIZEN_BLOCK')){
         const sDmg=eDef.dmg*2; // brutes do double damage to structures
         nearWall.struct.hp-=sDmg;
         e.attackCooldown=e.attackRate;
@@ -1973,7 +2039,13 @@ function updateEnemies(dt){
           addFloat('Gate destroyed!',gc*TILE_SIZE+TILE_SIZE/2,gr*TILE_SIZE,'#ff6644');
           addParticles(gc*TILE_SIZE+TILE_SIZE/2,gr*TILE_SIZE+TILE_SIZE/2,'rgba(90,75,55,0.8)',10);
           cam.shake=Math.max(cam.shake,4);
-          removeStructureVision(gc,gr);
+          if(structures[sk].type==='CITIZEN_BLOCK'){
+            removeCitizenBlockVision(gc,gr);
+            citizenBlockCount=Math.max(0,citizenBlockCount-1);
+            updateCitizenCostUI();
+          } else {
+            removeStructureVision(gc,gr);
+          }
           delete structures[sk];
         }
         if(e.hp<=0){killEnemy(e,i,'gate');continue;}
@@ -2798,6 +2870,7 @@ window.addEventListener('keydown',e=>{
     if(e.key==='r'||e.key==='R')selectTool('SPEARMAN');
     if(e.key==='f'||e.key==='F')selectTool('CAVALRY');
     if(e.key==='t'||e.key==='T')selectTool('CATAPULT');
+    if(e.key==='c'||e.key==='C')selectTool('CITIZEN_BLOCK');
     if(e.key==='x'||e.key==='X')selectTool('DEMOLISH');
     if(e.key==='Escape'){cavalryPendingUnit=null;selectTool('gather');}
   }
@@ -2900,15 +2973,33 @@ function handleBuild(col,row){
   const def=STRUCTS[selectedTool];if(!def)return;
   const sk=col+','+row;
   if(map[col][row]!==T.GRASS||structures[sk]){addFloat('Invalid!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+  // Citizen blocks require VISIBLE tile (must be in active vision)
+  if(selectedTool==='CITIZEN_BLOCK'){
+    if(hqPlaced&&(!fogMap[col]||fogMap[col][row]!==FOG_VISIBLE)){
+      addFloat('Must place in VISIBLE area!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;
+    }
+  }
   const dist=Math.abs(col-heroCol())+Math.abs(row-heroRow());
   if(dist>BUILD_RANGE){addFloat('Too far!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
   if(!canAfford(selectedTool)){addFloat('Can\'t afford!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
   // Prevent sealing the base — must always leave a path
   if(wouldSealBase(col,row,selectedTool)){addFloat('Must leave a path to the base!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
-  for(const[r,a] of Object.entries(def.cost))game.resources[r]-=a;
+  // Deduct cost (citizen blocks use scaling cost)
+  if(selectedTool==='CITIZEN_BLOCK'){
+    const cost=getCitizenBlockCost();
+    for(const[r,a]of Object.entries(cost))game.resources[r]-=a;
+    citizenBlockCount++;
+    updateCitizenCostUI();
+  } else {
+    for(const[r,a] of Object.entries(def.cost))game.resources[r]-=a;
+  }
   structures[sk]={type:selectedTool,hp:def.hp,maxHP:def.hp,cooldown:0,active:true};
-  // Permanently reveal fog around new building
-  addStructureVision(col,row);
+  // Permanently reveal fog — citizen blocks use their own smaller radius
+  if(selectedTool==='CITIZEN_BLOCK'){
+    addCitizenBlockVision(col,row);
+  } else {
+    addStructureVision(col,row);
+  }
   addFloat(`${def.name} built!`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#7aca7a');
 }
 // Cavalry patrol waypoint state
@@ -2985,9 +3076,17 @@ function handleDemolish(col,row){
     return;
   }
   const s=structures[sk];if(!s)return;const def=STRUCTS[s.type];
-  for(const[r,a]of Object.entries(def.cost))game.resources[r]+=Math.floor(a*0.5);
-  // Remove permanent fog vision from demolished building
-  removeStructureVision(col,row);
+  // Citizen blocks refund based on current scaling cost (50% of base cost)
+  if(s.type==='CITIZEN_BLOCK'){
+    for(const[r,a]of Object.entries(def.cost))game.resources[r]+=Math.floor(a*0.5);
+    removeCitizenBlockVision(col,row);
+    citizenBlockCount=Math.max(0,citizenBlockCount-1);
+    updateCitizenCostUI();
+  } else {
+    for(const[r,a]of Object.entries(def.cost))game.resources[r]+=Math.floor(a*0.5);
+    // Remove permanent fog vision from demolished building
+    removeStructureVision(col,row);
+  }
   delete structures[sk];
   addFloat(`${def.name} demolished`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ffaa44');
 }
@@ -3260,9 +3359,36 @@ function drawStructures(){
       ctx.beginPath();ctx.moveTo(sx+z*2,sy+sw*0.33);ctx.lineTo(sx+sw-z*2,sy+sw*0.33);
       ctx.moveTo(sx+z*2,sy+sw*0.66);ctx.lineTo(sx+sw-z*2,sy+sw*0.66);ctx.stroke();
     }
+    if(s.type==='CITIZEN_BLOCK'){
+      // Settlement icon: small house cluster
+      const cx=sx+sw/2, cy=sy+sw/2;
+      // Main house body
+      ctx.fillStyle='rgba(200,170,100,0.7)';
+      ctx.fillRect(sx+sw*0.2,sy+sw*0.4,sw*0.35,sw*0.45);
+      // Main roof (triangle)
+      ctx.fillStyle='rgba(160,80,40,0.8)';ctx.beginPath();
+      ctx.moveTo(sx+sw*0.15,sy+sw*0.42);ctx.lineTo(sx+sw*0.375,sy+sw*0.15);ctx.lineTo(sx+sw*0.6,sy+sw*0.42);ctx.fill();
+      // Second smaller house
+      ctx.fillStyle='rgba(180,150,90,0.6)';
+      ctx.fillRect(sx+sw*0.52,sy+sw*0.5,sw*0.3,sw*0.35);
+      // Second roof
+      ctx.fillStyle='rgba(140,70,35,0.7)';ctx.beginPath();
+      ctx.moveTo(sx+sw*0.48,sy+sw*0.52);ctx.lineTo(sx+sw*0.67,sy+sw*0.3);ctx.lineTo(sx+sw*0.86,sy+sw*0.52);ctx.fill();
+      // Door on main house
+      ctx.fillStyle='rgba(80,50,20,0.6)';
+      ctx.fillRect(sx+sw*0.3,sy+sw*0.65,sw*0.12,sw*0.2);
+      // Window on second house
+      ctx.fillStyle='rgba(220,200,120,0.5)';
+      ctx.fillRect(sx+sw*0.6,sy+sw*0.58,sw*0.1,sw*0.1);
+      // Golden border glow
+      ctx.strokeStyle='rgba(200,170,60,0.35)';ctx.lineWidth=z*1.5;ctx.strokeRect(sx+z*2,sy+z*2,sw-z*4,sw-z*4);
+    }
 
-    ctx.fillStyle='rgba(255,255,255,0.35)';ctx.font=`bold ${12*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText(def.letter,sx+sw/2,sy+sw/2);
+    // Letter label (skip for citizen blocks — they use the house icon)
+    if(s.type!=='CITIZEN_BLOCK'){
+      ctx.fillStyle='rgba(255,255,255,0.35)';ctx.font=`bold ${12*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(def.letter,sx+sw/2,sy+sw/2);
+    }
 
     // HP bar if damaged
     if(s.hp<s.maxHP){
@@ -4239,6 +4365,7 @@ function restartGame(){
   enemies.length=0; units.length=0; projectiles.length=0;
   floats.length=0; particles.length=0; spawnQueue.length=0;
   for(const k in structures) delete structures[k];
+  citizenBlockCount=0; updateCitizenCostUI();
   cavalryPendingUnit=null;
   regrowthQueue=[];
   enemyCamps=[];
