@@ -623,33 +623,10 @@ function upgradeSettlement(col,row){
   const oldTierDef=SETTLEMENT_TIERS[oldTier];
   // Remove old vision
   const oldVR=oldTierDef.visRadius, oldER=oldTierDef.visExp;
-  for(let dc=-oldER;dc<=oldER;dc++){
-    for(let dr=-oldER;dr<=oldER;dr++){
-      const nc=col+dc,nr=row+dr;
-      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
-      const dist=Math.sqrt(dc*dc+dr*dr);
-      if(dist<=oldVR){
-        visionCount[nc][nr]=Math.max(0,visionCount[nc][nr]-1);
-        if(visionCount[nc][nr]===0&&fogMap[nc][nr]===FOG_VISIBLE) fogMap[nc][nr]=FOG_EXPLORED;
-      }
-    }
-  }
+  modifyVision(col, row, oldVR, -1, oldER);
   // Add new vision
   const newVR=tierDef.visRadius, newER=tierDef.visExp;
-  for(let dc=-newER;dc<=newER;dc++){
-    for(let dr=-newER;dr<=newER;dr++){
-      const nc=col+dc,nr=row+dr;
-      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
-      const dist=Math.sqrt(dc*dc+dr*dr);
-      if(dist<=newVR){
-        visionCount[nc][nr]++;
-        fogMap[nc][nr]=FOG_VISIBLE;
-      } else if(dist<=newER&&fogMap[nc][nr]<FOG_EXPLORED){
-        fogMap[nc][nr]=FOG_EXPLORED;
-      }
-    }
-  }
-  markSpawnRingDirty();
+  modifyVision(col, row, newVR, +1, newER);
   // Spawn additional citizens (tier 2→+1, tier 3→+1)
   const oldCount=oldTierDef.citizens;
   const newCount=tierDef.citizens;
@@ -665,13 +642,7 @@ function upgradeSettlement(col,row){
       let occupied=false;
       for(const c of citizens){if(c.col===sc&&c.row===sr){occupied=true;break;}}
       if(occupied) continue;
-      citizens.push({
-        x:sc*TILE_SIZE+TILE_SIZE/2, y:sr*TILE_SIZE+TILE_SIZE/2,
-        col:sc, row:sr, blockKey:sk,
-        state:'idle', targetCol:-1, targetRow:-1,
-        path:null, pathIdx:0, gatherTimer:0, gatherRes:null,
-        idleTimer:0, bobPhase:Math.random()*Math.PI*2, safe:false,
-      });
+      citizens.push(createCitizen(sc, sr, sk));
       spawned++;
     }
     if(spawned>0) addFloat(`+${spawned} Citizen${spawned>1?'s':''}`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE-TILE_SIZE*0.5,'#c8e0ff');
@@ -812,21 +783,55 @@ function initFogMap(){
     for(let r=0;r<ROWS;r++){fogMap[c][r]=FOG_UNEXPLORED;visionCount[c][r]=0;}
   }
 }
-function revealFog(cx,cy,visRadius,expRadius){
-  // Reveal tiles: VISIBLE within visRadius, EXPLORED within expRadius
-  const r2=Math.max(visRadius,expRadius);
-  for(let dc=-r2;dc<=r2;dc++){
-    for(let dr=-r2;dr<=r2;dr++){
-      const nc=cx+dc,nr=cy+dr;
-      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
-      const dist=Math.sqrt(dc*dc+dr*dr);
-      if(dist<=visRadius){
-        fogMap[nc][nr]=FOG_VISIBLE;
-      } else if(dist<=expRadius&&fogMap[nc][nr]<FOG_EXPLORED){
-        fogMap[nc][nr]=FOG_EXPLORED;
+function modifyVision(cx, cy, visRadius, delta, expRadius) {
+  // Unified vision helper — handles add/remove vision + optional explore ring
+  // delta: +1 to add permanent vision, -1 to remove, 0 for non-tracked reveal
+  const er = expRadius || visRadius;
+  const maxR = Math.max(visRadius, er);
+  for (let dc = -maxR; dc <= maxR; dc++) {
+    for (let dr = -maxR; dr <= maxR; dr++) {
+      const nc = cx + dc, nr = cy + dr;
+      if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+      const dist = Math.sqrt(dc * dc + dr * dr);
+      if (dist <= visRadius) {
+        if (delta > 0) {
+          visionCount[nc][nr]++;
+          fogMap[nc][nr] = FOG_VISIBLE;
+        } else if (delta < 0) {
+          visionCount[nc][nr] = Math.max(0, visionCount[nc][nr] - 1);
+          if (visionCount[nc][nr] === 0 && fogMap[nc][nr] === FOG_VISIBLE) {
+            fogMap[nc][nr] = FOG_EXPLORED;
+          }
+        } else {
+          fogMap[nc][nr] = FOG_VISIBLE;
+        }
+      } else if (dist <= er && fogMap[nc][nr] < FOG_EXPLORED) {
+        fogMap[nc][nr] = FOG_EXPLORED;
       }
     }
   }
+  markSpawnRingDirty();
+}
+function modifyVisionTracked(cx, cy, visRadius, expRadius) {
+  // Hero vision — tracks newly-visible tiles for decay
+  const er = expRadius || visRadius;
+  const maxR = Math.max(visRadius, er);
+  for (let dc = -maxR; dc <= maxR; dc++) {
+    for (let dr = -maxR; dr <= maxR; dr++) {
+      const nc = cx + dc, nr = cy + dr;
+      if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+      const dist = Math.sqrt(dc * dc + dr * dr);
+      if (dist <= visRadius) {
+        if (fogMap[nc][nr] !== FOG_VISIBLE) visibleTiles.push([nc, nr]);
+        fogMap[nc][nr] = FOG_VISIBLE;
+      } else if (dist <= er && fogMap[nc][nr] < FOG_EXPLORED) {
+        fogMap[nc][nr] = FOG_EXPLORED;
+      }
+    }
+  }
+}
+function revealFog(cx,cy,visRadius,expRadius){
+  modifyVision(cx, cy, visRadius, 0, expRadius);
 }
 // Track which tiles are currently VISIBLE so we can efficiently decay them
 let visibleTiles=[]; // array of [c,r] pairs
@@ -839,101 +844,30 @@ function decayFogVisible(){
   visibleTiles=[];
 }
 function revealFogTracked(cx,cy,visRadius,expRadius){
-  // Same as revealFog but also tracks newly VISIBLE tiles
-  const r2=Math.max(visRadius,expRadius);
-  for(let dc=-r2;dc<=r2;dc++){
-    for(let dr=-r2;dr<=r2;dr++){
-      const nc=cx+dc,nr=cy+dr;
-      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
-      const dist=Math.sqrt(dc*dc+dr*dr);
-      if(dist<=visRadius){
-        if(fogMap[nc][nr]!==FOG_VISIBLE) visibleTiles.push([nc,nr]);
-        fogMap[nc][nr]=FOG_VISIBLE;
-      } else if(dist<=expRadius&&fogMap[nc][nr]<FOG_EXPLORED){
-        fogMap[nc][nr]=FOG_EXPLORED;
-      }
-    }
-  }
+  modifyVisionTracked(cx, cy, visRadius, expRadius);
 }
 // ─── CITIZEN BLOCK VISION (per-tier radius) ───
 function addCitizenBlockVision(col,row){
   const s=structures[col+','+row];
   const tier=(s&&s.tier)||1;
   const td=getSettlementTierData(tier);
-  const vr=td.visRadius, er=td.visExp||td.visRadius+2;
-  for(let dc=-er;dc<=er;dc++){
-    for(let dr=-er;dr<=er;dr++){
-      const nc=col+dc,nr=row+dr;
-      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
-      const dist=Math.sqrt(dc*dc+dr*dr);
-      if(dist<=vr){
-        visionCount[nc][nr]++;
-        fogMap[nc][nr]=FOG_VISIBLE;
-      } else if(dist<=er&&fogMap[nc][nr]<FOG_EXPLORED){
-        fogMap[nc][nr]=FOG_EXPLORED;
-      }
-    }
-  }
-  markSpawnRingDirty();
+  modifyVision(col, row, td.visRadius, +1, td.visExp||td.visRadius+2);
 }
 function removeCitizenBlockVision(col,row){
   const s=structures[col+','+row];
   const tier=(s&&s.tier)||1;
   const td=getSettlementTierData(tier);
-  const vr=td.visRadius, er=td.visExp||td.visRadius+2;
-  for(let dc=-er;dc<=er;dc++){
-    for(let dr=-er;dr<=er;dr++){
-      const nc=col+dc,nr=row+dr;
-      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
-      const dist=Math.sqrt(dc*dc+dr*dr);
-      if(dist<=vr){
-        visionCount[nc][nr]=Math.max(0,visionCount[nc][nr]-1);
-        if(visionCount[nc][nr]===0&&fogMap[nc][nr]===FOG_VISIBLE){
-          fogMap[nc][nr]=FOG_EXPLORED;
-        }
-      }
-    }
-  }
-  markSpawnRingDirty();
+  modifyVision(col, row, td.visRadius, -1, td.visExp||td.visRadius+2);
 }
 
 // ─── PERMANENT BUILDING VISION ───
 // Called when a building is placed — permanently reveals fog and increments visionCount
 function addStructureVision(col,row){
-  const vr=STRUCT_VIS_RADIUS,er=STRUCT_EXP_RADIUS;
-  for(let dc=-er;dc<=er;dc++){
-    for(let dr=-er;dr<=er;dr++){
-      const nc=col+dc,nr=row+dr;
-      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
-      const dist=Math.sqrt(dc*dc+dr*dr);
-      if(dist<=vr){
-        visionCount[nc][nr]++;
-        fogMap[nc][nr]=FOG_VISIBLE;
-      } else if(dist<=er&&fogMap[nc][nr]<FOG_EXPLORED){
-        fogMap[nc][nr]=FOG_EXPLORED;
-      }
-    }
-  }
-  markSpawnRingDirty(); // vision boundary changed — recalc spawn ring
+  modifyVision(col, row, STRUCT_VIS_RADIUS, +1, STRUCT_EXP_RADIUS);
 }
 // Called when a building is destroyed — decrements visionCount and re-fogs uncovered tiles
 function removeStructureVision(col,row){
-  const vr=STRUCT_VIS_RADIUS,er=STRUCT_EXP_RADIUS;
-  for(let dc=-er;dc<=er;dc++){
-    for(let dr=-er;dr<=er;dr++){
-      const nc=col+dc,nr=row+dr;
-      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
-      const dist=Math.sqrt(dc*dc+dr*dr);
-      if(dist<=vr){
-        visionCount[nc][nr]=Math.max(0,visionCount[nc][nr]-1);
-        // If no building covers this tile anymore, downgrade to EXPLORED (re-fog)
-        if(visionCount[nc][nr]===0&&fogMap[nc][nr]===FOG_VISIBLE){
-          fogMap[nc][nr]=FOG_EXPLORED;
-        }
-      }
-    }
-  }
-  markSpawnRingDirty(); // vision boundary changed — recalc spawn ring
+  modifyVision(col, row, STRUCT_VIS_RADIUS, -1, STRUCT_EXP_RADIUS);
 }
 // Refresh dynamic vision sources (hero only) — call each frame
 // HQ + building vision is permanent via visionCount, no periodic refresh needed
@@ -946,15 +880,20 @@ function refreshFogVision(){
   revealFogTracked(hc,hr,HERO_FOG_RADIUS,HERO_EXPLORE_RADIUS);
 }
 // Find nearest settlement to a given tile — returns {c,r} or null
-function nearestSettlement(ec,er){
-  let best=null, bestDist=Infinity;
-  for(const k in structures){
-    if(structures[k].type!=='CITIZEN_BLOCK') continue;
-    const[sc,sr]=k.split(',').map(Number);
-    const d=Math.abs(ec-sc)+Math.abs(er-sr);
-    if(d<bestDist){bestDist=d;best={c:sc,r:sr};}
+// Unified settlement finder — returns {c, r, dist, key} or null
+function findNearestSettlement(ec, er) {
+  let best = null, bestDist = Infinity;
+  for (const k in structures) {
+    if (structures[k].type !== 'CITIZEN_BLOCK') continue;
+    const [sc, sr] = k.split(',').map(Number);
+    const d = Math.abs(ec - sc) + Math.abs(er - sr);
+    if (d < bestDist) { bestDist = d; best = {c: sc, r: sr, dist: d, key: k}; }
   }
-  return best||{c:BASE_CX,r:BASE_CY}; // fallback to first settlement location
+  return best;
+}
+function nearestSettlement(ec,er){
+  const result = findNearestSettlement(ec, er);
+  return result ? {c:result.c, r:result.r} : {c:BASE_CX, r:BASE_CY};
 }
 // Distance from nearest map edge
 function edgeDist(c,r){return Math.min(c,r,COLS-1-c,ROWS-1-r);}
@@ -1094,6 +1033,16 @@ function carveSpawnPaths(){
 //  §5  CITIZEN SYSTEM  
 // ═══════════════════════════════════════════════════════
 
+function createCitizen(col, row, blockKey) {
+  return {
+    x: col * TILE_SIZE + TILE_SIZE / 2,
+    y: row * TILE_SIZE + TILE_SIZE / 2,
+    col: col, row: row, blockKey: blockKey,
+    state: 'idle', targetCol: -1, targetRow: -1,
+    path: null, pathIdx: 0, gatherTimer: 0, gatherRes: null,
+    idleTimer: 0, bobPhase: Math.random() * Math.PI * 2, safe: false,
+  };
+}
 function spawnCitizensForBlock(blockCol,blockRow){
   const blockKey=blockCol+','+blockRow;
   // Find 2 nearby walkable tiles to spawn citizens
@@ -1104,20 +1053,7 @@ function spawnCitizensForBlock(blockCol,blockRow){
     const sc=blockCol+dc, sr=blockRow+dr;
     if(sc<0||sc>=COLS||sr<0||sr>=ROWS) continue;
     if(map[sc][sr]!==T.GRASS||structures[sc+','+sr]) continue;
-    citizens.push({
-      x:sc*TILE_SIZE+TILE_SIZE/2,
-      y:sr*TILE_SIZE+TILE_SIZE/2,
-      col:sc, row:sr,
-      blockKey:blockKey,          // which settlement owns this citizen
-      state:'idle',               // idle | walking | gathering | recalling | safe | exposed
-      targetCol:-1, targetRow:-1, // destination tile
-      path:null, pathIdx:0,       // A* path and current step
-      gatherTimer:0,              // time spent gathering current tile
-      gatherRes:null,             // resource type being gathered
-      idleTimer:0,                // small delay before seeking next resource
-      bobPhase:Math.random()*Math.PI*2, // animation offset
-      safe:false,                 // true when recalled within 1 tile of settlement (hidden during combat)
-    });
+    citizens.push(createCitizen(sc, sr, blockKey));
     spawned++;
   }
   // Float to show citizens spawned
@@ -1190,15 +1126,9 @@ function triggerCitizenRecall(){
 }
 
 // Find nearest CITIZEN_BLOCK tile to a given position
+// Find nearest CITIZEN_BLOCK tile to a given position
 function findNearestSettlementTile(col,row){
-  let best=null, bestDist=Infinity;
-  for(const k in structures){
-    if(structures[k].type!=='CITIZEN_BLOCK') continue;
-    const[sc,sr]=k.split(',').map(Number);
-    const d=Math.abs(sc-col)+Math.abs(sr-row);
-    if(d<bestDist){bestDist=d;best={c:sc,r:sr,dist:d,key:k};}
-  }
-  return best;
+  return findNearestSettlement(col, row);
 }
 
 // Cycle a settlement's gather priority when clicked
@@ -2530,13 +2460,7 @@ function closeAftermath(){
         let occupied=false;
         for(const c of citizens){if(c.col===sc&&c.row===sr){occupied=true;break;}}
         if(occupied) continue;
-        citizens.push({
-          x:sc*TILE_SIZE+TILE_SIZE/2, y:sr*TILE_SIZE+TILE_SIZE/2,
-          col:sc, row:sr, blockKey:k,
-          state:'idle', targetCol:-1, targetRow:-1,
-          path:null, pathIdx:0, gatherTimer:0, gatherRes:null,
-          idleTimer:0, bobPhase:Math.random()*Math.PI*2, safe:false,
-        });
+        citizens.push(createCitizen(sc, sr, k));
         spawned++; respawned++;
       }
     }
