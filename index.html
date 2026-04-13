@@ -105,6 +105,13 @@
   .tb-demolish-btn:hover { background: rgba(220,80,60,0.1); color: #e87a6a; }
   .tb-demolish-btn.active { background: rgba(220,80,60,0.15); border-color: rgba(220,80,60,0.35); color: #e87a6a; }
 
+  /* Resource building buttons */
+  .tool-btn[data-tool="FARM"] { border-color: rgba(180,140,80,0.2); }
+  .tool-btn[data-tool="LUMBER"] { border-color: rgba(120,90,50,0.2); }
+  .tool-btn[data-tool="QUARRY"] { border-color: rgba(140,140,150,0.2); }
+  .tool-btn[data-tool="MINE"] { border-color: rgba(100,130,180,0.2); }
+  .tool-btn[data-tool="GOLD_MINE"] { border-color: rgba(200,180,60,0.2); }
+
   /* Build mode layout: stack cats on top, items below */
   #tb-build-mode { flex-direction: column; padding: 4px 0; }
 
@@ -363,6 +370,7 @@
       <button class="tb-cat active" data-cat="defense" onclick="selectCategory('defense')"><span class="tool-key">1</span> ⛨ Defense</button>
       <button class="tb-cat" data-cat="army" onclick="selectCategory('army')"><span class="tool-key">2</span> ⚔ Army</button>
       <button class="tb-cat" data-cat="economy" onclick="selectCategory('economy')"><span class="tool-key">3</span> 🏘 Economy</button>
+      <button class="tb-cat" data-cat="resources" onclick="selectCategory('resources')"><span class="tool-key">4</span> ⛏ Resources</button>
       <button class="tb-cat tb-cat-demolish" data-cat="demolish" onclick="selectCategory('demolish')"><span class="tool-key">X</span> 🗑 Demolish</button>
       <button class="tb-back" onclick="toggleBuildMode(false)"><span class="tool-key">Esc</span> ← Back</button>
     </div>
@@ -382,6 +390,13 @@
       </div>
       <div class="tb-item-group" data-cat="economy" style="display:none">
         <button class="tool-btn citizen" data-tool="CITIZEN_BLOCK" onclick="selectTool('CITIZEN_BLOCK')"><span class="tool-key">Q</span> Settlement <span class="tool-cost" id="citizen-cost">50W 30S</span></button>
+      </div>
+      <div class="tb-item-group" data-cat="resources" style="display:none">
+        <button class="tool-btn" data-tool="FARM" onclick="selectTool('FARM')"><span class="tool-key">Q</span> Farm <span class="tool-cost">Free</span></button>
+        <button class="tool-btn" data-tool="LUMBER" onclick="selectTool('LUMBER')"><span class="tool-key">W</span> Lumber <span class="tool-cost">3F</span></button>
+        <button class="tool-btn" data-tool="QUARRY" onclick="selectTool('QUARRY')"><span class="tool-key">E</span> Quarry <span class="tool-cost">5W</span></button>
+        <button class="tool-btn" data-tool="MINE" onclick="selectTool('MINE')"><span class="tool-key">R</span> Mine <span class="tool-cost">8S</span></button>
+        <button class="tool-btn" data-tool="GOLD_MINE" onclick="selectTool('GOLD_MINE')"><span class="tool-key">T</span> Gold Mine <span class="tool-cost">10M</span></button>
       </div>
       <div class="tb-item-group" data-cat="demolish" style="display:none">
         <button class="tool-btn tb-demolish-btn" data-tool="DEMOLISH" onclick="selectTool('DEMOLISH')"><span class="tool-key">Q</span> Demolish — Click structure to remove</button>
@@ -607,6 +622,20 @@ const STRUCTS={
   GATE:{name:'Gate',cost:{wood:5,stone:2},hp:30,color:[90,75,55],letter:'G',dmg:3,slow:0.6},
   CITIZEN_BLOCK:{name:'Settlement',cost:{wood:50,stone:30},hp:80,color:[170,140,90],letter:'🏘',visRadius:12,visExp:14},
 };
+
+// ─── RESOURCE BUILDINGS ───
+// Chain: Farm(free) → Lumber(food) → Quarry(wood) → Mine(stone) → Gold Mine(metal)
+const RESOURCE_BUILDINGS = {
+  FARM:       { name:'Farm',        cost:{},          hp:30, produces:'food',  perWave:3, requiredTile:T.BERRY, color:[180,140,80],  letter:'F', maxRepairs:3 },
+  LUMBER:     { name:'Lumber Camp', cost:{food:3},    hp:30, produces:'wood',  perWave:3, requiredTile:T.TREE,  color:[120,90,50],   letter:'L', maxRepairs:3 },
+  QUARRY:     { name:'Quarry',      cost:{wood:5},    hp:30, produces:'stone', perWave:3, requiredTile:T.STONE, color:[140,140,150],  letter:'Q', maxRepairs:3 },
+  MINE:       { name:'Mine',        cost:{stone:8},   hp:30, produces:'metal', perWave:3, requiredTile:T.ORE,   color:[100,130,180],  letter:'M', maxRepairs:3 },
+  GOLD_MINE:  { name:'Gold Mine',   cost:{metal:10},  hp:30, produces:'gold',  perWave:3, requiredTile:T.GOLD,  color:[200,180,60],   letter:'$', maxRepairs:3 },
+};
+// Merge resource buildings into STRUCTS so canAfford/rendering/etc. work
+for(const[k,v] of Object.entries(RESOURCE_BUILDINGS)){
+  STRUCTS[k] = v;
+}
 let citizenBlockCount=0; // tracks placed citizen blocks for scaling cost
 function getCitizenBlockCost(){
   // Scaling: base × (1 + 0.3 × existingBlocks) — rounded up
@@ -2038,7 +2067,7 @@ function updateHint(){
     else if(selectedTool==='CAVALRY'){const u=UNIT_TYPES.CAVALRY;h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave), then click patrol target · Esc back`;}
     else if(UNIT_TYPES[selectedTool]){const u=UNIT_TYPES[selectedTool];h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave) · 1/2/3 switch tab · Esc back`;}
     else if(selectedTool==='CITIZEN_BLOCK'){const c=getCitizenBlockCost();h.textContent=`Click VISIBLE tile to place Settlement (${c.wood}W ${c.stone}S) · Esc back`;}
-    else{const s=STRUCTS[selectedTool];if(s)h.textContent=`Click to place ${s.name} · 1/2/3 switch tab · Esc back`;}
+    else{const rb=RESOURCE_BUILDINGS[selectedTool];if(rb){h.textContent=`${rb.name} — must be placed on ${rb.produces} resource tile · 1-4 switch tab · Esc back`;}else{const s=STRUCTS[selectedTool];if(s)h.textContent=`Click to place ${s.name} · 1-4 switch tab · Esc back`;}}
   }
 }
 function canAfford(key){
@@ -3824,6 +3853,7 @@ window.addEventListener('keydown',e=>{
       if(e.key==='1'){selectCategory('defense');return;}
       if(e.key==='2'){selectCategory('army');return;}
       if(e.key==='3'){selectCategory('economy');return;}
+      if(e.key==='4'&&uiMode==='build'){selectCategory('resources');e.preventDefault();}
       if(e.key==='x'||e.key==='X'){selectCategory('demolish');return;}
       // Q/W/E/R/T pick items within the active category
       const itemBtns=document.querySelectorAll(`.tb-item-group[data-cat="${activeCategory}"] .tool-btn`);
@@ -3948,6 +3978,11 @@ function wouldSealBase(col,row,structType){
 }
 
 function handleBuild(col,row){
+  // Resource buildings: placement not yet implemented (Step 2 — toolbar only)
+  if(RESOURCE_BUILDINGS[selectedTool]){
+    addFloat('Building system coming soon!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#e8c56a');
+    return;
+  }
   const def=STRUCTS[selectedTool];if(!def)return;
   const sk=col+','+row;
   if(map[col][row]!==T.GRASS||structures[sk]){addFloat('Invalid!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
@@ -4379,6 +4414,114 @@ function drawStructures(){
       ctx.beginPath();ctx.moveTo(sx+z*2,sy+sw*0.33);ctx.lineTo(sx+sw-z*2,sy+sw*0.33);
       ctx.moveTo(sx+z*2,sy+sw*0.66);ctx.lineTo(sx+sw-z*2,sy+sw*0.66);ctx.stroke();
     }
+    // ── RESOURCE BUILDINGS ──
+    if(RESOURCE_BUILDINGS[s.type]){
+      const rb=RESOURCE_BUILDINGS[s.type];
+      const isDestroyed=s.hp<=0;
+      // Unique visuals per resource building type
+      if(s.type==='FARM'){
+        // Green field rows
+        ctx.fillStyle=isDestroyed?'rgba(80,70,40,0.5)':'rgba(140,170,60,0.6)';
+        for(let row=0;row<3;row++){
+          ctx.fillRect(sx+sw*0.1,sy+sw*(0.25+row*0.25),sw*0.8,sw*0.12);
+        }
+        // Wheat stalks (if not destroyed)
+        if(!isDestroyed){
+          ctx.strokeStyle='rgba(200,180,60,0.5)';ctx.lineWidth=z;
+          for(let st=0;st<4;st++){
+            const stx=sx+sw*(0.2+st*0.2);
+            ctx.beginPath();ctx.moveTo(stx,sy+sw*0.7);ctx.lineTo(stx,sy+sw*0.2);ctx.stroke();
+            ctx.fillStyle='rgba(220,190,60,0.6)';ctx.beginPath();ctx.arc(stx,sy+sw*0.18,2*z,0,Math.PI*2);ctx.fill();
+          }
+        }
+      }
+      if(s.type==='LUMBER'){
+        // Log pile
+        ctx.fillStyle=isDestroyed?'rgba(60,45,25,0.4)':'rgba(120,80,40,0.7)';
+        for(let lg=0;lg<3;lg++){
+          ctx.fillRect(sx+sw*0.15,sy+sw*(0.35+lg*0.18),sw*0.7,sw*0.1);
+          ctx.strokeStyle='rgba(80,55,25,0.4)';ctx.lineWidth=z*0.5;
+          ctx.beginPath();ctx.arc(sx+sw*0.15,sy+sw*(0.4+lg*0.18),sw*0.05,0,Math.PI*2);ctx.stroke();
+        }
+        // Saw
+        if(!isDestroyed){
+          ctx.strokeStyle='rgba(180,180,180,0.4)';ctx.lineWidth=z*1.5;
+          ctx.beginPath();ctx.moveTo(sx+sw*0.7,sy+sw*0.2);ctx.lineTo(sx+sw*0.85,sy+sw*0.35);ctx.stroke();
+        }
+      }
+      if(s.type==='QUARRY'){
+        // Stone blocks stacked
+        ctx.fillStyle=isDestroyed?'rgba(80,80,85,0.4)':'rgba(150,150,160,0.7)';
+        ctx.fillRect(sx+sw*0.15,sy+sw*0.5,sw*0.3,sw*0.3);
+        ctx.fillRect(sx+sw*0.5,sy+sw*0.55,sw*0.35,sw*0.25);
+        ctx.fillRect(sx+sw*0.25,sy+sw*0.3,sw*0.25,sw*0.22);
+        // Chisel marks
+        if(!isDestroyed){
+          ctx.strokeStyle='rgba(100,100,110,0.4)';ctx.lineWidth=z*0.5;
+          ctx.beginPath();ctx.moveTo(sx+sw*0.2,sy+sw*0.55);ctx.lineTo(sx+sw*0.4,sy+sw*0.55);ctx.stroke();
+          ctx.beginPath();ctx.moveTo(sx+sw*0.55,sy+sw*0.6);ctx.lineTo(sx+sw*0.8,sy+sw*0.6);ctx.stroke();
+        }
+      }
+      if(s.type==='MINE'){
+        // Mine shaft entrance (dark opening)
+        ctx.fillStyle=isDestroyed?'rgba(40,40,50,0.5)':'rgba(30,30,45,0.8)';
+        ctx.beginPath();ctx.moveTo(sx+sw*0.2,sy+sw*0.8);ctx.lineTo(sx+sw*0.5,sy+sw*0.3);ctx.lineTo(sx+sw*0.8,sy+sw*0.8);ctx.fill();
+        // Support beams
+        if(!isDestroyed){
+          ctx.strokeStyle='rgba(120,90,50,0.6)';ctx.lineWidth=z*2;
+          ctx.beginPath();ctx.moveTo(sx+sw*0.25,sy+sw*0.75);ctx.lineTo(sx+sw*0.5,sy+sw*0.35);ctx.stroke();
+          ctx.beginPath();ctx.moveTo(sx+sw*0.75,sy+sw*0.75);ctx.lineTo(sx+sw*0.5,sy+sw*0.35);ctx.stroke();
+          // Ore sparkle
+          ctx.fillStyle='rgba(140,170,220,0.5)';ctx.beginPath();ctx.arc(sx+sw*0.5,sy+sw*0.6,2*z,0,Math.PI*2);ctx.fill();
+        }
+      }
+      if(s.type==='GOLD_MINE'){
+        // Ornate mine shaft
+        ctx.fillStyle=isDestroyed?'rgba(50,45,20,0.5)':'rgba(40,35,25,0.8)';
+        ctx.beginPath();ctx.moveTo(sx+sw*0.2,sy+sw*0.8);ctx.lineTo(sx+sw*0.5,sy+sw*0.3);ctx.lineTo(sx+sw*0.8,sy+sw*0.8);ctx.fill();
+        // Gold trim archway
+        if(!isDestroyed){
+          ctx.strokeStyle='rgba(220,190,60,0.6)';ctx.lineWidth=z*2;
+          ctx.beginPath();ctx.moveTo(sx+sw*0.25,sy+sw*0.78);ctx.lineTo(sx+sw*0.5,sy+sw*0.35);ctx.lineTo(sx+sw*0.75,sy+sw*0.78);ctx.stroke();
+          // Gold nuggets
+          ctx.fillStyle='rgba(255,215,0,0.6)';
+          ctx.beginPath();ctx.arc(sx+sw*0.4,sy+sw*0.65,2*z,0,Math.PI*2);ctx.fill();
+          ctx.beginPath();ctx.arc(sx+sw*0.6,sy+sw*0.6,1.5*z,0,Math.PI*2);ctx.fill();
+        }
+      }
+      // ── CRACKED OVERLAY when destroyed (hp<=0) ──
+      if(isDestroyed){
+        ctx.strokeStyle='rgba(180,50,30,0.6)';ctx.lineWidth=z*1.5;
+        // Large X crack
+        ctx.beginPath();ctx.moveTo(sx+sw*0.15,sy+sw*0.15);ctx.lineTo(sx+sw*0.85,sy+sw*0.85);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(sx+sw*0.85,sy+sw*0.15);ctx.lineTo(sx+sw*0.15,sy+sw*0.85);ctx.stroke();
+        // Jagged crack lines
+        ctx.strokeStyle='rgba(120,40,20,0.4)';ctx.lineWidth=z;
+        ctx.beginPath();ctx.moveTo(sx+sw*0.5,sy+sw*0.1);ctx.lineTo(sx+sw*0.45,sy+sw*0.35);ctx.lineTo(sx+sw*0.55,sy+sw*0.5);ctx.lineTo(sx+sw*0.4,sy+sw*0.7);ctx.lineTo(sx+sw*0.5,sy+sw*0.9);ctx.stroke();
+        // Dark smoke overlay
+        ctx.fillStyle='rgba(30,20,15,0.3)';ctx.fillRect(sx+z,sy+z,sw-2*z,sw-2*z);
+        // "DESTROYED" tint
+        ctx.fillStyle='rgba(80,20,10,0.15)';ctx.fillRect(sx,sy,sw,sw);
+      }
+      // Production badge — top-right corner (shows +3 and resource type)
+      if(!isDestroyed){
+        const badgeX=sx+sw*0.85,badgeY=sy+sw*0.15,badgeR=sw*0.16;
+        ctx.beginPath();ctx.arc(badgeX,badgeY,badgeR,0,Math.PI*2);
+        ctx.fillStyle='rgba(40,120,40,0.85)';ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,0.9)';ctx.font=`bold ${Math.max(6,sw*0.18)|0}px system-ui`;
+        ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText('+'+rb.perWave,badgeX,badgeY);
+      }
+      // Repair count badge — bottom-left (shows repairs remaining)
+      if(s.repairsUsed>0){
+        const rpX=sx+sw*0.15,rpY=sy+sw*0.85,rpR=sw*0.14;
+        ctx.beginPath();ctx.arc(rpX,rpY,rpR,0,Math.PI*2);
+        ctx.fillStyle='rgba(180,80,30,0.8)';ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,0.9)';ctx.font=`bold ${Math.max(5,sw*0.15)|0}px system-ui`;
+        ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText((rb.maxRepairs-s.repairsUsed)+'',rpX,rpY);
+      }
+    }
     if(s.type==='CITIZEN_BLOCK'){
       // Settlement icon: house cluster with tier visuals
       const sTier=s.tier||1;
@@ -4457,7 +4600,7 @@ function drawStructures(){
     }
 
     // Letter label (skip for citizen blocks — they use the house icon)
-    if(s.type!=='CITIZEN_BLOCK'){
+    if(s.type!=='CITIZEN_BLOCK'&&!RESOURCE_BUILDINGS[s.type]){
       ctx.fillStyle='rgba(255,255,255,0.35)';ctx.font=`bold ${12*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText(def.letter,sx+sw/2,sy+sw/2);
     }
