@@ -457,8 +457,11 @@ const CITIZEN_SPEED=2*TILE_SIZE; // pixels per second (2 tiles/s)
 const CITIZEN_GATHER_TIME=1.5;   // seconds standing on resource to harvest
 const CITIZEN_GATHER_RADIUS=10;  // tile radius citizens search for resources
 const CITIZENS_PER_BLOCK=2;      // citizens spawned per settlement
-// Resource priority: food > wood > stone > metal > gold (higher index = lower priority)
+// Resource priority options for per-settlement selection
 const CITIZEN_RES_PRIORITY=['food','wood','stone','metal','gold'];
+// Resource emoji icons for settlement priority display
+const RES_ICONS={food:'🍖',wood:'🪵',stone:'🪨',metal:'⛏️',gold:'💰',all:'⚖️'};
+const RES_PRIORITY_CYCLE=['all','food','wood','stone','metal','gold']; // cycle order when clicking
 // Pastel colors per resource type for citizen rendering
 const CITIZEN_COLORS={
   idle:[180,180,200],
@@ -825,7 +828,7 @@ function placeHQ(col,row){
   // Place as a CITIZEN_BLOCK structure (first one is FREE — no cost deducted)
   map[col][row]=T.GRASS; // ensure grass underneath
   const sk=col+','+row;
-  structures[sk]={type:'CITIZEN_BLOCK',hp:STRUCTS.CITIZEN_BLOCK.hp,maxHP:STRUCTS.CITIZEN_BLOCK.hp,cooldown:0,active:true};
+  structures[sk]={type:'CITIZEN_BLOCK',hp:STRUCTS.CITIZEN_BLOCK.hp,maxHP:STRUCTS.CITIZEN_BLOCK.hp,cooldown:0,active:true,gatherPriority:'all'};
   citizenBlockCount++; // count it but don't charge
   updateCitizenCostUI();
   // Clear area around settlement
@@ -927,11 +930,41 @@ function removeCitizensForBlock(blockKey){
   }
 }
 
+// Cycle a settlement's gather priority when clicked
+function cycleSettlementPriority(col,row){
+  const sk=col+','+row;
+  const s=structures[sk];
+  if(!s||s.type!=='CITIZEN_BLOCK') return;
+  const cur=s.gatherPriority||'all';
+  const idx=RES_PRIORITY_CYCLE.indexOf(cur);
+  const next=RES_PRIORITY_CYCLE[(idx+1)%RES_PRIORITY_CYCLE.length];
+  s.gatherPriority=next;
+  // Reset citizens belonging to this settlement so they re-evaluate targets
+  for(let i=0;i<citizens.length;i++){
+    if(citizens[i].blockKey===sk){
+      citizens[i].state='idle';
+      citizens[i].idleTimer=0;
+      citizens[i].path=null;
+      citizens[i].gatherTimer=0;
+    }
+  }
+  // Show float with new priority
+  const icon=RES_ICONS[next]||'⚖️';
+  const label=next==='all'?'All Resources':next.charAt(0).toUpperCase()+next.slice(1);
+  addFloat(`${icon} Priority: ${label}`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE-TILE_SIZE,'#e8c56a');
+  addParticles(col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE+TILE_SIZE/2,'rgba(220,190,80,0.6)',4);
+}
+
 // Find nearest harvestable resource tile within radius of a citizen's home settlement
+// Uses per-settlement gatherPriority: 'all' = original order, or specific resource type
 function findCitizenResource(citizen){
   const[bCol,bRow]=citizen.blockKey.split(',').map(Number);
   const radius=CITIZEN_GATHER_RADIUS;
   let best=null, bestPriority=999, bestDist=Infinity;
+
+  // Get this settlement's gather priority
+  const settlement=structures[citizen.blockKey];
+  const settPriority=settlement?settlement.gatherPriority||'all':'all';
 
   // Scan tiles in radius around the settlement (not the citizen)
   const minC=Math.max(0,bCol-radius), maxC=Math.min(COLS-1,bCol+radius);
@@ -944,6 +977,8 @@ function findCitizenResource(citizen){
       // Must be a harvestable deposit with HP remaining
       const dep=DEPOSITS[map[c][r]];
       if(!dep||!depositHP[c]||depositHP[c][r]<=0) continue;
+      // If settlement has a specific priority, ONLY gather that resource
+      if(settPriority!=='all'&&dep.res!==settPriority) continue;
       // Must be in VISIBLE fog (citizens can only gather what's visible)
       if(fogMap[c]&&fogMap[c][r]<FOG_VISIBLE) continue;
       // Check if another citizen is already targeting this tile
@@ -955,7 +990,7 @@ function findCitizenResource(citizen){
         }
       }
       if(taken) continue;
-      // Priority based on resource type
+      // Priority based on resource type (used for 'all' mode tiebreaking)
       const pri=CITIZEN_RES_PRIORITY.indexOf(dep.res);
       const dist=Math.abs(c-citizen.col)+Math.abs(r-citizen.row);
       // Prefer higher priority resource, then closer distance
@@ -1497,7 +1532,7 @@ function updateHint(){
   const h=document.getElementById('hint');
   if(game.phase==='MENU')return;
   if(game.phase==='COMBAT'){h.textContent='⚔️ COMBAT — WASD to move · Click to attack · Tab cycle units · Defend your settlements!';return;}
-  if(selectedTool==='gather')h.textContent='WASD to move · Click resources to gather · SPACE to start wave';
+  if(selectedTool==='gather')h.textContent='WASD to move · Click resources to gather · Click Settlement to change priority · SPACE to start wave';
   else if(selectedTool==='DEMOLISH')h.textContent='Click a structure to demolish · ESC to cancel';
   else if(cavalryPendingUnit){h.textContent='Click a patrol target (2-12 tiles from cavalry) · ESC to cancel';return;}
   else if(selectedTool==='CAVALRY'){const u=UNIT_TYPES.CAVALRY;h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave), then click patrol target · ESC/G to cancel`;}
@@ -3359,6 +3394,8 @@ function handleBuild(col,row){
     for(const[r,a] of Object.entries(def.cost))game.resources[r]-=a;
   }
   structures[sk]={type:selectedTool,hp:def.hp,maxHP:def.hp,cooldown:0,active:true};
+  // Settlement: add gatherPriority field
+  if(selectedTool==='CITIZEN_BLOCK') structures[sk].gatherPriority='all';
   // Permanently reveal fog — citizen blocks use their own smaller radius
   if(selectedTool==='CITIZEN_BLOCK'){
     addCitizenBlockVision(col,row);
@@ -3488,6 +3525,12 @@ document.getElementById('game-canvas').addEventListener('click',e=>{
   const row=Math.floor((cam.y+e.clientY/z)/TILE_SIZE);
   if(col<0||col>=COLS||row<0||row>=ROWS)return;
   if(cavalryPendingUnit){handleRecruit(col,row);return;}
+  // Click on a settlement to cycle its gather priority (any tool)
+  const clickedKey=col+','+row;
+  const clickedStruct=structures[clickedKey];
+  if(clickedStruct&&clickedStruct.type==='CITIZEN_BLOCK'&&selectedTool==='gather'){
+    cycleSettlementPriority(col,row);return;
+  }
   if(selectedTool==='gather')handleGather(col,row);
   else if(selectedTool==='DEMOLISH')handleDemolish(col,row);
   else if(UNIT_TYPES[selectedTool])handleRecruit(col,row);
@@ -3755,6 +3798,22 @@ function drawStructures(){
       ctx.fillRect(sx+sw*0.6,sy+sw*0.58,sw*0.1,sw*0.1);
       // Golden border glow
       ctx.strokeStyle='rgba(200,170,60,0.35)';ctx.lineWidth=z*1.5;ctx.strokeRect(sx+z*2,sy+z*2,sw-z*4,sw-z*4);
+      // Priority badge — show current gather priority icon in bottom-right corner
+      const sPri=s.gatherPriority||'all';
+      if(sPri!=='all'){
+        // Colored background circle for specific resource
+        const badgeX=sx+sw*0.82, badgeY=sy+sw*0.82, badgeR=sw*0.18;
+        const priColors={food:[220,140,160],wood:[140,200,140],stone:[170,170,190],metal:[140,170,210],gold:[220,200,120]};
+        const pc=priColors[sPri]||[200,200,200];
+        ctx.beginPath();ctx.arc(badgeX,badgeY,badgeR,0,Math.PI*2);
+        ctx.fillStyle=`rgba(${pc[0]},${pc[1]},${pc[2]},0.85)`;ctx.fill();
+        ctx.strokeStyle=`rgba(255,255,255,0.5)`;ctx.lineWidth=z;ctx.stroke();
+        // Resource letter
+        const priLetters={food:'F',wood:'W',stone:'S',metal:'M',gold:'G'};
+        ctx.fillStyle='rgba(30,25,40,0.9)';ctx.font=`bold ${Math.max(7,sw*0.22)|0}px system-ui`;
+        ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText(priLetters[sPri]||'?',badgeX,badgeY);
+      }
     }
 
     // Letter label (skip for citizen blocks — they use the house icon)
