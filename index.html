@@ -274,6 +274,27 @@
     cursor: pointer; font-family: inherit; letter-spacing: 0.5px; transition: all 0.15s; }
   .go-btn:hover { background: rgba(220,80,60,0.25); }
 
+  /* Win screen overlay */
+  #win-screen {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 30;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(20,20,10,0.92) 0%, rgba(8,8,5,0.98) 100%);
+    backdrop-filter: blur(6px);
+  }
+  #win-screen.show { display: flex; }
+  .win-title { font-size: 48px; font-weight: 900; letter-spacing: 3px; color: #ffd700;
+    text-shadow: 0 0 40px rgba(255,215,0,0.5), 0 2px 12px rgba(0,0,0,0.8); margin-bottom: 6px; }
+  .win-subtitle { font-size: 15px; color: rgba(200,200,210,0.5); margin-bottom: 24px; }
+  .win-stats { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-bottom: 28px; max-width: 450px; }
+  .win-stat { background: rgba(255,215,0,0.04); border: 1px solid rgba(255,215,0,0.1);
+    border-radius: 10px; padding: 10px 18px; text-align: center; min-width: 100px; }
+  .win-stat-val { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; color: #ffd700; }
+  .win-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; opacity: 0.45; margin-top: 2px; }
+  .win-btn { padding: 12px 36px; border-radius: 12px; background: rgba(255,215,0,0.12);
+    border: 1px solid rgba(255,215,0,0.3); color: #ffd700; font-size: 16px; font-weight: 700;
+    cursor: pointer; font-family: inherit; letter-spacing: 0.5px; transition: all 0.15s; }
+  .win-btn:hover { background: rgba(255,215,0,0.22); }
+
   /* Kill counter HUD */
   #kill-hud {
     position: fixed; top: 50px; right: 16px; z-index: 12;
@@ -437,7 +458,21 @@
 </div>
 
 <!-- Win Screen -->
+<div id="win-screen">
+  <div class="win-title">🏆 VICTORY!</div>
+  <div class="win-subtitle">You survived all 20 waves!</div>
+  <div class="win-stats" id="win-stats"></div>
+  <button class="win-btn" onclick="restartGame()">🎮 Play Again</button>
+</div>
 
+<!-- Kill Counter HUD -->
+<div id="kill-hud">
+  <div class="kh-row kh-hero"><span class="kh-icon">⚔️</span><span class="kh-label">Hero</span><span class="kh-val" id="kh-hero">0</span></div>
+  <div class="kh-row kh-unit"><span class="kh-icon">🛡️</span><span class="kh-label">Units</span><span class="kh-val" id="kh-unit">0</span></div>
+  <div class="kh-row kh-tower"><span class="kh-icon">🏗️</span><span class="kh-label">Tower</span><span class="kh-val" id="kh-tower">0</span></div>
+  <div class="kh-row kh-trap"><span class="kh-icon">🪤</span><span class="kh-label">Trap</span><span class="kh-val" id="kh-trap">0</span></div>
+  <div class="kh-row kh-total"><span class="kh-icon">💀</span><span class="kh-label">Total</span><span class="kh-val" id="kh-total">0</span></div>
+</div>
 
 <script async src="https://vibej.am/2026/widget.js"></script>
 <script>
@@ -453,6 +488,7 @@ const MAP_PX_W=COLS*TILE_SIZE, MAP_PX_H=ROWS*TILE_SIZE;
 let BASE_CX=Math.floor(COLS/2), BASE_CY=Math.floor(ROWS/2);
 const BASE_CLEAR_RADIUS=40;
 const HQ_VISION_RADIUS=12;
+const HQ_HP=200;
 const FIRST_BUILD_TIME=300; // 5 minutes first wave
 const BUILD_TIME=120;      // 2 minutes subsequent waves
 const CAM_LERP=0.1, MAX_ZOOM=2.0;
@@ -468,12 +504,12 @@ const TILE_COLORS={
   [T.GRASS]:{base:[38,72,34],v:12},[T.TREE]:{base:[22,50,18],v:8},
   [T.STONE]:{base:[88,88,96],v:10},[T.ORE]:{base:[60,82,110],v:8},
   [T.BERRY]:{base:[42,78,38],v:8},[T.WATER]:{base:[20,42,72],v:6},
-  [T.GOLD]:{base:[140,120,40],v:10},
+  [T.HQ]:{base:[120,96,42],v:6},[T.GOLD]:{base:[140,120,40],v:10},
   [T.TREE_DEPLETED]:{base:[48,58,40],v:6},[T.STONE_DEPLETED]:{base:[72,72,76],v:6},
   [T.ORE_DEPLETED]:{base:[55,65,80],v:6},[T.BERRY_DEPLETED]:{base:[50,62,44],v:6},
   [T.GOLD_DEPLETED]:{base:[90,82,50],v:6},
 };
-const TILE_NAMES=['Grass','Forest','Stone','Iron Ore','Berry Bush','Water','','Gold Deposit',
+const TILE_NAMES=['Grass','Forest','Stone','Iron Ore','Berry Bush','Water','HQ','Gold Deposit',
   'Stump','Spent Quarry','Spent Vein','Bare Bush','Spent Gold'];
 
 // ─── RESOURCE DEPOSITS (multi-harvest nodes) ───
@@ -525,6 +561,7 @@ const CITIZEN_COLORS={
 };
 
 // Legacy compat
+const HARVEST={[T.TREE]:{res:'wood',amt:2},[T.STONE]:{res:'stone',amt:2},[T.ORE]:{res:'metal',amt:1},[T.BERRY]:{res:'food',amt:3},[T.GOLD]:{res:'gold',amt:1}};
 const STRUCTS={
   WALL:{name:'Wall',cost:{stone:5},hp:60,color:[110,100,88],letter:'W'},
   TOWER:{name:'Tower',cost:{wood:10,stone:5,metal:3},hp:40,color:[80,70,62],letter:'T',range:6,dmg:4,rate:0.8},
@@ -895,6 +932,7 @@ function refreshFogVision(){
   const hc=heroCol(),hr=heroRow();
   revealFogTracked(hc,hr,HERO_FOG_RADIUS,HERO_EXPLORE_RADIUS);
 }
+function distC(c,r){return Math.sqrt((c-BASE_CX)**2+(r-BASE_CY)**2);}
 // Find nearest settlement to a given tile — returns {c,r} or null
 function nearestSettlement(ec,er){
   let best=null, bestDist=Infinity;
@@ -1656,8 +1694,9 @@ function findPath(sc,sr,tc,tr){
 const INITIAL_RESOURCES={wood:80,stone:45,metal:25,food:35,gold:0};
 
 const game={
-  phase:'MENU', wave:0,
+  phase:'MENU', wave:0, baseHP:0, baseMaxHP:0,
   resources:{...INITIAL_RESOURCES},
+  waveCountdown:-1, // -1 = not counting
   buildTimer:-1, // countdown timer in BUILD phase (-1 = not active)
   enemiesKilled:0,
   killsByTower:0,
@@ -4089,6 +4128,17 @@ function renderTile(tc,c,r,pxOverride,pyOverride){
   if(tile===T.ORE){for(let i=0;i<5;i++){const ox=px+6+hash(c*11+i,r*17)*20,oy=py+6+hash(c*23+i,r*7)*20,os=2+hash(c+i*3,r+i*5)*3;tc.fillStyle=`rgba(140,170,210,${0.4+hash(c+i,r+i)*0.4})`;tc.beginPath();tc.arc(ox,oy,os,0,Math.PI*2);tc.fill();}}
   if(tile===T.BERRY){for(let i=0;i<4;i++){const bx=px+6+hash(c*5+i,r*9)*20,by=py+6+hash(c*3+i,r*11)*20;tc.fillStyle=`rgba(170,60,100,${0.6+hash(c+i*2,r+i*2)*0.3})`;tc.beginPath();tc.arc(bx,by,3,0,Math.PI*2);tc.fill();}tc.fillStyle='rgba(60,100,40,0.5)';tc.fillRect(px+14,py+8,4,3);}
   if(tile===T.WATER){tc.strokeStyle='rgba(40,70,110,0.3)';tc.lineWidth=1;for(let w=0;w<3;w++){const wy=py+8+w*8;tc.beginPath();tc.moveTo(px+2,wy);tc.quadraticCurveTo(px+16,wy-3+hash(c,r+w)*6,px+30,wy);tc.stroke();}}
+  if(tile===T.HQ){
+    // HQ fortress rendering — golden border with cross
+    tc.fillStyle='rgba(140,110,40,0.3)';tc.fillRect(px,py,TILE_SIZE,TILE_SIZE);
+    tc.strokeStyle='rgba(200,170,60,0.7)';tc.lineWidth=2;tc.strokeRect(px+2,py+2,TILE_SIZE-4,TILE_SIZE-4);
+    tc.strokeStyle='rgba(220,190,80,0.4)';tc.lineWidth=1.5;
+    tc.beginPath();tc.moveTo(px+TILE_SIZE/2,py+4);tc.lineTo(px+TILE_SIZE/2,py+TILE_SIZE-4);
+    tc.moveTo(px+4,py+TILE_SIZE/2);tc.lineTo(px+TILE_SIZE-4,py+TILE_SIZE/2);tc.stroke();
+    // Crown icon
+    tc.fillStyle='rgba(220,190,80,0.8)';tc.font='bold 16px system-ui';tc.textAlign='center';tc.textBaseline='middle';
+    tc.fillText('👑',px+TILE_SIZE/2,py+TILE_SIZE/2);tc.textAlign='start';tc.textBaseline='alphabetic';
+  }
   // Gold deposit — glittering nuggets
   if(tile===T.GOLD){
     for(let i=0;i<4;i++){
@@ -5054,7 +5104,7 @@ function drawHoverTile(){
   const sk=col+','+row;const tile=map[col][row];
   const hoverUnit=unitAt(col,row);
   const isDem=selectedTool==='DEMOLISH'&&(structures[sk]||hoverUnit);
-  const isRes=!!DEPOSITS[tile]&&!hoverUnit;
+  const isRes=!!HARVEST[tile]&&!hoverUnit;
   ctx.strokeStyle=isDem?'rgba(255,100,60,0.5)':hoverUnit?'rgba(100,160,220,0.5)':isRes?'rgba(120,200,120,0.4)':'rgba(255,255,255,0.2)';
   ctx.lineWidth=z*1.5;ctx.strokeRect(sx+z,sy+z,sw-z*2,sw-z*2);
   let label;
@@ -5180,6 +5230,7 @@ function drawParticles(){
 // ─── DRAW MINIMAP (cached terrain) ───
 let mmTerrainCache=null; // offscreen canvas for terrain layer
 let mmTerrainDirty=true;
+function invalidateMinimapTerrain(){mmTerrainDirty=true;}
 function buildMinimapTerrain(){
   const mw=mmCanvas.width,mh=mmCanvas.height;
   if(!mmTerrainCache){mmTerrainCache=document.createElement('canvas');mmTerrainCache.width=mw;mmTerrainCache.height=mh;}
@@ -5355,11 +5406,29 @@ function showGameOverScreen(){
   el.classList.add('show');
 }
 
+function showWinScreen(){
+  const el=document.getElementById('win-screen');
+  const stats=document.getElementById('win-stats');
+  const unitKills=game.killsByUnit||0;
+  // Calculate final score: kills + wave bonus + surviving units bonus
+  const sHP=getSettlementHP();
+  const score=game.enemiesKilled*10 + game.wave*100 + units.length*50 + (sHP.maxHP>0?Math.round(sHP.hp/sHP.maxHP*200):0);
+  stats.innerHTML=`
+    <div class="win-stat"><div class="win-stat-val">${score}</div><div class="win-stat-label">Final Score</div></div>
+    <div class="win-stat"><div class="win-stat-val" style="color:#e8c56a">${game.enemiesKilled}</div><div class="win-stat-label">Enemies Killed</div></div>
+    <div class="win-stat"><div class="win-stat-val" style="color:#ffe066">${hero.kills}</div><div class="win-stat-label">Hero Kills</div></div>
+    <div class="win-stat"><div class="win-stat-val" style="color:#8ac0e8">${unitKills}</div><div class="win-stat-label">Unit Kills</div></div>
+    <div class="win-stat"><div class="win-stat-val" style="color:#ffaa44">${game.killsByTower}</div><div class="win-stat-label">Tower Kills</div></div>
+    <div class="win-stat"><div class="win-stat-val" style="color:#7aca7a">${units.length}</div><div class="win-stat-label">Units Surviving</div></div>
+    <div class="win-stat"><div class="win-stat-val" style="color:#e87a6a">${sHP.hp}/${sHP.maxHP}</div><div class="win-stat-label">Settlement HP</div></div>
+  `;
+  el.classList.add('show');
+}
 
 function restartGame(){
   // Reset game state
-  game.phase='MENU'; game.wave=0;
-  game.resources={...INITIAL_RESOURCES}; game.buildTimer=-1;
+  game.phase='MENU'; game.wave=0; game.baseHP=0; game.baseMaxHP=0;
+  game.resources={...INITIAL_RESOURCES}; game.waveCountdown=-1; game.buildTimer=-1;
   document.getElementById('build-timer').style.display='none';
   document.getElementById('build-timer').classList.remove('urgent');
   game.enemiesKilled=0; game.killsByTower=0; game.killsByTrap=0; game.killsByUnit=0;
@@ -5391,6 +5460,7 @@ function restartGame(){
   cam.tx=cam.x; cam.ty=cam.y; cam.shake=0; cam.zoom=1; cam.tZoom=1;
   // Hide overlays
   document.getElementById('gameover-screen').classList.remove('show');
+  document.getElementById('win-screen').classList.remove('show');
   document.getElementById('aftermath-overlay').classList.remove('show');
   document.getElementById('wave-preview-overlay').classList.remove('show');
   document.getElementById('hq-placement-bar').classList.remove('show');
