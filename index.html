@@ -466,6 +466,37 @@
 // │  §7   GAME STATE & ENTITIES                                    │
 // │  §8   SPAWN & WAVE SYSTEM                                      │
 // │  §9   UI & MODE SYSTEM                                         │
+// ── Shared cavalry attack (charge + Thundercharge) ──
+function cavalryAttack(u, nearest){
+  const isThunder=unitRank(u.xp)>=3;
+  const chargeMult=isThunder?4.0:CAVALRY_CHARGE_MULT;
+  u.atkCooldown=getUnitAtkRate(u);
+  let dmg=u.dmg;
+  if(!u.hasCharged){dmg=Math.round(u.dmg*chargeMult);u.hasCharged=true;}
+  nearest.hp-=dmg;
+  nearest.hitFlash=1;
+  const isCharge=dmg>u.dmg;
+  addFloat(`${isCharge?(isThunder?'⚡⚡ THUNDER ':'⚡ '):''}−${dmg}`,nearest.x,nearest.y-14,isCharge?'#ffcc44':'#c88040');
+  addParticles(nearest.x,nearest.y,isCharge?'rgba(255,200,60,0.8)':'rgba(160,100,60,0.7)',isCharge?8:4);
+  if(isCharge){
+    cam.shake=Math.max(cam.shake,isThunder?6:3);
+    if(isThunder){
+      for(const se of enemies){
+        const sdx=se.x-nearest.x,sdy=se.y-nearest.y;
+        if(sdx*sdx+sdy*sdy<=(2*TILE_SIZE)*(2*TILE_SIZE)) se.slowTimer=Math.max(se.slowTimer,0.8);
+      }
+      addParticles(nearest.x,nearest.y,'rgba(255,255,100,0.9)',10);
+    }
+  }
+  if(nearest.hp<=0){
+    const idx=enemies.indexOf(nearest);
+    if(idx>=0){killEnemy(nearest,idx,'unit',u);u.xp+=10;}
+  } else {
+    u.xp+=1;
+    const nr=checkRankUp(u); if(nr>0) showRankUpEffect(u,nr);
+  }
+}
+
 // │  §10  COMBAT (waves, enemies, hero, towers, projectiles)       │
 // │  §11  UNIT AI & FORMATIONS                                     │
 // │  §12  ECONOMY, UPKEEP & FORMATIONS                             │
@@ -2905,22 +2936,7 @@ function updateEnemies(dt){
         struct.hp-=e.dmg;  // enemy damages the gate back
         addFloat(`-${STRUCTS.GATE.dmg}`,e.x,e.y-10,'#c8a050');
         addParticles(e.x,e.y,'rgba(90,75,55,0.6)',4);
-        if(struct.hp<=0){
-          // Gate destroyed
-          const[gc,gr]=sk.split(',').map(Number);
-          addFloat('Gate destroyed!',gc*TILE_SIZE+TILE_SIZE/2,gr*TILE_SIZE,'#ff6644');
-          addParticles(gc*TILE_SIZE+TILE_SIZE/2,gr*TILE_SIZE+TILE_SIZE/2,'rgba(90,75,55,0.8)',10);
-          cam.shake=Math.max(cam.shake,4);
-          if(structures[sk].type==='CITIZEN_BLOCK'){
-            removeCitizenBlockVision(gc,gr);
-            removeCitizensForBlock(sk);
-            citizenBlockCount=Math.max(0,citizenBlockCount-1);
-            updateCitizenCostUI();
-          } else {
-            removeStructureVision(gc,gr);
-          }
-          delete structures[sk];
-        }
+        if(struct.hp<=0) destroyStructure(sk);
         if(e.hp<=0){killEnemy(e,i,'gate');continue;}
       }
     } else {
@@ -3110,38 +3126,7 @@ function updateUnits(dt){
         if(edSq<=rangePx*rangePx&&edSq<nearDist){nearDist=edSq;nearest=e;}
       }
       if(nearest&&u.atkCooldown<=0){
-        // Attack! Apply charge bonus if first hit
-        // Rank 3: Thundercharge — 4× charge, stuns nearby enemies 0.5s
-        const isThunder=unitRank(u.xp)>=3;
-        const chargeMult=isThunder?4.0:CAVALRY_CHARGE_MULT;
-        let dmg=u.dmg;
-        if(!u.hasCharged){dmg=Math.round(u.dmg*chargeMult);u.hasCharged=true;}
-        u.atkCooldown=getUnitAtkRate(u);
-        nearest.hp-=dmg;
-        nearest.hitFlash=1;
-        const isCharge=dmg>u.dmg;
-        addFloat(`${isCharge?(isThunder?'⚡⚡ THUNDER ':'⚡ '):''}−${dmg}`,nearest.x,nearest.y-14,isCharge?'#ffcc44':'#c88040');
-        addParticles(nearest.x,nearest.y,isCharge?'rgba(255,200,60,0.8)':'rgba(160,100,60,0.7)',isCharge?8:4);
-        if(isCharge){
-          cam.shake=Math.max(cam.shake,isThunder?6:3);
-          // Thundercharge: stun (slow) nearby enemies
-          if(isThunder){
-            for(const se of enemies){
-              const sdx=se.x-nearest.x,sdy=se.y-nearest.y;
-              if(sdx*sdx+sdy*sdy<=(2*TILE_SIZE)*(2*TILE_SIZE)){
-                se.slowTimer=Math.max(se.slowTimer,0.8);
-              }
-            }
-            addParticles(nearest.x,nearest.y,'rgba(255,255,100,0.9)',10);
-          }
-        }
-        if(nearest.hp<=0){
-          const idx=enemies.indexOf(nearest);
-          if(idx>=0){killEnemy(nearest,idx,'unit',u);u.xp+=10;}
-        } else {
-          u.xp+=1;
-          const nr=checkRankUp(u); if(nr>0) showRankUpEffect(u,nr);
-        }
+        cavalryAttack(u, nearest);
       }
 
       // Move toward waypoint
@@ -3250,35 +3235,8 @@ function updateUnits(dt){
       }
     }
     else if(u.type==='CAVALRY'){
-      // Stationary cavalry (no patrol set) — melee attack with charge bonus
-      // Rank 3: Thundercharge — 4× charge, stun nearby
-      const isThunder=unitRank(u.xp)>=3;
-      const chargeMult=isThunder?4.0:CAVALRY_CHARGE_MULT;
-      u.atkCooldown=getUnitAtkRate(u);
-      let dmg=u.dmg;
-      if(!u.hasCharged){dmg=Math.round(u.dmg*chargeMult);u.hasCharged=true;}
-      nearest.hp-=dmg;
-      nearest.hitFlash=1;
-      const isCharge=dmg>u.dmg;
-      addFloat(`${isCharge?(isThunder?'⚡⚡ THUNDER ':'⚡ '):''}−${dmg}`,nearest.x,nearest.y-14,isCharge?'#ffcc44':'#c88040');
-      addParticles(nearest.x,nearest.y,isCharge?'rgba(255,200,60,0.8)':'rgba(160,100,60,0.7)',isCharge?8:4);
-      if(isCharge){
-        cam.shake=Math.max(cam.shake,isThunder?6:3);
-        if(isThunder){
-          for(const se of enemies){
-            const sdx=se.x-nearest.x,sdy=se.y-nearest.y;
-            if(sdx*sdx+sdy*sdy<=(2*TILE_SIZE)*(2*TILE_SIZE)) se.slowTimer=Math.max(se.slowTimer,0.8);
-          }
-          addParticles(nearest.x,nearest.y,'rgba(255,255,100,0.9)',10);
-        }
-      }
-      if(nearest.hp<=0){
-        const idx=enemies.indexOf(nearest);
-        if(idx>=0){killEnemy(nearest,idx,'unit',u);u.xp+=10;}
-      } else {
-        u.xp+=1;
-        const nr=checkRankUp(u); if(nr>0) showRankUpEffect(u,nr);
-      }
+      // Stationary cavalry — uses shared cavalryAttack()
+      cavalryAttack(u, nearest);
     }
     else if(u.type==='CATAPULT'){
       // Catapult — AOE boulder, slow fire, area damage
