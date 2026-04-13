@@ -3030,7 +3030,7 @@ function updateProjectiles(dt){
           const adistSq=adx*adx+ady*ady;
           if(adistSq<=aoePx*aoePx){
             // Damage falls off with distance: full at center, 50% at edge
-            const falloff=1-0.5*(adist/aoePx);
+            const falloff=1-0.5*(Math.sqrt(adistSq)/aoePx);
             const aoeDmg=Math.max(1,Math.round(p.dmg*falloff));
             ae.hp-=aoeDmg;
             ae.hitFlash=1;
@@ -3076,6 +3076,7 @@ function updateProjectiles(dt){
       p.tx=p.target.col*TILE_SIZE+TILE_SIZE/2;p.ty=p.target.row*TILE_SIZE+TILE_SIZE/2;
     }
     else if(p.target&&p.target.hp>0){p.tx=p.target.x;p.ty=p.target.y;}
+    const dist=Math.sqrt(distSq);
     p.x+=dx/dist*speed;
     p.y+=dy/dist*speed;
   }
