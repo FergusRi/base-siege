@@ -7,6 +7,10 @@
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #08080d; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #c8c8d0; user-select: none; -webkit-user-select: none; }
+  /* Glass utility classes (Phase 6A) */
+  .glass-sm { backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+  .glass-md { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .glass-lg { backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
   #game-canvas { display: block; position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; }
   #game-canvas.combat-cursor { cursor: pointer; }
 
@@ -16,7 +20,7 @@
     height: 44px; padding: 0 16px;
     background: linear-gradient(180deg, rgba(10,10,18,0.95) 0%, rgba(10,10,18,0.75) 100%);
     border-bottom: 1px solid rgba(120,120,160,0.15);
-    backdrop-filter: blur(8px); font-size: 13px; letter-spacing: 0.3px;
+ font-size: 13px; letter-spacing: 0.3px;
   }
   .bar-section { display: flex; align-items: center; gap: 18px; }
   .resource { display: flex; align-items: center; gap: 5px; }
@@ -45,8 +49,7 @@
     display: flex; align-items: center; justify-content: center;
     min-height: 44px; padding: 0 12px;
     background: linear-gradient(180deg, rgba(10,10,18,0.92) 0%, rgba(10,10,18,0.72) 100%);
-    border-bottom: 1px solid rgba(120,120,160,0.12); backdrop-filter: blur(10px);
-    transition: opacity 0.3s, min-height 0.25s;
+ border-bottom: 1px solid rgba(120,120,160,0.12);     transition: opacity 0.3s, min-height 0.25s;
   }
   .tb-mode { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; flex-wrap: wrap; padding: 4px 0; }
   .tool-btn {
@@ -113,8 +116,7 @@
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
     padding: 8px 20px; border-radius: 20px;
     background: rgba(10,10,18,0.85); border: 1px solid rgba(120,120,160,0.15);
-    font-size: 12px; opacity: 0.7; letter-spacing: 0.3px; white-space: nowrap; backdrop-filter: blur(6px);
-  }
+ font-size: 12px; opacity: 0.7; letter-spacing: 0.3px; white-space: nowrap;   }
   #minimap {
     position: fixed; bottom: 16px; right: 16px; z-index: 10;
     border: 1px solid rgba(120,120,160,0.2); border-radius: 4px;
@@ -134,8 +136,7 @@
   #wave-preview-overlay {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 22;
     display: none; align-items: center; justify-content: center;
-    background: rgba(5,5,12,0.85); backdrop-filter: blur(4px);
-  }
+ background: rgba(5,5,12,0.85);   }
   #wave-preview-overlay.show { display: flex; }
   .wave-preview-panel {
     background: rgba(15,15,25,0.95); border: 1px solid rgba(220,180,60,0.3);
@@ -170,7 +171,7 @@
     display: none; align-items: center; gap: 14px;
     padding: 8px 20px; border-radius: 12px;
     background: rgba(10,10,18,0.92); border: 1px solid rgba(120,120,160,0.2);
-    backdrop-filter: blur(8px); font-size: 12px; white-space: nowrap;
+ font-size: 12px; white-space: nowrap;
   }
   #unit-info.show { display: flex; }
   .ui-stat { display: flex; align-items: center; gap: 4px; }
@@ -183,8 +184,7 @@
   #aftermath-overlay {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 25;
     display: none; align-items: center; justify-content: center;
-    background: rgba(5,5,12,0.88); backdrop-filter: blur(6px);
-  }
+ background: rgba(5,5,12,0.88);   }
   #aftermath-overlay.show { display: flex; }
   .aftermath-panel {
     background: rgba(15,15,25,0.95); border: 1px solid rgba(120,120,160,0.2);
@@ -226,7 +226,7 @@
     position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 30;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     background: radial-gradient(ellipse at center, rgba(15,15,25,0.92) 0%, rgba(5,5,12,0.98) 100%);
-    backdrop-filter: blur(6px); transition: opacity 0.6s;
+ transition: opacity 0.6s;
   }
   #start-screen.hidden { opacity: 0; pointer-events: none; }
   .start-title { font-size: 52px; font-weight: 900; letter-spacing: 4px; color: #e8c56a;
@@ -245,8 +245,7 @@
     height: 56px; gap: 16px;
     background: linear-gradient(180deg, rgba(10,10,18,0.95) 0%, rgba(10,10,18,0.8) 100%);
     border-bottom: 2px solid rgba(232,197,106,0.3);
-    backdrop-filter: blur(8px);
-  }
+   }
   #hq-placement-bar.show { display: flex; }
   .hq-bar-icon { font-size: 28px; animation: hqPulse 2s ease-in-out infinite; }
   .hq-bar-text { font-size: 18px; font-weight: 700; color: #e8c56a; letter-spacing: 1px; }
@@ -258,8 +257,7 @@
     position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 30;
     display: none; flex-direction: column; align-items: center; justify-content: center;
     background: radial-gradient(ellipse at center, rgba(40,10,10,0.92) 0%, rgba(10,5,5,0.98) 100%);
-    backdrop-filter: blur(6px);
-  }
+   }
   #gameover-screen.show { display: flex; }
   .go-title { font-size: 48px; font-weight: 900; letter-spacing: 3px; color: #e85a4a;
     text-shadow: 0 0 40px rgba(220,60,40,0.5), 0 2px 12px rgba(0,0,0,0.8); margin-bottom: 6px; }
@@ -282,8 +280,7 @@
     padding: 6px 10px; border-radius: 8px;
     background: rgba(10,10,18,0.7); border: 1px solid rgba(120,120,160,0.1);
     font-size: 11px; font-variant-numeric: tabular-nums;
-    backdrop-filter: blur(4px);
-  }
+   }
   #kill-hud.show { display: flex; }
   .kh-row { display: flex; align-items: center; gap: 5px; }
   .kh-icon { font-size: 12px; width: 16px; text-align: center; }
@@ -313,10 +310,17 @@
   .upkeep-warn { color: #daa040; }
   .upkeep-danger { color: #e87a6a; }
   .upkeep-icon { font-size: 13px; }
+  /* Inline style → CSS (Phase 6B) */
+  .bar-emoji { font-size: 14px; }
+  #hero-hp-fill { width: 100%; background: linear-gradient(90deg, #4a4, #6c6); }
+  #base-hp-fill { width: 100%; }
+  #ui-morale { color: #e8c56a; }
+  #ui-upkeep { color: #d87aa0; }
+  #ui-formation { color: #8ad0ff; }
 </style>
 </head>
 <body>
-<div id="top-bar">
+<div class="glass-lg" id="top-bar">
   <div class="bar-section">
     <div class="resource r-wood"><span class="icon"></span><span class="res-label">W</span><span class="val" id="res-wood">0</span></div>
     <div class="resource r-stone"><span class="icon"></span><span class="res-label">S</span><span class="val" id="res-stone">0</span></div>
@@ -331,13 +335,13 @@
   </div>
   <div class="bar-section">
     <div class="hero-hp-wrap">
-      <span style="font-size:14px;">⚔️</span>
-      <div class="hp-bar"><div class="hp-fill" id="hero-hp-fill" style="width:100%;background:linear-gradient(90deg,#4a4,#6c6)"></div></div>
+      <span class="bar-emoji">⚔️</span>
+      <div class="hp-bar"><div class="hp-fill" id="hero-hp-fill"></div></div>
       <span class="hp-text" id="hero-hp-text">50/50</span>
     </div>
     <div class="base-hp-wrap">
-      <span style="font-size:14px;">🏘</span>
-      <div class="hp-bar"><div class="hp-fill" id="base-hp-fill" style="width:100%"></div></div>
+      <span class="bar-emoji">🏘</span>
+      <div class="hp-bar"><div class="hp-fill" id="base-hp-fill"></div></div>
       <span class="hp-text" id="base-hp-text">0 settlements</span>
     </div>
   </div>
@@ -347,7 +351,7 @@
     <div class="build-timer" id="build-timer" style="display:none">⏱️ <span id="build-timer-text">5:00</span></div>
   </div>
 </div>
-<div id="toolbar">
+<div class="glass-lg" id="toolbar">
   <!-- GATHER MODE (default) -->
   <div id="tb-gather-mode" class="tb-mode">
     <button class="tool-btn active" data-tool="gather" onclick="selectTool('gather')"><span class="tool-key">G</span> Gather</button>
@@ -390,28 +394,28 @@
     <span class="tb-combat-hint">WASD move · Click to attack · Tab cycle units</span>
   </div>
 </div>
-<div id="unit-info">
+<div class="glass-lg" id="unit-info">
   <span class="ui-name" id="ui-name">—</span>
   <div class="ui-stat"><span class="ui-label">HP</span><span class="ui-val ui-hp" id="ui-hp">—</span></div>
   <div class="ui-stat"><span class="ui-label">DMG</span><span class="ui-val ui-dmg" id="ui-dmg">—</span></div>
   <div class="ui-stat"><span class="ui-label">Range</span><span class="ui-val ui-range" id="ui-range">—</span></div>
   <div class="ui-stat"><span class="ui-label">XP</span><span class="ui-val" id="ui-xp">—</span></div>
   <div class="ui-stat"><span class="ui-label">Rank</span><span class="ui-val" id="ui-rank">—</span></div>
-  <div class="ui-stat"><span class="ui-label">Morale</span><span class="ui-val" id="ui-morale" style="color:#e8c56a">—</span></div>
-  <div class="ui-stat"><span class="ui-label">Upkeep</span><span class="ui-val" id="ui-upkeep" style="color:#d87aa0">—</span></div>
-  <div class="ui-stat"><span class="ui-label">Formation</span><span class="ui-val" id="ui-formation" style="color:#8ad0ff">—</span></div>
+  <div class="ui-stat"><span class="ui-label">Morale</span><span class="ui-val" id="ui-morale">—</span></div>
+  <div class="ui-stat"><span class="ui-label">Upkeep</span><span class="ui-val" id="ui-upkeep">—</span></div>
+  <div class="ui-stat"><span class="ui-label">Formation</span><span class="ui-val" id="ui-formation">—</span></div>
 </div>
 <canvas id="game-canvas"></canvas>
 <canvas id="minimap" width="300" height="200"></canvas>
-<div id="hint">WASD move · G gather · B build mode · SPACE start wave · Tab cycle units</div>
+<div class="glass-md" id="hint">WASD move · G gather · B build mode · SPACE start wave · Tab cycle units</div>
 <div id="wave-banner"></div>
-<div id="wave-preview-overlay"></div>
-<div id="aftermath-overlay">
+<div class="glass-sm" id="wave-preview-overlay"></div>
+<div class="glass-md" id="aftermath-overlay">
   <div class="aftermath-panel" id="aftermath-panel"></div>
 </div>
 
 <!-- Start Screen -->
-<div id="start-screen">
+<div class="glass-md" id="start-screen">
   <div class="start-title">⚔️ BASE SIEGE</div>
   <div class="start-subtitle">Expand, defend, survive — how long can you last?</div>
   <div class="start-prompt">Press SPACE to Begin</div>
@@ -423,14 +427,14 @@
 </div>
 
 <!-- HQ Placement Bar -->
-<div id="hq-placement-bar">
+<div class="glass-lg" id="hq-placement-bar">
   <span class="hq-bar-icon">🏘</span>
   <span class="hq-bar-text">PLACE YOUR FIRST SETTLEMENT</span>
   <span class="hq-bar-hint">— Click anywhere on the map (FREE!) —</span>
 </div>
 
 <!-- Game Over Screen -->
-<div id="gameover-screen">
+<div class="glass-md" id="gameover-screen">
   <div class="go-title">💀 ALL SETTLEMENTS LOST</div>
   <div class="go-subtitle">Your last settlement has fallen...</div>
   <div class="go-stats" id="go-stats"></div>
@@ -439,7 +443,7 @@
 
 
 <!-- Kill Counter HUD -->
-<div id="kill-hud">
+<div class="glass-sm" id="kill-hud">
   <div class="kh-row kh-hero"><span class="kh-icon">⚔️</span><span class="kh-label">Hero</span><span class="kh-val" id="kh-hero">0</span></div>
   <div class="kh-row kh-unit"><span class="kh-icon">🛡️</span><span class="kh-label">Units</span><span class="kh-val" id="kh-unit">0</span></div>
   <div class="kh-row kh-tower"><span class="kh-icon">🏗️</span><span class="kh-label">Tower</span><span class="kh-val" id="kh-tower">0</span></div>
