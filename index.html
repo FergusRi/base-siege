@@ -403,7 +403,7 @@
 </div>
 <canvas id="game-canvas"></canvas>
 <canvas id="minimap" width="300" height="200"></canvas>
-<div id="hint">WASD move · G gather · B build mode · M map · SPACE start wave · Tab cycle units</div>
+<div id="hint">WASD move · G gather · B build mode · SPACE start wave · Tab cycle units</div>
 <div id="wave-banner"></div>
 <div id="wave-preview-overlay"></div>
 <div id="aftermath-overlay">
@@ -3733,7 +3733,6 @@ window.addEventListener('keydown',e=>{
     return;
   }
   // M: toggle full map overlay
-  if(e.key==='m'||e.key==='M'){if(game.phase!=='MENU'){showFullMap=!showFullMap;}return;}
   if(game.phase==='BUILD'){
     // B: toggle build mode
     if(e.key==='b'||e.key==='B'){
@@ -5280,35 +5279,6 @@ function drawMinimap(){
 }
 
 // ─── FULL MAP OVERLAY (M key) ───
-let showFullMap=false;
-function drawFullMapOverlay(){
-  if(!showFullMap||game.phase==='MENU') return;
-  const pad=40;
-  const maxW=canvas.width-pad*2, maxH=canvas.height-pad*2;
-  const mapAspect=COLS/ROWS;
-  let dw,dh;
-  if(maxW/maxH>mapAspect){dh=maxH;dw=dh*mapAspect;}
-  else{dw=maxW;dh=dw/mapAspect;}
-  const dx=(canvas.width-dw)/2, dy=(canvas.height-dh)/2;
-  // Dim background
-  ctx.fillStyle='rgba(0,0,0,0.75)';ctx.fillRect(0,0,canvas.width,canvas.height);
-  // Draw minimap canvas scaled up
-  ctx.imageSmoothingEnabled=false;
-  ctx.drawImage(mmCanvas,dx,dy,dw,dh);
-  ctx.imageSmoothingEnabled=true;
-  // Border
-  ctx.strokeStyle='rgba(200,180,120,0.6)';ctx.lineWidth=2;
-  ctx.strokeRect(dx,dy,dw,dh);
-  // Label
-  ctx.fillStyle='rgba(232,197,106,0.9)';ctx.font='bold 16px system-ui';ctx.textAlign='center';
-  ctx.fillText('MAP OVERVIEW — press M to close',canvas.width/2,dy-12);
-  // Viewport rect
-  const z=cam.zoom;
-  const vx=dx+(cam.x/MAP_PX_W)*dw, vy=dy+(cam.y/MAP_PX_H)*dh;
-  const vw=(canvas.width/z/MAP_PX_W)*dw, vh=(canvas.height/z/MAP_PX_H)*dh;
-  ctx.strokeStyle='rgba(255,255,255,0.7)';ctx.lineWidth=2;
-  ctx.strokeRect(vx,vy,vw,vh);
-}
 
 
 // ─── UI UPDATE ───
@@ -5685,7 +5655,6 @@ function draw(now){
   ctx.fillStyle=window._fpsCur<30?'rgba(255,80,60,0.8)':'rgba(120,200,120,0.6)';ctx.font='bold 12px monospace';ctx.textAlign='left';
   ctx.fillText(window._fpsCur+' FPS',10,canvas.height-10);
   drawMinimap();
-  drawFullMapOverlay();
   requestAnimationFrame(draw);
 }
 
