@@ -632,6 +632,7 @@ function addStructureVision(col,row){
       }
     }
   }
+  markSpawnRingDirty(); // vision boundary changed — recalc spawn ring
 }
 // Called when a building is destroyed — decrements visionCount and re-fogs uncovered tiles
 function removeStructureVision(col,row){
@@ -650,6 +651,7 @@ function removeStructureVision(col,row){
       }
     }
   }
+  markSpawnRingDirty(); // vision boundary changed — recalc spawn ring
 }
 // Refresh dynamic vision sources (hero only) — call each frame
 // HQ + building vision is permanent via visionCount, no periodic refresh needed
@@ -918,66 +920,153 @@ const units=[];      // placed army units: {type, col, row, hp, maxHP, dmg, rang
 
 // ─── ENEMY CAMPS ───
 // Camps spawn in the 15-tile edge strip, one per side, in fog
-const CAMP_EDGE_STRIP=15;        // tiles from map edge where camps can spawn
-const CAMP_MIN_DIST=20;          // minimum tile distance between camps
-const CAMP_SPAWN_RADIUS=8;       // enemies spawn within this radius of their camp
-const CAMP_FOG_BUFFER=3;         // minimum tiles INTO fog enemies must spawn (away from visible)
-let enemyCamps=[];  // [{c, r, side, hp, maxHP, level, active}]
+// ─── PROXIMITY SPAWN RING SYSTEM ───
+// Enemies spawn in fog near the player's vision boundary, not from distant map edges
+const SPAWN_RING_BUFFER=5;       // tiles outward from vision edge before spawn band starts
+const SPAWN_RING_DEPTH=10;       // depth of the spawn band (tiles)
+const SPAWN_MIN_DIST_TO_BASE=8;  // minimum tile distance from HQ to spawn
+let enemyCamps=[];               // kept for visual camps (spawned near ring, not edge)
+let spawnRingCache=[];            // cached valid spawn positions [{c,r,angle}]
+let spawnRingDirty=true;          // recalculate when buildings change
+let waveAttackDirs=[];            // compass directions for this wave [{angle,label}]
 
-function spawnInitialCamps(){
-  enemyCamps=[];
-  // One camp per side: 0=top,1=bottom,2=left,3=right
-  for(let side=0;side<4;side++){
-    const camp=findCampPosition(side);
-    if(camp){
-      enemyCamps.push({
-        c:camp.c, r:camp.r, side:side,
-        hp:40, maxHP:40, level:1, active:true
-      });
+// Compass directions for attack arcs
+const COMPASS_DIRS=[
+  {angle:0,       label:'East'},
+  {angle:Math.PI/4, label:'South-East'},
+  {angle:Math.PI/2, label:'South'},
+  {angle:3*Math.PI/4, label:'South-West'},
+  {angle:Math.PI,  label:'West'},
+  {angle:-3*Math.PI/4, label:'North-West'},
+  {angle:-Math.PI/2, label:'North'},
+  {angle:-Math.PI/4, label:'North-East'},
+];
+
+function markSpawnRingDirty(){ spawnRingDirty=true; }
+
+// Build the spawn ring: find all fog+walkable tiles in a band around the player's vision
+function buildSpawnRing(){
+  spawnRingCache=[];
+  if(!hqPlaced) return;
+  
+  // Step 1: Find the vision boundary — tiles where visionCount>0 or fogMap===VISIBLE
+  // We scan in a reasonable radius around HQ rather than the whole 950×632 map
+  // Calculate the furthest structure from HQ to set scan range
+  let maxStructDist=HQ_VISION_RADIUS;
+  for(const k in structures){
+    const s=structures[k];
+    const dc=s.col-BASE_CX, dr=s.row-BASE_CY;
+    const d=Math.sqrt(dc*dc+dr*dr);
+    if(d>maxStructDist) maxStructDist=d;
+  }
+  // Also consider hero position
+  const heroDist=Math.sqrt((heroCol()-BASE_CX)**2+(heroRow()-BASE_CY)**2);
+  if(heroDist>maxStructDist) maxStructDist=heroDist;
+  
+  // Scan radius = furthest structure + buffer + ring depth + margin
+  const scanRadius=Math.ceil(maxStructDist+SPAWN_RING_BUFFER+SPAWN_RING_DEPTH+5);
+  const minC=Math.max(0,BASE_CX-scanRadius), maxC=Math.min(COLS-1,BASE_CX+scanRadius);
+  const minR=Math.max(0,BASE_CY-scanRadius), maxR=Math.min(ROWS-1,BASE_CY+scanRadius);
+  
+  for(let c=minC;c<=maxC;c++){
+    for(let r=minR;r<=maxR;r++){
+      // Must be in fog (not visible to player)
+      if(fogMap[c][r]===FOG_VISIBLE) continue;
+      // Must be walkable
+      if(!isWalkable(c,r)) continue;
+      // Must not be water
+      if(map[c][r]===T.WATER) continue;
+      
+      // Check distance from nearest visible tile (vision boundary distance)
+      // We approximate this: check if any tile within SPAWN_RING_BUFFER is VISIBLE
+      let nearestVisDist=Infinity;
+      // Sample in a small area to find distance to visible tiles
+      const checkR=SPAWN_RING_BUFFER+SPAWN_RING_DEPTH;
+      for(let dc=-checkR;dc<=checkR;dc+=2){
+        for(let dr=-checkR;dr<=checkR;dr+=2){
+          const nc=c+dc, nr=r+dr;
+          if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
+          if(fogMap[nc][nr]===FOG_VISIBLE){
+            const d=Math.sqrt(dc*dc+dr*dr);
+            if(d<nearestVisDist) nearestVisDist=d;
+          }
+        }
+      }
+      
+      // Must be in the spawn band: between BUFFER and BUFFER+DEPTH from vision edge
+      if(nearestVisDist<SPAWN_RING_BUFFER) continue;
+      if(nearestVisDist>SPAWN_RING_BUFFER+SPAWN_RING_DEPTH) continue;
+      
+      // Must be at least min dist from HQ
+      const dBase=Math.sqrt((c-BASE_CX)**2+(r-BASE_CY)**2);
+      if(dBase<SPAWN_MIN_DIST_TO_BASE) continue;
+      
+      // Calculate angle from HQ to this tile (for directional filtering)
+      const angle=Math.atan2(r-BASE_CY, c-BASE_CX);
+      spawnRingCache.push({c, r, angle});
     }
+  }
+  
+  spawnRingDirty=false;
+}
+
+// Choose 1-3 attack directions for this wave
+function chooseAttackDirections(waveNum){
+  let numDirs;
+  if(waveNum<=2) numDirs=1;
+  else if(waveNum<=5) numDirs=Math.random()<0.5?1:2;
+  else if(waveNum<=8) numDirs=Math.random()<0.3?3:2;
+  else numDirs=Math.min(1+Math.floor(Math.random()*3), 3); // 1-3
+  
+  // Shuffle compass directions and pick
+  const shuffled=[...COMPASS_DIRS];
+  for(let i=shuffled.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];
+  }
+  
+  // Ensure picked directions aren't too close together (at least 90° apart)
+  const picked=[shuffled[0]];
+  for(let i=1;i<shuffled.length&&picked.length<numDirs;i++){
+    let tooClose=false;
+    for(const p of picked){
+      let diff=Math.abs(shuffled[i].angle-p.angle);
+      if(diff>Math.PI) diff=2*Math.PI-diff;
+      if(diff<Math.PI/3){tooClose=true;break;} // at least 60° apart
+    }
+    if(!tooClose) picked.push(shuffled[i]);
+  }
+  
+  waveAttackDirs=picked;
+  return picked;
+}
+
+// Place visual camps near the spawn ring in the chosen attack directions
+function placeWaveCamps(){
+  enemyCamps=[];
+  if(spawnRingCache.length===0) return;
+  
+  for(const dir of waveAttackDirs){
+    // Find spawn ring tiles near this direction (within ±45°)
+    const candidates=spawnRingCache.filter(t=>{
+      let diff=Math.abs(t.angle-dir.angle);
+      if(diff>Math.PI) diff=2*Math.PI-diff;
+      return diff<Math.PI/4;
+    });
+    if(candidates.length===0) continue;
+    // Pick a random tile for the camp visual
+    const pick=candidates[Math.floor(Math.random()*candidates.length)];
+    enemyCamps.push({
+      c:pick.c, r:pick.r, side:COMPASS_DIRS.indexOf(dir),
+      hp:40, maxHP:40, level:1, active:true
+    });
   }
 }
 
-function findCampPosition(side){
-  // Try 50 times to find a walkable position in the edge strip for this side
-  for(let attempt=0;attempt<50;attempt++){
-    let c,r;
-    switch(side){
-      case 0: // top edge
-        c=Math.floor(Math.random()*COLS);
-        r=Math.floor(Math.random()*CAMP_EDGE_STRIP);
-        break;
-      case 1: // bottom edge
-        c=Math.floor(Math.random()*COLS);
-        r=ROWS-1-Math.floor(Math.random()*CAMP_EDGE_STRIP);
-        break;
-      case 2: // left edge
-        c=Math.floor(Math.random()*CAMP_EDGE_STRIP);
-        r=Math.floor(Math.random()*ROWS);
-        break;
-      case 3: // right edge
-        c=COLS-1-Math.floor(Math.random()*CAMP_EDGE_STRIP);
-        r=Math.floor(Math.random()*ROWS);
-        break;
-    }
-    if(c<0||c>=COLS||r<0||r>=ROWS) continue;
-    if(!isWalkable(c,r)) continue;
-    if(map[c][r]===T.WATER) continue;
-    // Must be far from base
-    const dbx=c-BASE_CX, dby=r-BASE_CY;
-    if(Math.sqrt(dbx*dbx+dby*dby)<BASE_CLEAR_RADIUS+20) continue;
-    // Must be far from other camps
-    let tooClose=false;
-    for(const ec of enemyCamps){
-      const dx=ec.c-c, dy=ec.r-r;
-      if(Math.sqrt(dx*dx+dy*dy)<CAMP_MIN_DIST){tooClose=true;break;}
-    }
-    if(tooClose) continue;
-    return{c,r};
-  }
-  // Fallback: place on edge midpoints
-  const fallbacks=[[Math.floor(COLS/2),2],[Math.floor(COLS/2),ROWS-3],[2,Math.floor(ROWS/2)],[COLS-3,Math.floor(ROWS/2)]];
-  return{c:fallbacks[side][0],r:fallbacks[side][1]};
+function spawnInitialCamps(){
+  // No longer spawn edge camps — ring system handles it
+  enemyCamps=[];
+  spawnRingDirty=true;
 }
 
 // ─── BUILD / TOOL STATE ───
@@ -1122,85 +1211,78 @@ function getWaveComposition(waveNum){
   return composition;
 }
 
-// Pincer attack: choose which camps to spawn from this wave
-let waveSpawnSides=[0,1,2,3]; // 0=top,1=bottom,2=left,3=right
-let waveSpawnCamps=[];        // camps chosen for this wave
+// ─── PROXIMITY SPAWN POSITIONING ───
+let waveSpawnSides=[]; // kept for wave preview text compatibility
 
 function chooseSpawnSides(waveNum){
-  // Get active camps
-  const activeCamps=enemyCamps.filter(c=>c.active);
-  if(activeCamps.length===0){
-    // Fallback: all sides (edge spawning if no camps)
-    waveSpawnCamps=[];
-    return [0,1,2,3];
-  }
+  // Rebuild spawn ring if structures changed
+  if(spawnRingDirty) buildSpawnRing();
   
-  if(waveNum>=7){
-    // Wave 7+: spawn from 2-4 camps (true pincer)
-    const numCamps=Math.min(2+Math.floor((waveNum-5)/3), activeCamps.length);
-    const shuffled=[...activeCamps];
-    for(let i=shuffled.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];}
-    waveSpawnCamps=shuffled.slice(0,numCamps);
-  } else if(waveNum>=4&&activeCamps.length>=2&&Math.random()<0.5){
-    // Wave 4-6: 50% chance of 2 camps
-    const shuffled=[...activeCamps];
-    for(let i=shuffled.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];}
-    waveSpawnCamps=shuffled.slice(0,2);
-  } else {
-    // Early waves: spawn from nearest camp to base
-    const sorted=[...activeCamps].sort((a,b)=>{
-      const da=Math.sqrt((a.c-BASE_CX)**2+(a.r-BASE_CY)**2);
-      const db=Math.sqrt((b.c-BASE_CX)**2+(b.r-BASE_CY)**2);
-      return da-db;
-    });
-    waveSpawnCamps=[sorted[0]];
-  }
+  // Choose attack directions for this wave
+  const dirs=chooseAttackDirections(waveNum);
   
-  return waveSpawnCamps.map(c=>c.side);
+  // Place visual camps near the ring in those directions
+  placeWaveCamps();
+  
+  // Map direction labels to side indices for wave preview compatibility
+  waveSpawnSides=dirs.map(d=>{
+    const a=d.angle;
+    if(a>=-Math.PI/4&&a<Math.PI/4) return 3;     // East → right
+    if(a>=Math.PI/4&&a<3*Math.PI/4) return 1;     // South → bottom
+    if(a>=-3*Math.PI/4&&a<-Math.PI/4) return 0;   // North → top
+    return 2;                                       // West → left
+  });
+  
+  return waveSpawnSides;
 }
 
-function getSpawnEdgePosition(forceSide){
-  // Camp-based spawning: pick a random camp from wave camps, spawn near it in fog
-  const camps=waveSpawnCamps.length>0?waveSpawnCamps:enemyCamps.filter(c=>c.active);
+function getSpawnEdgePosition(){
+  // Rebuild ring if dirty
+  if(spawnRingDirty) buildSpawnRing();
   
-  if(camps.length>0){
-    // Pick a random camp from this wave's active camps
-    const camp=camps[Math.floor(Math.random()*camps.length)];
-    // Try to find a walkable, fogged tile near this camp
-    for(let attempt=0;attempt<30;attempt++){
+  // Filter spawn ring by active attack directions (within ±60° of a chosen direction)
+  if(spawnRingCache.length>0&&waveAttackDirs.length>0){
+    const dirCandidates=spawnRingCache.filter(t=>{
+      for(const dir of waveAttackDirs){
+        let diff=Math.abs(t.angle-dir.angle);
+        if(diff>Math.PI) diff=2*Math.PI-diff;
+        if(diff<Math.PI/3) return true; // ±60° arc per direction
+      }
+      return false;
+    });
+    
+    if(dirCandidates.length>0){
+      // Pick a random tile from directional candidates
+      const pick=dirCandidates[Math.floor(Math.random()*dirCandidates.length)];
+      return{c:pick.c, r:pick.r, side:0};
+    }
+  }
+  
+  // Fallback 1: any ring tile
+  if(spawnRingCache.length>0){
+    const pick=spawnRingCache[Math.floor(Math.random()*spawnRingCache.length)];
+    return{c:pick.c, r:pick.r, side:0};
+  }
+  
+  // Fallback 2: find any fog+walkable tile near base (expanding search)
+  for(let radius=SPAWN_MIN_DIST_TO_BASE;radius<80;radius+=5){
+    for(let attempt=0;attempt<20;attempt++){
       const angle=Math.random()*Math.PI*2;
-      const dist=2+Math.random()*(CAMP_SPAWN_RADIUS-2);
-      const c=Math.floor(camp.c+Math.cos(angle)*dist);
-      const r=Math.floor(camp.r+Math.sin(angle)*dist);
+      const c=Math.floor(BASE_CX+Math.cos(angle)*radius);
+      const r=Math.floor(BASE_CY+Math.sin(angle)*radius);
       if(c<0||c>=COLS||r<0||r>=ROWS) continue;
       if(!isWalkable(c,r)) continue;
-      // Prefer fog tiles (not visible to player) — with buffer
-      if(hqPlaced&&fogMap[c][r]===FOG_VISIBLE){
-        // Check if we're deep enough in fog — skip visible tiles most of the time
-        if(attempt<20) continue; // first 20 tries: strictly fog only
-      }
-      return{c,r,side:camp.side};
+      if(fogMap[c][r]===FOG_VISIBLE) continue;
+      return{c,r,side:0};
     }
-    // Fallback: spawn right at camp position
-    if(isWalkable(camp.c,camp.r)) return{c:camp.c,r:camp.r,side:camp.side};
   }
   
-  // Ultimate fallback: edge spawning (no camps active)
-  const sides=forceSide!==undefined?[forceSide]:waveSpawnSides;
-  for(let attempt=0;attempt<10;attempt++){
-    const side=sides[Math.floor(Math.random()*sides.length)];
-    let c,r;
-    switch(side){
-      case 0: c=Math.floor(Math.random()*COLS); r=0; break;
-      case 1: c=Math.floor(Math.random()*COLS); r=ROWS-1; break;
-      case 2: c=0; r=Math.floor(Math.random()*ROWS); break;
-      case 3: c=COLS-1; r=Math.floor(Math.random()*ROWS); break;
-    }
-    if(isWalkable(c,r)) return{c,r,side};
-  }
+  // Fallback 3: edge of map near base axis (last resort)
   const fallbacks=[[BASE_CX,0],[BASE_CX,ROWS-1],[0,BASE_CY],[COLS-1,BASE_CY]];
-  const fb=fallbacks[sides[0]||0];
-  return{c:fb[0],r:fb[1],side:sides[0]||0};
+  for(const[fc,fr] of fallbacks){
+    if(isWalkable(fc,fr)) return{c:fc,r:fr,side:0};
+  }
+  return{c:BASE_CX,r:0,side:0};
 }
 
 let spawnQueue=[], spawnTimer=0, spawnInterval=0.25;
@@ -1218,13 +1300,12 @@ function showWavePreview(waveNum){
   }
   const isSiege=waveNum>0&&waveNum%5===0;
   const sides=chooseSpawnSides(waveNum);
-  waveSpawnSides=sides;
-  const sideNames=['North','South','West','East'];
-  const sideText=sides.length<4?sides.map(s=>sideNames[s]).join(' & '):'All sides';
+  // Use compass direction labels from the proximity ring system
+  const dirText=waveAttackDirs.length>0?waveAttackDirs.map(d=>d.label).join(' & '):'Surrounding';
 
   let html=`<div class="wave-preview-panel">`;
   html+=`<h2>${isSiege?'🔥 SIEGE WAVE':'⚔️ WAVE'} ${waveNum}</h2>`;
-  html+=`<div class="wp-subtitle">${comp.length} enemies incoming · ${sideText}</div>`;
+  html+=`<div class="wp-subtitle">${comp.length} enemies incoming · from the ${dirText}</div>`;
   html+=`<div class="wp-enemies">`;
   for(const[name,count] of Object.entries(counts).sort((a,b)=>b[1]-a[1])){
     const typeKey=Object.keys(ENEMY_TYPES).find(k=>ENEMY_TYPES[k].name===name);
@@ -1243,7 +1324,7 @@ function showWavePreview(waveNum){
     </div>`;
   }
   html+=`</div>`;
-  if(sides.length>=2&&sides.length<4) html+=`<div class="wp-pincer">⚠ PINCER ATTACK from ${sideText}!</div>`;
+  if(waveAttackDirs.length>=2) html+=`<div class="wp-pincer">⚠ PINCER ATTACK from ${dirText}!</div>`;
   if(isSiege) html+=`<div class="wp-siege">🔥 Siege wave — extra heavies incoming!</div>`;
   html+=`<div class="wp-timer" id="wp-timer">Preparing...</div>`;
   html+=`</div>`;
@@ -3415,56 +3496,44 @@ function drawUnits(now){
   ctx.textAlign='start';ctx.textBaseline='alphabetic';
 }
 
-// ─── DRAW ENEMY CAMPS ───
+// ─── DRAW ENEMY SPAWN POINTS ───
+// Spawn camps appear during combat/preview to show where enemies are emerging from
 function drawCamps(now){
+  if(game.phase!=='COMBAT'&&game.phase!=='PREVIEW') return;
   const z=cam.zoom;
   for(const camp of enemyCamps){
     if(!camp.active) continue;
-    // Only draw if the camp tile is explored or visible
-    if(hqPlaced&&camp.c>=0&&camp.c<COLS&&camp.r>=0&&camp.r<ROWS){
-      if(fogMap[camp.c][camp.r]===FOG_UNEXPLORED) continue;
-    }
     const cx=(camp.c*TILE_SIZE-cam.x)*z, cy=(camp.r*TILE_SIZE-cam.y)*z;
     const ts=TILE_SIZE*z;
     // Skip if off-screen
     if(cx+ts<0||cx>canvas.width||cy+ts<0||cy>canvas.height) continue;
     
-    // Pulsing red aura
+    // Pulsing red aura (spawn portal effect)
     const auraPulse=Math.sin(now*0.003)*0.15+0.25;
     const auraR=ts*2.5;
     const grad=ctx.createRadialGradient(cx+ts/2,cy+ts/2,0,cx+ts/2,cy+ts/2,auraR);
-    grad.addColorStop(0,`rgba(180,30,30,${auraPulse*0.4})`);
-    grad.addColorStop(0.5,`rgba(140,20,20,${auraPulse*0.15})`);
+    grad.addColorStop(0,`rgba(180,30,30,${auraPulse*0.5})`);
+    grad.addColorStop(0.4,`rgba(140,20,20,${auraPulse*0.2})`);
     grad.addColorStop(1,'rgba(100,10,10,0)');
     ctx.fillStyle=grad;
     ctx.fillRect(cx+ts/2-auraR,cy+ts/2-auraR,auraR*2,auraR*2);
     
-    // Dark red tent body
-    ctx.fillStyle='rgba(120,25,25,0.9)';
-    ctx.fillRect(cx+ts*0.1,cy+ts*0.2,ts*0.8,ts*0.7);
-    // Tent roof (darker triangle)
-    ctx.fillStyle='rgba(80,15,15,0.95)';
+    // Dark portal circle
+    ctx.fillStyle='rgba(60,10,10,0.7)';
     ctx.beginPath();
-    ctx.moveTo(cx,cy+ts*0.35);
-    ctx.lineTo(cx+ts/2,cy-ts*0.1);
-    ctx.lineTo(cx+ts,cy+ts*0.35);
-    ctx.closePath();
+    ctx.arc(cx+ts/2,cy+ts/2,ts*0.45,0,Math.PI*2);
     ctx.fill();
+    // Inner glow ring
+    ctx.strokeStyle=`rgba(220,50,50,${0.4+auraPulse})`;
+    ctx.lineWidth=z*2;
+    ctx.beginPath();
+    ctx.arc(cx+ts/2,cy+ts/2,ts*0.35,0,Math.PI*2);
+    ctx.stroke();
     // Skull icon
     ctx.fillStyle='rgba(220,200,180,0.9)';
-    ctx.font=`${Math.max(10,ts*0.45)}px system-ui`;
+    ctx.font=`${Math.max(10,ts*0.4)}px system-ui`;
     ctx.textAlign='center';ctx.textBaseline='middle';
     ctx.fillText('💀',cx+ts/2,cy+ts*0.55);
-    
-    // HP bar (if damaged)
-    if(camp.hp<camp.maxHP){
-      const bw=ts*0.8, bh=z*3;
-      const bx=cx+ts*0.1, by=cy-bh-z*2;
-      ctx.fillStyle='rgba(40,0,0,0.7)';
-      ctx.fillRect(bx,by,bw,bh);
-      ctx.fillStyle='rgba(200,40,40,0.9)';
-      ctx.fillRect(bx,by,bw*(camp.hp/camp.maxHP),bh);
-    }
   }
 }
 
@@ -4047,14 +4116,15 @@ function drawMinimap(){
     const ec=(e.x/TILE_SIZE)*sx,er=(e.y/TILE_SIZE)*sy;
     mmCtx.fillRect(ec-1,er-1,2.5,2.5);
   }
-  // Enemy camps on minimap (only if explored or visible)
-  for(const camp of enemyCamps){
-    if(!camp.active) continue;
-    if(hqPlaced&&camp.c>=0&&camp.c<COLS&&camp.r>=0&&camp.r<ROWS&&fogMap[camp.c][camp.r]===FOG_UNEXPLORED) continue;
-    mmCtx.fillStyle='rgba(180,30,30,0.9)';
-    mmCtx.fillRect(camp.c*sx-1.5,camp.r*sy-1.5,Math.max(sx+3,4),Math.max(sy+3,4));
-    mmCtx.strokeStyle='rgba(220,50,50,0.6)';mmCtx.lineWidth=1;
-    mmCtx.beginPath();mmCtx.arc(camp.c*sx,camp.r*sy,4,0,Math.PI*2);mmCtx.stroke();
+  // Enemy spawn camps on minimap (shown during combat/preview when wave camps are placed)
+  if(game.phase==='COMBAT'||game.phase==='PREVIEW'){
+    for(const camp of enemyCamps){
+      if(!camp.active) continue;
+      mmCtx.fillStyle='rgba(180,30,30,0.9)';
+      mmCtx.fillRect(camp.c*sx-1.5,camp.r*sy-1.5,Math.max(sx+3,4),Math.max(sy+3,4));
+      mmCtx.strokeStyle='rgba(220,50,50,0.6)';mmCtx.lineWidth=1;
+      mmCtx.beginPath();mmCtx.arc(camp.c*sx,camp.r*sy,4,0,Math.PI*2);mmCtx.stroke();
+    }
   }
   // Base
   if(hqPlaced){mmCtx.fillStyle='rgba(220,180,60,0.9)';mmCtx.fillRect(BASE_CX*sx-1,BASE_CY*sy-1,Math.max(sx+2,3),Math.max(sy+2,3));}
@@ -4172,7 +4242,10 @@ function restartGame(){
   cavalryPendingUnit=null;
   regrowthQueue=[];
   enemyCamps=[];
-  waveSpawnCamps=[];
+  spawnRingCache=[];
+  spawnRingDirty=true;
+  waveAttackDirs=[];
+  waveSpawnSides=[];
   // Regen map (also resets fogMap via initFogMap() inside generateMap)
   generateMap(); buildTileCache();
   // Reset cam — center on map for HQ placement
