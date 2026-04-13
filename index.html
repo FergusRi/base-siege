@@ -792,21 +792,21 @@ function modifyVision(cx, cy, visRadius, delta, expRadius) {
     for (let dr = -maxR; dr <= maxR; dr++) {
       const nc = cx + dc, nr = cy + dr;
       if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
-      const dist = Math.sqrt(dc * dc + dr * dr);
-      if (dist <= visRadius) {
+      const distSq = dc * dc + dr * dr;
+      if (distSq <= visRadius * visRadius) {
         if (delta > 0) {
           visionCount[nc][nr]++;
-          fogMap[nc][nr] = FOG_VISIBLE;
+          if(fogMap[nc][nr]!==FOG_VISIBLE){fogMap[nc][nr]=FOG_VISIBLE;fogChangeVersion++;}
         } else if (delta < 0) {
           visionCount[nc][nr] = Math.max(0, visionCount[nc][nr] - 1);
           if (visionCount[nc][nr] === 0 && fogMap[nc][nr] === FOG_VISIBLE) {
-            fogMap[nc][nr] = FOG_EXPLORED;
+            fogMap[nc][nr]=FOG_EXPLORED;fogChangeVersion++;
           }
         } else {
-          fogMap[nc][nr] = FOG_VISIBLE;
+          if(fogMap[nc][nr]!==FOG_VISIBLE){fogMap[nc][nr]=FOG_VISIBLE;fogChangeVersion++;}
         }
-      } else if (dist <= er && fogMap[nc][nr] < FOG_EXPLORED) {
-        fogMap[nc][nr] = FOG_EXPLORED;
+      } else if (distSq <= er * er && fogMap[nc][nr] < FOG_EXPLORED) {
+        fogMap[nc][nr]=FOG_EXPLORED;fogChangeVersion++;
       }
     }
   }
@@ -820,12 +820,12 @@ function modifyVisionTracked(cx, cy, visRadius, expRadius) {
     for (let dr = -maxR; dr <= maxR; dr++) {
       const nc = cx + dc, nr = cy + dr;
       if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
-      const dist = Math.sqrt(dc * dc + dr * dr);
-      if (dist <= visRadius) {
+      const distSq = dc * dc + dr * dr;
+      if (distSq <= visRadius * visRadius) {
         if (fogMap[nc][nr] !== FOG_VISIBLE) visibleTiles.push([nc, nr]);
-        fogMap[nc][nr] = FOG_VISIBLE;
-      } else if (dist <= er && fogMap[nc][nr] < FOG_EXPLORED) {
-        fogMap[nc][nr] = FOG_EXPLORED;
+        fogMap[nc][nr]=FOG_VISIBLE;fogChangeVersion++;
+      } else if (distSq <= er * er && fogMap[nc][nr] < FOG_EXPLORED) {
+        fogMap[nc][nr]=FOG_EXPLORED;fogChangeVersion++;
       }
     }
   }
@@ -839,7 +839,7 @@ let visibleTiles=[]; // array of [c,r] pairs
 function decayFogVisible(){
   for(let i=0;i<visibleTiles.length;i++){
     const[c,r]=visibleTiles[i];
-    if(fogMap[c][r]===FOG_VISIBLE&&visionCount[c][r]===0) fogMap[c][r]=FOG_EXPLORED;
+    if(fogMap[c][r]===FOG_VISIBLE&&visionCount[c][r]===0){fogMap[c][r]=FOG_EXPLORED;fogChangeVersion++;}
   }
   visibleTiles=[];
 }
@@ -872,6 +872,7 @@ function removeStructureVision(col,row){
 // Refresh dynamic vision sources (hero only) — call each frame
 // HQ + building vision is permanent via visionCount, no periodic refresh needed
 let fogFrameCounter=0;
+let fogChangeVersion=0;
 function refreshFogVision(){
   fogFrameCounter++;
   decayFogVisible();
@@ -980,12 +981,12 @@ function placeHQ(col,row){
     for(let dr=-BASE_CLEAR_RADIUS;dr<=BASE_CLEAR_RADIUS;dr++){
       const nc=col+dc, nr=row+dr;
       if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
-      const dist=Math.sqrt(dc*dc+dr*dr);
-      if(dist<=BASE_CLEAR_RADIUS&&map[nc][nr]===T.WATER){
+      const distSq=dc*dc+dr*dr;
+      if(distSq<=BASE_CLEAR_RADIUS*BASE_CLEAR_RADIUS&&map[nc][nr]===T.WATER){
         map[nc][nr]=T.GRASS;
       }
       // Inner ring (3 tiles) — clear everything for building space
-      if(dist<=3&&nc!==col&&nr!==row){
+      if(distSq<=9&&nc!==col&&nr!==row){
         if(map[nc][nr]!==T.WATER){map[nc][nr]=T.GRASS;depositHP[nc][nr]=0;}
       }
     }
@@ -1728,7 +1729,7 @@ function buildSpawnRing(){
       
       // Check distance from nearest visible tile (vision boundary distance)
       // We approximate this: check if any tile within SPAWN_RING_BUFFER is VISIBLE
-      let nearestVisDist=Infinity;
+      let nearestVisDistSq=Infinity;
       // Sample in a small area to find distance to visible tiles
       const checkR=SPAWN_RING_BUFFER+SPAWN_RING_DEPTH;
       for(let dc=-checkR;dc<=checkR;dc+=2){
@@ -1736,19 +1737,19 @@ function buildSpawnRing(){
           const nc=c+dc, nr=r+dr;
           if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
           if(fogMap[nc][nr]===FOG_VISIBLE){
-            const d=Math.sqrt(dc*dc+dr*dr);
-            if(d<nearestVisDist) nearestVisDist=d;
+            const dSq=dc*dc+dr*dr;
+            if(dSq<nearestVisDistSq) nearestVisDistSq=dSq;
           }
         }
       }
       
       // Must be in the spawn band: between BUFFER and BUFFER+DEPTH from vision edge
-      if(nearestVisDist<SPAWN_RING_BUFFER) continue;
-      if(nearestVisDist>SPAWN_RING_BUFFER+SPAWN_RING_DEPTH) continue;
+      if(nearestVisDistSq<SPAWN_RING_BUFFER*SPAWN_RING_BUFFER) continue;
+      if(nearestVisDistSq>(SPAWN_RING_BUFFER+SPAWN_RING_DEPTH)*(SPAWN_RING_BUFFER+SPAWN_RING_DEPTH)) continue;
       
       // Must be at least min dist from HQ
-      const dBase=Math.sqrt((c-BASE_CX)**2+(r-BASE_CY)**2);
-      if(dBase<SPAWN_MIN_DIST_TO_BASE) continue;
+      const dBaseSq=(c-BASE_CX)**2+(r-BASE_CY)**2;
+      if(dBaseSq<SPAWN_MIN_DIST_TO_BASE*SPAWN_MIN_DIST_TO_BASE) continue;
       
       // Calculate angle from HQ to this tile (for directional filtering)
       const angle=Math.atan2(r-BASE_CY, c-BASE_CX);
@@ -2526,8 +2527,8 @@ function findNearestStructure(ec,er,targetsStructuresOnly){
     // Siege Rams target any structure; Brutes smash walls, gates, and settlements
     if(targetsStructuresOnly || s.type==='WALL' || s.type==='GATE' || s.type==='CITIZEN_BLOCK'){
       const[c,r]=key.split(',').map(Number);
-      const dx=c-ec, dy=r-er, d=Math.sqrt(dx*dx+dy*dy);
-      if(d<nearDist){nearDist=d;nearest={key,c,r,dist:d,struct:s};}
+      const dx=c-ec, dy=r-er, dSq=dx*dx+dy*dy;
+      if(dSq<nearDist){nearDist=dSq;nearest={key,c,r,dist:dSq,struct:s};}
     }
   }
   return nearest;
@@ -2597,8 +2598,8 @@ function heroAttack(){
   // Find nearest enemy within melee range
   let nearest=null, nearDist=Infinity;
   for(const e of enemies){
-    const dx=e.x-hero.x, dy=e.y-hero.y, d=Math.sqrt(dx*dx+dy*dy);
-    if(d<=HERO_ATK_RANGE&&d<nearDist){nearDist=d;nearest=e;}
+    const dx=e.x-hero.x, dy=e.y-hero.y, dSq=dx*dx+dy*dy;
+    if(dSq<=HERO_ATK_RANGE*HERO_ATK_RANGE&&dSq<nearDist){nearDist=dSq;nearest=e;}
   }
   if(!nearest)return;
 
@@ -2664,7 +2665,7 @@ function updateWarchiefAuras(){
     for(const e of enemies){
       if(e===wc||e.hp<=0) continue;
       const dx=e.x-wc.x, dy=e.y-wc.y;
-      if(Math.sqrt(dx*dx+dy*dy)<=def.buffRadius*TILE_SIZE){
+      if(dx*dx+dy*dy<=(def.buffRadius*TILE_SIZE)*(def.buffRadius*TILE_SIZE)){
         e.buffed=true;
       }
     }
@@ -2680,15 +2681,15 @@ function updateEnemyArcherRanged(e,eCol,eRow,dt){
 
   // Check hero
   if(hero.stunTimer<=0){
-    const hdx=hero.x-e.x, hdy=hero.y-e.y, hd=Math.sqrt(hdx*hdx+hdy*hdy);
-    if(hd<=rangePx&&hd<targetDist){targetDist=hd;targetX=hero.x;targetY=hero.y;target='hero';}
+    const hdx=hero.x-e.x, hdy=hero.y-e.y, hdSq=hdx*hdx+hdy*hdy;
+    if(hdSq<=rangePx*rangePx&&hdSq<targetDist){targetDist=hdSq;targetX=hero.x;targetY=hero.y;target='hero';}
   }
   // Check player units
   for(const u of units){
     if(u.hp<=0)continue;
     const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
-    const dx=ux-e.x, dy=uy-e.y, d=Math.sqrt(dx*dx+dy*dy);
-    if(d<=rangePx&&d<targetDist){targetDist=d;targetX=ux;targetY=uy;target=u;}
+    const dx=ux-e.x, dy=uy-e.y, dSq=dx*dx+dy*dy;
+    if(dSq<=rangePx*rangePx&&dSq<targetDist){targetDist=dSq;targetX=ux;targetY=uy;target=u;}
   }
 
   if(target&&e.attackCooldown<=0){
@@ -2753,7 +2754,7 @@ function updateEnemies(dt){
     // ── SIEGE RAM: target nearest structure instead of base ──
     if(e.type==='siegeRam'&&e.attackCooldown<=0){
       const nearStruct=findNearestStructure(eCol,eRow,true);
-      if(nearStruct&&nearStruct.dist<=1.5){
+      if(nearStruct&&nearStruct.dist<=2.25){
         // Smash the structure
         const sDmg=eDef.structDmg||20;
         nearStruct.struct.hp-=sDmg;
@@ -2775,7 +2776,7 @@ function updateEnemies(dt){
     // ── BRUTE: smash walls when path is blocked ──
     if(e.type==='brute'&&e.attackCooldown<=0){
       const nearWall=findNearestStructure(eCol,eRow,false);
-      if(nearWall&&nearWall.dist<=1.5&&(nearWall.struct.type==='WALL'||nearWall.struct.type==='GATE'||nearWall.struct.type==='CITIZEN_BLOCK')){
+      if(nearWall&&nearWall.dist<=2.25&&(nearWall.struct.type==='WALL'||nearWall.struct.type==='GATE'||nearWall.struct.type==='CITIZEN_BLOCK')){
         const sDmg=eDef.dmg*2; // brutes do double damage to structures
         nearWall.struct.hp-=sDmg;
         e.attackCooldown=e.attackRate;
@@ -2791,8 +2792,8 @@ function updateEnemies(dt){
     // Enemy attacks hero if adjacent (within 1.2 tiles) and hero is alive
     if(hero.stunTimer<=0&&e.type!=='siegeRam'){
       const hdx=hero.x-e.x, hdy=hero.y-e.y;
-      const heroDist=Math.sqrt(hdx*hdx+hdy*hdy);
-      if(heroDist<TILE_SIZE*1.3&&e.attackCooldown<=0){
+      const heroDistSq=hdx*hdx+hdy*hdy;
+      if(heroDistSq<(TILE_SIZE*1.3)*(TILE_SIZE*1.3)&&e.attackCooldown<=0){
         let eDmg=eDef.dmg;
         if(e.buffed) eDmg=Math.round(eDmg*ENEMY_TYPES.warchief.buffDmgMult);
         damageHero(eDmg);
@@ -2818,8 +2819,8 @@ function updateEnemies(dt){
         const cit=citizens[ci];
         if(cit.state!=='exposed') continue;
         const cdx=cit.x-e.x, cdy=cit.y-e.y;
-        const citDist=Math.sqrt(cdx*cdx+cdy*cdy);
-        if(citDist<TILE_SIZE*1.5){
+        const citDistSq=cdx*cdx+cdy*cdy;
+        if(citDistSq<(TILE_SIZE*1.5)*(TILE_SIZE*1.5)){
           // Kill the citizen!
           addFloat('💀 Citizen killed!',cit.x,cit.y-TILE_SIZE,'#ff4444');
           addParticles(cit.x,cit.y,'rgba(255,100,100,0.8)',8);
@@ -2861,7 +2862,7 @@ function updateEnemies(dt){
         // No path — Brutes attack nearest wall, others idle
         if(e.type==='brute'){
           const nearWall=findNearestStructure(eCol,eRow,false);
-          if(nearWall&&nearWall.dist<=2.5){
+          if(nearWall&&nearWall.dist<=6.25){
             // Move toward the wall
             const wx=nearWall.c*TILE_SIZE+TILE_SIZE/2, wy=nearWall.r*TILE_SIZE+TILE_SIZE/2;
             const ddx=wx-e.x, ddy=wy-e.y, dist=Math.sqrt(ddx*ddx+ddy*ddy);
@@ -2957,8 +2958,8 @@ function updateTowers(dt){
     for(const e of enemies){
       const ec=Math.floor(e.x/TILE_SIZE), er=Math.floor(e.y/TILE_SIZE);
       if(ec<0||ec>=COLS||er<0||er>=ROWS||fogMap[ec][er]!==FOG_VISIBLE) continue;
-      const dx=e.x-tx, dy=e.y-ty, d=Math.sqrt(dx*dx+dy*dy);
-      if(d<range&&d<nearDist){nearDist=d;nearest=e;}
+      const dx=e.x-tx, dy=e.y-ty, dSq=dx*dx+dy*dy;
+      if(dSq<range*range&&dSq<nearDist){nearDist=dSq;nearest=e;}
     }
     if(nearest){
       s.cooldown=STRUCTS.TOWER.rate;
@@ -2982,8 +2983,8 @@ function updateProjectiles(dt){
     if(p.age>3){projectiles.splice(i,1);continue;} // timeout
 
     const dx=p.tx-p.x, dy=p.ty-p.y;
-    const dist=Math.sqrt(dx*dx+dy*dy);
-    if(dist<6){
+    const distSq=dx*dx+dy*dy;
+    if(distSq<36){
       // ── ENEMY PROJECTILES (enemy archer arrows) ──
       if(p.isEnemyProjectile){
         if(p.heroTarget){
@@ -3010,8 +3011,8 @@ function updateProjectiles(dt){
         for(let ei=enemies.length-1;ei>=0;ei--){
           const ae=enemies[ei];
           const adx=ae.x-impactX, ady=ae.y-impactY;
-          const adist=Math.sqrt(adx*adx+ady*ady);
-          if(adist<=aoePx){
+          const adistSq=adx*adx+ady*ady;
+          if(adistSq<=aoePx*aoePx){
             // Damage falls off with distance: full at center, 50% at edge
             const falloff=1-0.5*(adist/aoePx);
             const aoeDmg=Math.max(1,Math.round(p.dmg*falloff));
@@ -3105,8 +3106,8 @@ function updateUnits(dt){
       for(const e of enemies){
         const ec=Math.floor(e.x/TILE_SIZE), er=Math.floor(e.y/TILE_SIZE);
         if(ec<0||ec>=COLS||er<0||er>=ROWS||fogMap[ec][er]!==FOG_VISIBLE) continue;
-        const edx=e.x-ux, edy=e.y-uy, ed=Math.sqrt(edx*edx+edy*edy);
-        if(ed<=rangePx&&ed<nearDist){nearDist=ed;nearest=e;}
+        const edx=e.x-ux, edy=e.y-uy, edSq=edx*edx+edy*edy;
+        if(edSq<=rangePx*rangePx&&edSq<nearDist){nearDist=edSq;nearest=e;}
       }
       if(nearest&&u.atkCooldown<=0){
         // Attack! Apply charge bonus if first hit
@@ -3127,7 +3128,7 @@ function updateUnits(dt){
           if(isThunder){
             for(const se of enemies){
               const sdx=se.x-nearest.x,sdy=se.y-nearest.y;
-              if(Math.sqrt(sdx*sdx+sdy*sdy)<=2*TILE_SIZE){
+              if(sdx*sdx+sdy*sdy<=(2*TILE_SIZE)*(2*TILE_SIZE)){
                 se.slowTimer=Math.max(se.slowTimer,0.8);
               }
             }
@@ -3172,8 +3173,8 @@ function updateUnits(dt){
     for(const e of enemies){
       const ec=Math.floor(e.x/TILE_SIZE), er=Math.floor(e.y/TILE_SIZE);
       if(ec<0||ec>=COLS||er<0||er>=ROWS||fogMap[ec][er]!==FOG_VISIBLE) continue;
-      const dx=e.x-ux, dy=e.y-uy, d=Math.sqrt(dx*dx+dy*dy);
-      if(d<=rangePx&&d<nearDist){nearDist=d;nearest=e;}
+      const dx=e.x-ux, dy=e.y-uy, dSq=dx*dx+dy*dy;
+      if(dSq<=rangePx*rangePx&&dSq<nearDist){nearDist=dSq;nearest=e;}
     }
     if(!nearest)continue;
 
@@ -3236,7 +3237,7 @@ function updateUnits(dt){
       const zocPx=SPEAR_SLOW_RADIUS*TILE_SIZE*zocMult;
       for(const e of enemies){
         const edx=e.x-ux, edy=e.y-uy;
-        if(Math.sqrt(edx*edx+edy*edy)<=zocPx){
+        if(edx*edx+edy*edy<=zocPx*zocPx){
           e.slowTimer=Math.max(e.slowTimer,isChampion?SPEAR_SLOW_DUR*1.5:SPEAR_SLOW_DUR);
         }
       }
@@ -3266,7 +3267,7 @@ function updateUnits(dt){
         if(isThunder){
           for(const se of enemies){
             const sdx=se.x-nearest.x,sdy=se.y-nearest.y;
-            if(Math.sqrt(sdx*sdx+sdy*sdy)<=2*TILE_SIZE) se.slowTimer=Math.max(se.slowTimer,0.8);
+            if(sdx*sdx+sdy*sdy<=(2*TILE_SIZE)*(2*TILE_SIZE)) se.slowTimer=Math.max(se.slowTimer,0.8);
           }
           addParticles(nearest.x,nearest.y,'rgba(255,255,100,0.9)',10);
         }
@@ -3305,7 +3306,7 @@ function updateUnits(dt){
     const zocPx=SPEAR_SLOW_RADIUS*TILE_SIZE;
     for(const e of enemies){
       const dx=e.x-ux, dy=e.y-uy;
-      if(Math.sqrt(dx*dx+dy*dy)<=zocPx){
+      if(dx*dx+dy*dy<=zocPx*zocPx){
         e.slowTimer=Math.max(e.slowTimer,0.2); // constant light slow while in zone
       }
     }
@@ -3616,7 +3617,7 @@ function updateMorale(dt){
     let nearbyEnemies=0;
     for(const e of enemies){
       const dx=e.x-ux, dy=e.y-uy;
-      if(Math.sqrt(dx*dx+dy*dy)<=2*TILE_SIZE)nearbyEnemies++;
+      if(dx*dx+dy*dy<=(2*TILE_SIZE)*(2*TILE_SIZE))nearbyEnemies++;
     }
     if(nearbyEnemies>=3)drainRate+=MORALE_DRAIN_SURROUNDED;
 
@@ -3626,7 +3627,7 @@ function updateMorale(dt){
     // ── RECOVER: near hero (3 tiles) ──
     if(hero.stunTimer<=0){
       const hdx=hero.x-ux, hdy=hero.y-uy;
-      if(Math.sqrt(hdx*hdx+hdy*hdy)<=HERO_MORALE_AURA*TILE_SIZE){
+      if(hdx*hdx+hdy*hdy<=(HERO_MORALE_AURA*TILE_SIZE)*(HERO_MORALE_AURA*TILE_SIZE)){
         recoverRate+=MORALE_RECOVER_NEAR_HERO;
       }
     }
@@ -3672,7 +3673,7 @@ function onEnemyKillMoraleBoost(ex,ey){
     if(u.hp<=0)continue;
     const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
     const dx=ex-ux, dy=ey-uy;
-    if(Math.sqrt(dx*dx+dy*dy)<=4*TILE_SIZE){
+    if(dx*dx+dy*dy<=(4*TILE_SIZE)*(4*TILE_SIZE)){
       u.morale=Math.min(MORALE_MAX,u.morale+MORALE_RECOVER_ENEMY_KILL);
     }
   }
@@ -4207,28 +4208,37 @@ function drawBaseGlow(now){
 
 // ─── FOG OF WAR OVERLAY ───
 function drawFogOverlay(){
-  if(game.phase==='MENU') return; // no fog on menu screen
+  if(game.phase==='MENU') return;
   const z=cam.zoom;
   const sc=Math.max(0,Math.floor(cam.x/TILE_SIZE)),sr=Math.max(0,Math.floor(cam.y/TILE_SIZE));
   const ec=Math.min(COLS-1,Math.ceil((cam.x+canvas.width/z)/TILE_SIZE));
   const er=Math.min(ROWS-1,Math.ceil((cam.y+canvas.height/z)/TILE_SIZE));
-  const ts=TILE_SIZE*z;
+  const ts=TILE_SIZE*z, ts1=ts+1;
+  // Batch unexplored and explored into separate paths
+  ctx.beginPath();
   for(let c=sc;c<=ec;c++){
     for(let r=sr;r<=er;r++){
       const fog=fogMap[c]?fogMap[c][r]:FOG_UNEXPLORED;
-      if(fog===FOG_VISIBLE) continue; // fully visible — no overlay
-      const sx=(c*TILE_SIZE-cam.x)*z,sy=(r*TILE_SIZE-cam.y)*z;
       if(fog===FOG_UNEXPLORED){
-        // Solid black
-        ctx.fillStyle='rgba(5,5,12,0.97)';
-        ctx.fillRect(sx,sy,ts+1,ts+1);
-      } else {
-        // EXPLORED: dark desaturated overlay — you can see terrain but dimmed
-        ctx.fillStyle='rgba(5,5,12,0.6)';
-        ctx.fillRect(sx,sy,ts+1,ts+1);
+        const sx=(c*TILE_SIZE-cam.x)*z,sy=(r*TILE_SIZE-cam.y)*z;
+        ctx.rect(sx,sy,ts1,ts1);
       }
     }
   }
+  ctx.fillStyle='rgba(5,5,12,0.97)';
+  ctx.fill();
+  ctx.beginPath();
+  for(let c=sc;c<=ec;c++){
+    for(let r=sr;r<=er;r++){
+      const fog=fogMap[c]?fogMap[c][r]:FOG_UNEXPLORED;
+      if(fog===FOG_EXPLORED){
+        const sx=(c*TILE_SIZE-cam.x)*z,sy=(r*TILE_SIZE-cam.y)*z;
+        ctx.rect(sx,sy,ts1,ts1);
+      }
+    }
+  }
+  ctx.fillStyle='rgba(5,5,12,0.6)';
+  ctx.fill();
 }
 
 function drawStructures(){
@@ -5164,6 +5174,7 @@ function drawParticles(){
 // ─── DRAW MINIMAP (cached terrain) ───
 let mmTerrainCache=null; // offscreen canvas for terrain layer
 let mmTerrainDirty=true;
+let lastMmFogVersion=-1;
 function buildMinimapTerrain(){
   const mw=mmCanvas.width,mh=mmCanvas.height;
   if(!mmTerrainCache){mmTerrainCache=document.createElement('canvas');mmTerrainCache.width=mw;mmTerrainCache.height=mh;}
@@ -5489,7 +5500,7 @@ function draw(now){
   }
   updateCamera();
   // Refresh fog of war vision (only when HQ is placed)
-  if(hqPlaced||game.phase==='PLACE_HQ'){refreshFogVision();if(fogFrameCounter%10===0)mmTerrainDirty=true;}
+  if(hqPlaced||game.phase==='PLACE_HQ'){refreshFogVision();if(fogFrameCounter%10===0&&fogChangeVersion!==lastMmFogVersion){mmTerrainDirty=true;lastMmFogVersion=fogChangeVersion;}}
   updateFloats(dt);
   updateParticles(dt);
 
