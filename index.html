@@ -25,6 +25,7 @@
   .r-wood .icon { background: #6b8a3a; } .r-stone .icon { background: #7a7a82; }
   .r-metal .icon { background: #5a7a9a; } .r-food .icon { background: #a85a70; }
   .r-gold .icon { background: #c8a832; }
+  .res-label { font-size: 9px; opacity: 0.4; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
   .base-hp-wrap { display: flex; align-items: center; gap: 6px; }
   .hp-bar { width: 100px; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; }
   .hp-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
@@ -41,13 +42,13 @@
 
   #toolbar {
     position: fixed; top: 44px; left: 0; right: 0; z-index: 10;
-    display: flex; align-items: center; justify-content: center; gap: 6px;
-    height: 44px; padding: 0 12px;
-    background: linear-gradient(180deg, rgba(10,10,18,0.88) 0%, rgba(10,10,18,0.65) 100%);
-    border-bottom: 1px solid rgba(120,120,160,0.1); backdrop-filter: blur(6px);
-    transition: opacity 0.3s;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 44px; padding: 0 12px;
+    background: linear-gradient(180deg, rgba(10,10,18,0.92) 0%, rgba(10,10,18,0.72) 100%);
+    border-bottom: 1px solid rgba(120,120,160,0.12); backdrop-filter: blur(10px);
+    transition: opacity 0.3s, min-height 0.25s;
   }
-  #toolbar.combat-mode { opacity: 0.3; pointer-events: none; }
+  .tb-mode { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; flex-wrap: wrap; padding: 4px 0; }
   .tool-btn {
     display: flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 6px;
     background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
@@ -58,7 +59,55 @@
   .tool-key { display: inline-block; min-width: 16px; height: 16px; line-height: 16px; text-align: center; border-radius: 3px; background: rgba(255,255,255,0.08); font-size: 10px; font-weight: 700; color: #888; }
   .tool-btn.active .tool-key { background: rgba(90,180,90,0.2); color: #7aca7a; }
   .tool-cost { font-size: 10px; opacity: 0.55; margin-left: 2px; }
-  .tb-sep { color: rgba(255,255,255,0.1); font-size: 18px; margin: 0 4px; }
+
+  /* Build Mode toggle button */
+  .tb-build-toggle {
+    display: flex; align-items: center; gap: 6px; padding: 5px 16px; border-radius: 6px;
+    background: rgba(100,140,220,0.12); border: 1px solid rgba(100,140,220,0.3);
+    cursor: pointer; font-size: 12px; color: #8ab0e8; font-weight: 600;
+    font-family: inherit; outline: none; transition: all 0.15s; letter-spacing: 0.3px;
+  }
+  .tb-build-toggle:hover { background: rgba(100,140,220,0.2); color: #aac8f0; }
+  .tb-build-toggle .tool-key { background: rgba(100,140,220,0.2); color: #8ab0e8; }
+
+  /* Category tabs */
+  .tb-cats { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
+  .tb-cat {
+    display: flex; align-items: center; gap: 5px; padding: 4px 14px; border-radius: 8px 8px 0 0;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    border-bottom: none; cursor: pointer; font-size: 12px; color: #808090;
+    font-family: inherit; outline: none; transition: all 0.15s; font-weight: 600;
+  }
+  .tb-cat:hover { background: rgba(255,255,255,0.07); color: #b0b0b8; }
+  .tb-cat.active { background: rgba(90,180,90,0.1); border-color: rgba(90,180,90,0.25); color: #7aca7a; }
+  .tb-cat.active .tool-key { background: rgba(90,180,90,0.2); color: #7aca7a; }
+  .tb-cat-demolish { color: #a06060; }
+  .tb-cat-demolish:hover { color: #d07070; background: rgba(220,80,60,0.08); }
+  .tb-cat-demolish.active { background: rgba(220,80,60,0.12); border-color: rgba(220,80,60,0.25); color: #e87a6a; }
+  .tb-back {
+    display: flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 8px 8px 0 0;
+    background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+    border-bottom: none; cursor: pointer; font-size: 11px; color: #606068;
+    font-family: inherit; outline: none; transition: all 0.15s; margin-left: 8px;
+  }
+  .tb-back:hover { background: rgba(255,255,255,0.06); color: #a0a0a8; }
+  .tb-back .tool-key { font-size: 9px; }
+
+  /* Item groups within categories */
+  .tb-items { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+  .tb-item-group { display: flex; align-items: center; gap: 6px; }
+
+  /* Demolish button special style */
+  .tb-demolish-btn { border-color: rgba(220,80,60,0.2); color: #c07060; }
+  .tb-demolish-btn:hover { background: rgba(220,80,60,0.1); color: #e87a6a; }
+  .tb-demolish-btn.active { background: rgba(220,80,60,0.15); border-color: rgba(220,80,60,0.35); color: #e87a6a; }
+
+  /* Build mode layout: stack cats on top, items below */
+  #tb-build-mode { flex-direction: column; padding: 4px 0; }
+
+  /* Combat HUD */
+  .tb-combat-label { font-size: 14px; font-weight: 800; color: #e87a6a; letter-spacing: 1px; text-transform: uppercase; }
+  .tb-combat-hint { font-size: 12px; color: rgba(200,200,210,0.5); margin-left: 12px; }
 
   #hint {
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
@@ -289,11 +338,11 @@
 <body>
 <div id="top-bar">
   <div class="bar-section">
-    <div class="resource r-wood"><span class="icon"></span><span class="val" id="res-wood">0</span></div>
-    <div class="resource r-stone"><span class="icon"></span><span class="val" id="res-stone">0</span></div>
-    <div class="resource r-metal"><span class="icon"></span><span class="val" id="res-metal">0</span></div>
-    <div class="resource r-food"><span class="icon"></span><span class="val" id="res-food">0</span></div>
-    <div class="resource r-gold"><span class="icon"></span><span class="val" id="res-gold">0</span></div>
+    <div class="resource r-wood"><span class="icon"></span><span class="res-label">W</span><span class="val" id="res-wood">0</span></div>
+    <div class="resource r-stone"><span class="icon"></span><span class="res-label">S</span><span class="val" id="res-stone">0</span></div>
+    <div class="resource r-metal"><span class="icon"></span><span class="res-label">M</span><span class="val" id="res-metal">0</span></div>
+    <div class="resource r-food"><span class="icon"></span><span class="res-label">F</span><span class="val" id="res-food">0</span></div>
+    <div class="resource r-gold"><span class="icon"></span><span class="res-label">G</span><span class="val" id="res-gold">0</span></div>
     <div class="upkeep-wrap" id="upkeep-wrap" style="display:none">
       <span class="upkeep-icon">🍖</span>
       <span class="upkeep-label">Upkeep</span>
@@ -319,21 +368,47 @@
   </div>
 </div>
 <div id="toolbar">
-  <button class="tool-btn active" data-tool="gather" onclick="selectTool('gather')"><span class="tool-key">G</span> Gather</button>
-  <span class="tb-sep">│</span>
-  <button class="tool-btn" data-tool="WALL" onclick="selectTool('WALL')"><span class="tool-key">1</span> Wall <span class="tool-cost">5S</span></button>
-  <button class="tool-btn" data-tool="TOWER" onclick="selectTool('TOWER')"><span class="tool-key">2</span> Tower <span class="tool-cost">10W 5S 3M</span></button>
-  <button class="tool-btn" data-tool="TRAP" onclick="selectTool('TRAP')"><span class="tool-key">3</span> Trap <span class="tool-cost">3W 1M</span></button>
-  <button class="tool-btn" data-tool="GATE" onclick="selectTool('GATE')"><span class="tool-key">4</span> Gate <span class="tool-cost">5W 2S</span></button>
-  <button class="tool-btn citizen" data-tool="CITIZEN_BLOCK" onclick="selectTool('CITIZEN_BLOCK')"><span class="tool-key">C</span> Settlement <span class="tool-cost" id="citizen-cost">50W 30S</span></button>
-  <span class="tb-sep">│</span>
-  <button class="tool-btn recruit" data-tool="MILITIA" onclick="selectTool('MILITIA')"><span class="tool-key">Q</span> Militia <span class="tool-cost">5W 2F</span></button>
-  <button class="tool-btn recruit" data-tool="ARCHER" onclick="selectTool('ARCHER')"><span class="tool-key">E</span> Archer <span class="tool-cost">5W 3M</span></button>
-  <button class="tool-btn recruit" data-tool="SPEARMAN" onclick="selectTool('SPEARMAN')"><span class="tool-key">R</span> Spear <span class="tool-cost">4W 3F</span></button>
-  <button class="tool-btn recruit" data-tool="CAVALRY" onclick="selectTool('CAVALRY')"><span class="tool-key">F</span> Cavalry <span class="tool-cost">8W 5F</span></button>
-  <button class="tool-btn recruit" data-tool="CATAPULT" onclick="selectTool('CATAPULT')"><span class="tool-key">T</span> Catapult <span class="tool-cost">12W 5S 4M</span></button>
-  <span class="tb-sep">│</span>
-  <button class="tool-btn" data-tool="DEMOLISH" onclick="selectTool('DEMOLISH')"><span class="tool-key">X</span> Demolish</button>
+  <!-- GATHER MODE (default) -->
+  <div id="tb-gather-mode" class="tb-mode">
+    <button class="tool-btn active" data-tool="gather" onclick="selectTool('gather')"><span class="tool-key">G</span> Gather</button>
+    <button class="tb-build-toggle" onclick="toggleBuildMode(true)"><span class="tool-key">B</span> Build Mode</button>
+  </div>
+  <!-- BUILD MODE (TAB/B toggles) -->
+  <div id="tb-build-mode" class="tb-mode" style="display:none">
+    <div class="tb-cats">
+      <button class="tb-cat active" data-cat="defense" onclick="selectCategory('defense')"><span class="tool-key">1</span> ⛨ Defense</button>
+      <button class="tb-cat" data-cat="army" onclick="selectCategory('army')"><span class="tool-key">2</span> ⚔ Army</button>
+      <button class="tb-cat" data-cat="economy" onclick="selectCategory('economy')"><span class="tool-key">3</span> 🏘 Economy</button>
+      <button class="tb-cat tb-cat-demolish" data-cat="demolish" onclick="selectCategory('demolish')"><span class="tool-key">X</span> 🗑 Demolish</button>
+      <button class="tb-back" onclick="toggleBuildMode(false)"><span class="tool-key">Esc</span> ← Back</button>
+    </div>
+    <div class="tb-items">
+      <div class="tb-item-group" data-cat="defense">
+        <button class="tool-btn" data-tool="WALL" onclick="selectTool('WALL')"><span class="tool-key">Q</span> Wall <span class="tool-cost">5S</span></button>
+        <button class="tool-btn" data-tool="TOWER" onclick="selectTool('TOWER')"><span class="tool-key">W</span> Tower <span class="tool-cost">10W 5S 3M</span></button>
+        <button class="tool-btn" data-tool="TRAP" onclick="selectTool('TRAP')"><span class="tool-key">E</span> Trap <span class="tool-cost">3W 1M</span></button>
+        <button class="tool-btn" data-tool="GATE" onclick="selectTool('GATE')"><span class="tool-key">R</span> Gate <span class="tool-cost">5W 2S</span></button>
+      </div>
+      <div class="tb-item-group" data-cat="army" style="display:none">
+        <button class="tool-btn recruit" data-tool="MILITIA" onclick="selectTool('MILITIA')"><span class="tool-key">Q</span> Militia <span class="tool-cost">5W 2F</span></button>
+        <button class="tool-btn recruit" data-tool="ARCHER" onclick="selectTool('ARCHER')"><span class="tool-key">W</span> Archer <span class="tool-cost">5W 3M</span></button>
+        <button class="tool-btn recruit" data-tool="SPEARMAN" onclick="selectTool('SPEARMAN')"><span class="tool-key">E</span> Spear <span class="tool-cost">4W 3F</span></button>
+        <button class="tool-btn recruit" data-tool="CAVALRY" onclick="selectTool('CAVALRY')"><span class="tool-key">R</span> Cavalry <span class="tool-cost">8W 5F</span></button>
+        <button class="tool-btn recruit" data-tool="CATAPULT" onclick="selectTool('CATAPULT')"><span class="tool-key">T</span> Catapult <span class="tool-cost">12W 5S 4M</span></button>
+      </div>
+      <div class="tb-item-group" data-cat="economy" style="display:none">
+        <button class="tool-btn citizen" data-tool="CITIZEN_BLOCK" onclick="selectTool('CITIZEN_BLOCK')"><span class="tool-key">Q</span> Settlement <span class="tool-cost" id="citizen-cost">50W 30S</span></button>
+      </div>
+      <div class="tb-item-group" data-cat="demolish" style="display:none">
+        <button class="tool-btn tb-demolish-btn" data-tool="DEMOLISH" onclick="selectTool('DEMOLISH')"><span class="tool-key">Q</span> Demolish — Click structure to remove</button>
+      </div>
+    </div>
+  </div>
+  <!-- COMBAT HUD (replaces toolbar during combat) -->
+  <div id="tb-combat-mode" class="tb-mode" style="display:none">
+    <span class="tb-combat-label">⚔️ COMBAT</span>
+    <span class="tb-combat-hint">WASD move · Click to attack · Tab cycle units</span>
+  </div>
 </div>
 <div id="unit-info">
   <span class="ui-name" id="ui-name">—</span>
@@ -348,7 +423,7 @@
 </div>
 <canvas id="game-canvas"></canvas>
 <canvas id="minimap" width="300" height="200"></canvas>
-<div id="hint">WASD move · Click gather · Q/E/R/F/T units · 1-4 build · SPACE fight · Tab cycle · X disband · 🍖 Units cost food!</div>
+<div id="hint">WASD move · G gather · B build mode · SPACE start wave · Tab cycle units</div>
 <div id="wave-banner"></div>
 <div id="wave-preview-overlay"></div>
 <div id="aftermath-overlay">
@@ -362,7 +437,7 @@
   <div class="start-prompt">Press SPACE to Begin</div>
   <div class="start-tips">
     Place your first Settlement · Gather resources · Build walls &amp; towers · Recruit an army<br>
-    WASD move · G gather · 1-4 build · Q/E/R/F/T recruit · SPACE starts each wave<br>
+    WASD move · G gather · B build mode · 1/2/3 tabs · Q/W/E/R items · SPACE starts wave<br>
     Endless waves — there is no winning, only surviving longer
   </div>
 </div>
@@ -1799,6 +1874,57 @@ function spawnInitialCamps(){
 
 // ─── BUILD / TOOL STATE ───
 let selectedTool='gather';
+let uiMode='gather'; // 'gather' | 'build' | 'combat'
+let activeCategory='defense'; // 'defense' | 'army' | 'economy' | 'demolish'
+
+function toggleBuildMode(enterBuild){
+  if(enterBuild){
+    uiMode='build';
+    document.getElementById('tb-gather-mode').style.display='none';
+    document.getElementById('tb-build-mode').style.display='';
+    document.getElementById('tb-combat-mode').style.display='none';
+    selectCategory(activeCategory);
+  } else {
+    uiMode='gather';
+    document.getElementById('tb-gather-mode').style.display='';
+    document.getElementById('tb-build-mode').style.display='none';
+    document.getElementById('tb-combat-mode').style.display='none';
+    selectTool('gather');
+  }
+  updateHint();
+}
+
+function selectCategory(cat){
+  activeCategory=cat;
+  document.querySelectorAll('.tb-cat').forEach(b=>b.classList.remove('active'));
+  const catBtn=document.querySelector(`.tb-cat[data-cat="${cat}"]`);
+  if(catBtn)catBtn.classList.add('active');
+  document.querySelectorAll('.tb-item-group').forEach(g=>{
+    g.style.display=g.dataset.cat===cat?'':'none';
+  });
+  // Auto-select first item in category (or demolish)
+  if(cat==='demolish'){selectTool('DEMOLISH');}
+  else{
+    const firstBtn=document.querySelector(`.tb-item-group[data-cat="${cat}"] .tool-btn`);
+    if(firstBtn)selectTool(firstBtn.dataset.tool);
+  }
+}
+
+function enterCombatUI(){
+  uiMode='combat';
+  document.getElementById('tb-gather-mode').style.display='none';
+  document.getElementById('tb-build-mode').style.display='none';
+  document.getElementById('tb-combat-mode').style.display='';
+}
+
+function exitCombatUI(){
+  uiMode='gather';
+  document.getElementById('tb-gather-mode').style.display='';
+  document.getElementById('tb-build-mode').style.display='none';
+  document.getElementById('tb-combat-mode').style.display='none';
+  selectTool('gather');
+}
+
 function selectTool(tool){
   selectedTool=tool;
   document.querySelectorAll('.tool-btn').forEach(b=>b.classList.remove('active'));
@@ -1809,14 +1935,16 @@ function selectTool(tool){
 function updateHint(){
   const h=document.getElementById('hint');
   if(game.phase==='MENU')return;
-  if(game.phase==='COMBAT'){h.textContent='⚔️ COMBAT — WASD to move · Click to attack · Tab cycle units · Defend your settlements!';return;}
-  if(selectedTool==='gather')h.textContent='WASD to move · Click resources to gather · Click Settlement to change priority · SPACE to start wave';
-  else if(selectedTool==='DEMOLISH')h.textContent='Click a structure to demolish · ESC to cancel';
-  else if(cavalryPendingUnit){h.textContent='Click a patrol target (2-12 tiles from cavalry) · ESC to cancel';return;}
-  else if(selectedTool==='CAVALRY'){const u=UNIT_TYPES.CAVALRY;h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave), then click patrol target · ESC/G to cancel`;}
-  else if(UNIT_TYPES[selectedTool]){const u=UNIT_TYPES[selectedTool];h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave) · ESC/G to cancel`;}
-  else if(selectedTool==='CITIZEN_BLOCK'){const c=getCitizenBlockCost();h.textContent=`Click VISIBLE tile to place Settlement (${c.wood}W ${c.stone}S) · ESC/G to cancel`;}
-  else{const s=STRUCTS[selectedTool];h.textContent=`Click to place ${s.name} · ESC/G to cancel`;}
+  if(game.phase==='COMBAT'){h.textContent='⚔️ COMBAT — WASD move · Click attack · Tab cycle units · Defend your settlements!';return;}
+  if(uiMode==='gather')h.textContent='WASD move · Click resources to gather · Click Settlement for priority · B build mode · SPACE start wave';
+  else if(uiMode==='build'){
+    if(selectedTool==='DEMOLISH')h.textContent='Click a structure to demolish · Esc back to gather';
+    else if(cavalryPendingUnit){h.textContent='Click a patrol target (2-12 tiles from cavalry) · Esc to cancel';return;}
+    else if(selectedTool==='CAVALRY'){const u=UNIT_TYPES.CAVALRY;h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave), then click patrol target · Esc back`;}
+    else if(UNIT_TYPES[selectedTool]){const u=UNIT_TYPES[selectedTool];h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave) · 1/2/3 switch tab · Esc back`;}
+    else if(selectedTool==='CITIZEN_BLOCK'){const c=getCitizenBlockCost();h.textContent=`Click VISIBLE tile to place Settlement (${c.wood}W ${c.stone}S) · Esc back`;}
+    else{const s=STRUCTS[selectedTool];if(s)h.textContent=`Click to place ${s.name} · 1/2/3 switch tab · Esc back`;}
+  }
 }
 function canAfford(key){
   // Citizen blocks use dynamic scaling cost
@@ -2105,7 +2233,7 @@ function launchWave(){
   // Phase UI
   const badge=document.getElementById('phase-badge');
   badge.textContent='COMBAT';badge.className='phase-badge phase-combat';
-  document.getElementById('toolbar').classList.add('combat-mode');
+  enterCombatUI();
   document.getElementById('game-canvas').classList.add('combat-cursor');
   updateHint();
 
@@ -2347,9 +2475,8 @@ function closeAftermath(){
   document.getElementById('build-timer').style.display='';
   const badge=document.getElementById('phase-badge');
   badge.textContent='BUILD';badge.className='phase-badge phase-build';
-  document.getElementById('toolbar').classList.remove('combat-mode');
+  exitCombatUI();
   document.getElementById('game-canvas').classList.remove('combat-cursor');
-  selectTool('gather');
 
   // ── CITIZEN RECALL RESET & RESPAWN ──
   citizenRecallTriggered=false; // reset for next build phase
@@ -3651,7 +3778,7 @@ window.addEventListener('keydown',e=>{
     if(game.phase==='PLACE_HQ')return; // can't start wave before HQ placed
     if(game.phase==='BUILD')startWave();
   }
-  // Tab: cycle through units
+  // Tab: cycle through units (unchanged)
   if(e.key==='Tab'){
     e.preventDefault();
     if(game.phase==='BUILD'||game.phase==='COMBAT'){
@@ -3660,19 +3787,34 @@ window.addEventListener('keydown',e=>{
     return;
   }
   if(game.phase==='BUILD'){
-    if(e.key==='g'||e.key==='G')selectTool('gather');
-    if(e.key==='1')selectTool('WALL');
-    if(e.key==='2')selectTool('TOWER');
-    if(e.key==='3')selectTool('TRAP');
-    if(e.key==='4')selectTool('GATE');
-    if(e.key==='q'||e.key==='Q')selectTool('MILITIA');
-    if(e.key==='e'||e.key==='E')selectTool('ARCHER');
-    if(e.key==='r'||e.key==='R')selectTool('SPEARMAN');
-    if(e.key==='f'||e.key==='F')selectTool('CAVALRY');
-    if(e.key==='t'||e.key==='T')selectTool('CATAPULT');
-    if(e.key==='c'||e.key==='C')selectTool('CITIZEN_BLOCK');
-    if(e.key==='x'||e.key==='X')selectTool('DEMOLISH');
-    if(e.key==='Escape'){cavalryPendingUnit=null;selectTool('gather');}
+    // B: toggle build mode
+    if(e.key==='b'||e.key==='B'){
+      toggleBuildMode(uiMode!=='build');
+      return;
+    }
+    // G: back to gather
+    if(e.key==='g'||e.key==='G'){toggleBuildMode(false);return;}
+    // Escape: if in build mode go back to gather, else cancel placement
+    if(e.key==='Escape'){
+      cavalryPendingUnit=null;
+      if(uiMode==='build'){toggleBuildMode(false);}
+      else{selectTool('gather');}
+      return;
+    }
+    // In build mode: 1/2/3 switch categories, X for demolish, Q/W/E/R/T select items
+    if(uiMode==='build'){
+      if(e.key==='1'){selectCategory('defense');return;}
+      if(e.key==='2'){selectCategory('army');return;}
+      if(e.key==='3'){selectCategory('economy');return;}
+      if(e.key==='x'||e.key==='X'){selectCategory('demolish');return;}
+      // Q/W/E/R/T pick items within the active category
+      const itemBtns=document.querySelectorAll(`.tb-item-group[data-cat="${activeCategory}"] .tool-btn`);
+      const itemKeys=['q','w','e','r','t'];
+      const kl=e.key.toLowerCase();
+      const idx=itemKeys.indexOf(kl);
+      if(idx>=0&&idx<itemBtns.length){selectTool(itemBtns[idx].dataset.tool);return;}
+    }
+    // In gather mode: only G is active (already handled above)
   }
 });
 window.addEventListener('keyup',e=>{keys[e.key]=false;});
@@ -5332,9 +5474,8 @@ function restartGame(){
   // Reset UI
   const badge=document.getElementById('phase-badge');
   badge.textContent='BUILD'; badge.className='phase-badge phase-build';
-  document.getElementById('toolbar').classList.remove('combat-mode');
+  exitCombatUI();
   document.getElementById('game-canvas').classList.remove('combat-cursor');
-  selectTool('gather');
 }
 
 // ─── TAB: Cycle through units ───
