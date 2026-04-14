@@ -972,19 +972,21 @@ function panelGuardUpgrade() {
 let trainingPanelKey = null; // structure key currently shown in training panel
 
 function openTrainingPanel(col, row) {
+  console.log('[TRAIN DEBUG] openTrainingPanel called',col,row);
   const sk = col + ',' + row;
   const s = structures[sk];
-  if (!s) return;
+  if (!s) {console.log('[TRAIN DEBUG] no structure at',sk);return;}
   const def = STRUCTS[s.type];
-  if (!def || !def.trains) return;
+  if (!def || !def.trains) {console.log('[TRAIN DEBUG] no trains for',s.type);return;}
   // Close settlement panel if open
   closeSettlementPanel();
   trainingPanelKey = sk;
   // Initialize training queue on this structure if not present
   if (!s.trainingQueue) s.trainingQueue = [];
   if (s.trainProgress === undefined) s.trainProgress = 0;
-  updateTrainingPanel();
+  try{updateTrainingPanel();}catch(err){console.error('[TRAIN DEBUG] updateTrainingPanel error:',err);}
   document.getElementById('training-panel').style.display = '';
+  console.log('[TRAIN DEBUG] panel display set to visible');
 }
 
 function closeTrainingPanel() {
@@ -5293,8 +5295,8 @@ document.getElementById('game-canvas').addEventListener('click',e=>{
   }
   // Hero attack during combat
   if(game.phase==='COMBAT'){heroAttack();return;}
-  if(game.phase!=='BUILD')return;
-  if(e.clientY<88)return;
+  if(game.phase!=='BUILD'){console.log('[CLICK DEBUG] rejected: phase=',game.phase);return;}
+  if(e.clientY<88){console.log('[CLICK DEBUG] rejected: clientY=',e.clientY,'< 88');return;}
   const z=cam.zoom;
   const col=Math.floor((cam.x+e.clientX/z)/TILE_SIZE);
   const row=Math.floor((cam.y+e.clientY/z)/TILE_SIZE);
@@ -5313,7 +5315,9 @@ document.getElementById('game-canvas').addEventListener('click',e=>{
     return;
   }
   // Click on a military building during BUILD phase → open training panel
+  console.log('[CLICK DEBUG] clickedKey=',clickedKey,'clickedStruct=',clickedStruct,'selectedTool=',selectedTool,'uiMode=',uiMode);
   if(clickedStruct&&STRUCTS[clickedStruct.type]&&STRUCTS[clickedStruct.type].trains){
+    console.log('[CLICK DEBUG] MILITARY BUILDING HIT — calling openTrainingPanel');
     if(selectedTool==='DEMOLISH'){handleDemolish(col,row);return;}
     openTrainingPanel(col,row);
     return;
