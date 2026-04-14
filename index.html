@@ -2099,7 +2099,7 @@ function triggerCitizenRecall(){
   if(citizenRecallTriggered) return;
   citizenRecallTriggered=true;
   // Show warning banner
-  showBanner('⚠️ WAVE INCOMING — Citizens returning!');
+  showBanner('⚠️ WAVE IN ' + CITIZEN_RECALL_TIME + 's — Citizens returning!');
   // Set all active citizens to recalling state
   for(let i=0;i<citizens.length;i++){
     const cit=citizens[i];
@@ -2563,16 +2563,17 @@ function drawCitizens(now){
 //  §6  PATHFINDING (A* + BFS)  
 // ═══════════════════════════════════════════════════════
 
-function isWalkable(c,r){
+function isWalkable(c,r,friendly){
   if(c<0||c>=COLS||r<0||r>=ROWS) return false;
   if(map[c][r]===T.WATER) return false;
   const sk=c+','+r;
   const s=structures[sk];
-  // Buildings with blocksPath=true block movement; Gates/Gatehouses are walkable
   if(s){
     const def=STRUCTS[s.type];
+    // Gates/Gatehouses: friendly entities pass freely, enemies also pass (take damage in combat code)
+    if(s.type==='GATE'||s.type==='GATEHOUSE') return true;
     if(def&&def.blocksPath) return false;
-    // Legacy: towers still block
+    // Towers always block movement
     if(s.type==='TOWER'||s.type==='BALLISTA_TOWER'||s.type==='WATCHTOWER') return false;
   }
   return true;
@@ -2588,17 +2589,17 @@ class MinHeap{
   _down(i){const n=this.data.length;while(true){let s=i,l=2*i+1,r=2*i+2;if(l<n&&this.data[l].f<this.data[s].f)s=l;if(r<n&&this.data[r].f<this.data[s].f)s=r;if(s===i)break;[this.data[s],this.data[i]]=[this.data[i],this.data[s]];i=s;}}
 }
 
-function findPath(sc,sr,tc,tr){
+function findPath(sc,sr,tc,tr,friendly){
   // Target the nearest base tile if targeting base
   let goalC=tc, goalR=tr;
 
-  if(!isWalkable(goalC,goalR)){
+  if(!isWalkable(goalC,goalR,friendly)){
     // Find nearest walkable tile adjacent to goal
     const dirs=[[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1]];
     let best=null, bestDist=Infinity;
     for(const[dc,dr] of dirs){
       const nc=goalC+dc, nr=goalR+dr;
-      if(isWalkable(nc,nr)){
+      if(isWalkable(nc,nr,friendly)){
         const d=Math.abs(nc-sc)+Math.abs(nr-sr);
         if(d<bestDist){bestDist=d;best={c:nc,r:nr};}
       }
@@ -2638,7 +2639,7 @@ function findPath(sc,sr,tc,tr){
 
     for(const[dc,dr] of dirs){
       const nc=cur.c+dc, nr=cur.r+dr;
-      if(!isWalkable(nc,nr))continue;
+      if(!isWalkable(nc,nr,friendly))continue;
       const nk=nc+','+nr;
       if(closed.has(nk))continue;
       const ng=g+1;
@@ -4252,7 +4253,7 @@ function unitPathTo(u, goalX, goalY) {
   const sc = Math.floor(u.x / TILE_SIZE), sr = Math.floor(u.y / TILE_SIZE);
   const gc = Math.floor(goalX / TILE_SIZE), gr = Math.floor(goalY / TILE_SIZE);
   if (sc === gc && sr === gr) { u.path = null; u.targetX = goalX; u.targetY = goalY; return; }
-  const path = findPath(sc, sr, gc, gr);
+  const path = findPath(sc, sr, gc, gr, true); // friendly=true: units pass through gates
   if (path && path.length > 0) {
     u.path = path;
     u.pathIdx = 0;
@@ -4954,7 +4955,14 @@ function heroCanWalkTo(wx,wy){
   if(map[c][r]===T.WATER)return false;
   const sk=c+','+r;
   const s=structures[sk];
-  if(s&&(s.type==='WALL'||s.type==='TOWER'||s.type==='GATE'))return false;
+  if(s){
+    // Hero can pass through gates and gatehouses
+    if(s.type==='GATE'||s.type==='GATEHOUSE') return true;
+    // Block on walls, towers, and other path-blocking structures
+    if(s.type==='WALL'||s.type==='TOWER'||s.type==='BALLISTA_TOWER'||s.type==='WATCHTOWER') return false;
+    const def=STRUCTS[s.type];
+    if(def&&def.blocksPath) return false;
+  }
   return true;
 }
 
@@ -7382,10 +7390,11 @@ function draw(now){
       const recallPulse=Math.sin(now*0.008)*0.3+0.7;
       const safeCt=citizens.filter(c=>c.safe).length;
       const totalCt=citizens.length;
+      const countdown=Math.max(0,Math.ceil(game.buildTimer));
       ctx.font='bold 16px system-ui';
       ctx.fillStyle=`rgba(255,180,60,${recallPulse})`;
       ctx.shadowColor='rgba(255,150,30,0.5)';ctx.shadowBlur=12;
-      ctx.fillText(`⚠️ CITIZENS RECALLING — ${safeCt}/${totalCt} safe`, canvas.width/2, canvas.height-95);
+      ctx.fillText(`⚠️ WAVE IN ${countdown}s — Citizens recalling (${safeCt}/${totalCt} safe)`, canvas.width/2, canvas.height-95);
     }
     // Upkeep warning below prompt
     if(units.length>0){
