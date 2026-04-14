@@ -3216,11 +3216,12 @@ function startWave(){
   game.buildTimer=-1;
   document.getElementById('build-timer').style.display='none';
   document.getElementById('build-timer').classList.remove('urgent');
-  // Mark any non-safe citizens as exposed (targetable by enemies)
+  // Mark non-safe, non-recalling citizens as exposed (targetable by enemies)
+  // Citizens already 'recalling' keep sprinting home during PREVIEW/COMBAT
   let exposedCount=0;
   for(let i=0;i<citizens.length;i++){
     const cit=citizens[i];
-    if(!cit.safe){
+    if(!cit.safe && cit.state!=='recalling'){
       // Last chance: check if within 1 tile of a settlement
       const nearest=findNearestSettlementTile(cit.col,cit.row);
       if(nearest&&nearest.dist<=1){
