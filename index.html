@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Base Siege</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -868,7 +871,7 @@ function openSettlementPanel(col, row) {
   if (!s || s.type !== 'CITIZEN_BLOCK') return;
   panelSettKey = sk;
   updateSettlementPanel();
-  document.getElementById('settlement-panel').style.display = '';
+  document.getElementById('settlement-panel').style.display = 'block';
 }
 
 function closeSettlementPanel() {
@@ -972,21 +975,19 @@ function panelGuardUpgrade() {
 let trainingPanelKey = null; // structure key currently shown in training panel
 
 function openTrainingPanel(col, row) {
-  console.log('[TRAIN DEBUG] openTrainingPanel called',col,row);
   const sk = col + ',' + row;
   const s = structures[sk];
-  if (!s) {console.log('[TRAIN DEBUG] no structure at',sk);return;}
+  if (!s) return;
   const def = STRUCTS[s.type];
-  if (!def || !def.trains) {console.log('[TRAIN DEBUG] no trains for',s.type);return;}
+  if (!def || !def.trains) return;
   // Close settlement panel if open
   closeSettlementPanel();
   trainingPanelKey = sk;
   // Initialize training queue on this structure if not present
   if (!s.trainingQueue) s.trainingQueue = [];
   if (s.trainProgress === undefined) s.trainProgress = 0;
-  try{updateTrainingPanel();}catch(err){console.error('[TRAIN DEBUG] updateTrainingPanel error:',err);}
-  document.getElementById('training-panel').style.display = '';
-  console.log('[TRAIN DEBUG] panel display set to visible');
+  updateTrainingPanel();
+  document.getElementById('training-panel').style.display = 'block';
 }
 
 function closeTrainingPanel() {
@@ -5295,8 +5296,8 @@ document.getElementById('game-canvas').addEventListener('click',e=>{
   }
   // Hero attack during combat
   if(game.phase==='COMBAT'){heroAttack();return;}
-  if(game.phase!=='BUILD'){console.log('[CLICK DEBUG] rejected: phase=',game.phase);return;}
-  if(e.clientY<88){console.log('[CLICK DEBUG] rejected: clientY=',e.clientY,'< 88');return;}
+  if(game.phase!=='BUILD')return;
+  if(e.clientY<88)return;
   const z=cam.zoom;
   const col=Math.floor((cam.x+e.clientX/z)/TILE_SIZE);
   const row=Math.floor((cam.y+e.clientY/z)/TILE_SIZE);
@@ -5315,9 +5316,7 @@ document.getElementById('game-canvas').addEventListener('click',e=>{
     return;
   }
   // Click on a military building during BUILD phase → open training panel
-  console.log('[CLICK DEBUG] clickedKey=',clickedKey,'clickedStruct=',clickedStruct,'selectedTool=',selectedTool,'uiMode=',uiMode);
   if(clickedStruct&&STRUCTS[clickedStruct.type]&&STRUCTS[clickedStruct.type].trains){
-    console.log('[CLICK DEBUG] MILITARY BUILDING HIT — calling openTrainingPanel');
     if(selectedTool==='DEMOLISH'){handleDemolish(col,row);return;}
     openTrainingPanel(col,row);
     return;
