@@ -7395,10 +7395,10 @@ function draw(now){
   if(game.phase==='PREVIEW'){
     updateWavePreview(dt);
   }
+  updateUnits(dt); // Runs in BUILD (movement only) and COMBAT (movement + fighting)
   if(game.phase==='COMBAT'){
     updateEnemies(dt);
     updateTowers(dt);
-    updateUnits(dt);
     updateMorale(dt);
     updateFleeingUnits(dt);
     updateProjectiles(dt);
