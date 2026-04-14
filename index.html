@@ -62,6 +62,7 @@
   .tool-key { display: inline-block; min-width: 16px; height: 16px; line-height: 16px; text-align: center; border-radius: 3px; background: rgba(255,255,255,0.08); font-size: 10px; font-weight: 700; color: #888; }
   .tool-btn.active .tool-key { background: rgba(90,180,90,0.2); color: #7aca7a; }
   .tool-cost { font-size: 10px; opacity: 0.55; margin-left: 2px; }
+  .tool-cost.t2 { color: #8ac; } .tool-cost.t3 { color: #c9a; }
 
   /* Build Mode toggle button */
   .tb-build-toggle {
@@ -393,19 +394,46 @@
   <div id="tb-build-mode" class="tb-mode" style="display:none">
     <div class="tb-cats">
       <button class="tb-cat active" data-cat="defense" onclick="selectCategory('defense')"><span class="tool-key">1</span> ⛨ Defense</button>
-      <button class="tb-cat" data-cat="army" onclick="selectCategory('army')"><span class="tool-key">2</span> ⚔ Army</button>
-      <button class="tb-cat" data-cat="economy" onclick="selectCategory('economy')"><span class="tool-key">3</span> 🏘 Economy</button>
-      <button class="tb-cat" data-cat="resources" onclick="selectCategory('resources')"><span class="tool-key">4</span> ⛏ Resources</button>
+      <button class="tb-cat" data-cat="economy" onclick="selectCategory('economy')"><span class="tool-key">2</span> 🌾 Economy</button>
+      <button class="tb-cat" data-cat="military" onclick="selectCategory('military')"><span class="tool-key">3</span> ⚔ Military</button>
+      <button class="tb-cat" data-cat="infrastructure" onclick="selectCategory('infrastructure')"><span class="tool-key">4</span> 🏘 Infrastructure</button>
+      <button class="tb-cat" data-cat="army" onclick="selectCategory('army')"><span class="tool-key">5</span> 🗡 Army</button>
       <button class="tb-cat tb-cat-demolish" data-cat="demolish" onclick="selectCategory('demolish')"><span class="tool-key">X</span> 🗑 Demolish</button>
       <button class="tb-back" onclick="toggleBuildMode(false)"><span class="tool-key">Esc</span> ← Back</button>
     </div>
     <div class="tb-items">
+      <!-- DEFENSE: Palisade, Wall, Gate, Tower, Watchtower, Ballista Tower, Gatehouse -->
       <div class="tb-item-group" data-cat="defense">
-        <button class="tool-btn" data-tool="WALL" onclick="selectTool('WALL')"><span class="tool-key">Q</span> Wall <span class="tool-cost">5S</span></button>
-        <button class="tool-btn" data-tool="TOWER" onclick="selectTool('TOWER')"><span class="tool-key">W</span> Tower <span class="tool-cost">10W 5S 3M</span></button>
-        <button class="tool-btn" data-tool="TRAP" onclick="selectTool('TRAP')"><span class="tool-key">E</span> Trap <span class="tool-cost">3W 1M</span></button>
-        <button class="tool-btn" data-tool="GATE" onclick="selectTool('GATE')"><span class="tool-key">R</span> Gate <span class="tool-cost">5W 2S</span></button>
+        <button class="tool-btn" data-tool="PALISADE" onclick="selectTool('PALISADE')"><span class="tool-key">Q</span> Palisade <span class="tool-cost">3W</span></button>
+        <button class="tool-btn" data-tool="WALL" onclick="selectTool('WALL')"><span class="tool-key">W</span> Wall <span class="tool-cost">5S</span></button>
+        <button class="tool-btn" data-tool="GATE" onclick="selectTool('GATE')"><span class="tool-key">E</span> Gate <span class="tool-cost">5W 2S</span></button>
+        <button class="tool-btn" data-tool="TOWER" onclick="selectTool('TOWER')"><span class="tool-key">R</span> Tower <span class="tool-cost">10W 5S 3M</span></button>
+        <button class="tool-btn" data-tool="WATCHTOWER" onclick="selectTool('WATCHTOWER')"><span class="tool-key">T</span> Watch <span class="tool-cost">8W 3S</span></button>
+        <button class="tool-btn" data-tool="BALLISTA_TOWER" onclick="selectTool('BALLISTA_TOWER')"><span class="tool-key">Y</span> Ballista <span class="tool-cost t2">15W 8S 5M</span></button>
+        <button class="tool-btn" data-tool="GATEHOUSE" onclick="selectTool('GATEHOUSE')"><span class="tool-key">U</span> Gatehouse <span class="tool-cost t3">12W 8S 3M</span></button>
       </div>
+      <!-- ECONOMY: Farm, Lumber Mill, Quarry, Forge, Mint, Granary, Storehouse -->
+      <div class="tb-item-group" data-cat="economy" style="display:none">
+        <button class="tool-btn" data-tool="FARM" onclick="selectTool('FARM')"><span class="tool-key">Q</span> Farm <span class="tool-cost">8W</span></button>
+        <button class="tool-btn" data-tool="LUMBER" onclick="selectTool('LUMBER')"><span class="tool-key">W</span> Lumber <span class="tool-cost t2">10F 5S</span></button>
+        <button class="tool-btn" data-tool="QUARRY" onclick="selectTool('QUARRY')"><span class="tool-key">E</span> Quarry <span class="tool-cost t2">8W 5F</span></button>
+        <button class="tool-btn" data-tool="FORGE" onclick="selectTool('FORGE')"><span class="tool-key">R</span> Forge <span class="tool-cost t3">15S 5W</span></button>
+        <button class="tool-btn" data-tool="MINT" onclick="selectTool('MINT')"><span class="tool-key">T</span> Mint <span class="tool-cost t3">20M 10S</span></button>
+        <button class="tool-btn" data-tool="GRANARY" onclick="selectTool('GRANARY')"><span class="tool-key">Y</span> Granary <span class="tool-cost">12W 5S</span></button>
+        <button class="tool-btn" data-tool="STOREHOUSE" onclick="selectTool('STOREHOUSE')"><span class="tool-key">U</span> Store <span class="tool-cost t2">10W 8S</span></button>
+      </div>
+      <!-- MILITARY: Barracks, Archery Range, Stable -->
+      <div class="tb-item-group" data-cat="military" style="display:none">
+        <button class="tool-btn" data-tool="BARRACKS" onclick="selectTool('BARRACKS')"><span class="tool-key">Q</span> Barracks <span class="tool-cost">15W 10S</span></button>
+        <button class="tool-btn" data-tool="ARCHERY_RANGE" onclick="selectTool('ARCHERY_RANGE')"><span class="tool-key">W</span> Archery <span class="tool-cost t2">12W 8S 3M</span></button>
+        <button class="tool-btn" data-tool="STABLE" onclick="selectTool('STABLE')"><span class="tool-key">E</span> Stable <span class="tool-cost t2">20W 10S 5M</span></button>
+      </div>
+      <!-- INFRASTRUCTURE: Settlement, House -->
+      <div class="tb-item-group" data-cat="infrastructure" style="display:none">
+        <button class="tool-btn citizen" data-tool="CITIZEN_BLOCK" onclick="selectTool('CITIZEN_BLOCK')"><span class="tool-key">Q</span> Settlement <span class="tool-cost" id="citizen-cost">50W 30S</span></button>
+        <button class="tool-btn" data-tool="HOUSE" onclick="selectTool('HOUSE')"><span class="tool-key">W</span> House <span class="tool-cost">5W 2S</span></button>
+      </div>
+      <!-- ARMY: Unit recruitment (kept from Phase B) -->
       <div class="tb-item-group" data-cat="army" style="display:none">
         <button class="tool-btn recruit" data-tool="MILITIA" onclick="selectTool('MILITIA')"><span class="tool-key">Q</span> Militia <span class="tool-cost">5W 2F</span></button>
         <button class="tool-btn recruit" data-tool="ARCHER" onclick="selectTool('ARCHER')"><span class="tool-key">W</span> Archer <span class="tool-cost">5W 3M</span></button>
@@ -413,17 +441,7 @@
         <button class="tool-btn recruit" data-tool="CAVALRY" onclick="selectTool('CAVALRY')"><span class="tool-key">R</span> Cavalry <span class="tool-cost">8W 5F</span></button>
         <button class="tool-btn recruit" data-tool="CATAPULT" onclick="selectTool('CATAPULT')"><span class="tool-key">T</span> Catapult <span class="tool-cost">12W 5S 4M</span></button>
       </div>
-      <div class="tb-item-group" data-cat="economy" style="display:none">
-        <button class="tool-btn citizen" data-tool="CITIZEN_BLOCK" onclick="selectTool('CITIZEN_BLOCK')"><span class="tool-key">Q</span> Settlement <span class="tool-cost" id="citizen-cost">50W 30S</span></button>
-        <button class="tool-btn" data-tool="HOUSE" onclick="selectTool('HOUSE')"><span class="tool-key">W</span> House <span class="tool-cost">5W 2S</span></button>
-      </div>
-      <div class="tb-item-group" data-cat="resources" style="display:none">
-        <button class="tool-btn" data-tool="FARM" onclick="selectTool('FARM')"><span class="tool-key">Q</span> Farm <span class="tool-cost">Free</span></button>
-        <button class="tool-btn" data-tool="LUMBER" onclick="selectTool('LUMBER')"><span class="tool-key">W</span> Lumber <span class="tool-cost">3F</span></button>
-        <button class="tool-btn" data-tool="QUARRY" onclick="selectTool('QUARRY')"><span class="tool-key">E</span> Quarry <span class="tool-cost">5W</span></button>
-        <button class="tool-btn" data-tool="MINE" onclick="selectTool('MINE')"><span class="tool-key">R</span> Mine <span class="tool-cost">8S</span></button>
-        <button class="tool-btn" data-tool="GOLD_MINE" onclick="selectTool('GOLD_MINE')"><span class="tool-key">T</span> Gold Mine <span class="tool-cost">10M</span></button>
-      </div>
+      <!-- DEMOLISH -->
       <div class="tb-item-group" data-cat="demolish" style="display:none">
         <button class="tool-btn tb-demolish-btn" data-tool="DEMOLISH" onclick="selectTool('DEMOLISH')"><span class="tool-key">Q</span> Demolish — Click structure to remove</button>
       </div>
@@ -654,28 +672,58 @@ const CITIZEN_COLORS={
   gold:[220,200,120],  // pastel gold
 };
 
-// Legacy compat
-const STRUCTS={
-  WALL:{name:'Wall',cost:{stone:5},hp:60,color:[110,100,88],letter:'W'},
-  TOWER:{name:'Tower',cost:{wood:10,stone:5,metal:3},hp:40,color:[80,70,62],letter:'T',range:6,dmg:4,rate:0.8},
-  TRAP:{name:'Spike Trap',cost:{wood:3,metal:1},hp:1,color:[55,50,45],letter:'X',dmg:8,slow:0.5},
-  GATE:{name:'Gate',cost:{wood:5,stone:2},hp:30,color:[90,75,55],letter:'G',dmg:3,slow:0.6},
-  CITIZEN_BLOCK:{name:'Settlement',cost:{wood:50,stone:30},hp:80,color:[170,140,90],letter:'🏘',visRadius:12,visExp:14},
-  HOUSE:{name:'House',cost:{wood:5,stone:2},hp:20,color:[190,160,110],letter:'H',upkeep:{food:1},maxRepairs:3},
+// ─── BUILDING CATEGORIES & DEFINITIONS ───
+// Categories: defense, economy, military, infrastructure
+// Each building has: name, cost, hp, color, letter, tier (min settlement tier), category
+// Optional: upkeep, produces, perWave, requiredTile, range, dmg, rate, slow, visRadius, visExp, maxRepairs, blocksPath, piercing, trains
+
+const BUILDING_CATEGORIES = {
+  defense: ['PALISADE','WALL','GATE','TOWER','WATCHTOWER','BALLISTA_TOWER','GATEHOUSE'],
+  economy: ['FARM','LUMBER','QUARRY','FORGE','MINT','GRANARY','STOREHOUSE'],
+  military: ['BARRACKS','ARCHERY_RANGE','STABLE'],
+  infrastructure: ['CITIZEN_BLOCK','HOUSE'],
 };
 
-// ─── RESOURCE BUILDINGS ───
-// Chain: Farm(free) → Lumber(food) → Quarry(wood) → Mine(stone) → Gold Mine(metal)
-const RESOURCE_BUILDINGS = {
-  FARM:       { name:'Farm',        cost:{},          hp:30, produces:'food',  perWave:3, requiredTile:T.BERRY, color:[180,140,80],  letter:'F', maxRepairs:3 },
-  LUMBER:     { name:'Lumber Camp', cost:{food:3},    hp:30, produces:'wood',  perWave:3, requiredTile:T.TREE,  color:[120,90,50],   letter:'L', maxRepairs:3 },
-  QUARRY:     { name:'Quarry',      cost:{wood:5},    hp:30, produces:'stone', perWave:3, requiredTile:T.STONE, color:[140,140,150],  letter:'Q', maxRepairs:3 },
-  MINE:       { name:'Mine',        cost:{stone:8},   hp:30, produces:'metal', perWave:3, requiredTile:T.ORE,   color:[100,130,180],  letter:'M', maxRepairs:3 },
-  GOLD_MINE:  { name:'Gold Mine',   cost:{metal:10},  hp:30, produces:'gold',  perWave:3, requiredTile:T.GOLD,  color:[200,180,60],   letter:'$', maxRepairs:3 },
+const STRUCTS={
+  // ── DEFENSE (7) ──
+  PALISADE:{name:'Palisade',cost:{wood:3},hp:25,color:[140,120,70],letter:'‖',tier:1,category:'defense',blocksPath:true,maxRepairs:3},
+  WALL:{name:'Wall',cost:{stone:5},hp:60,color:[110,100,88],letter:'W',tier:1,category:'defense',blocksPath:true,maxRepairs:3},
+  GATE:{name:'Gate',cost:{wood:5,stone:2},hp:30,color:[90,75,55],letter:'G',tier:1,category:'defense',dmg:3,slow:0.6,blocksPath:false,maxRepairs:3},
+  TOWER:{name:'Tower',cost:{wood:10,stone:5,metal:3},hp:40,color:[80,70,62],letter:'T',tier:1,category:'defense',range:6,dmg:4,rate:0.8,maxRepairs:3},
+  WATCHTOWER:{name:'Watchtower',cost:{wood:8,stone:3},hp:25,color:[100,90,70],letter:'👁',tier:1,category:'defense',visRadius:8,maxRepairs:3},
+  BALLISTA_TOWER:{name:'Ballista Tower',cost:{wood:15,stone:8,metal:5},hp:50,color:[70,65,58],letter:'⚔',tier:2,category:'defense',range:10,dmg:6,rate:0.5,piercing:true,maxRepairs:3},
+  GATEHOUSE:{name:'Gatehouse',cost:{wood:12,stone:8,metal:3},hp:50,color:[95,80,60],letter:'⛩',tier:3,category:'defense',dmg:5,slow:0.7,visRadius:4,blocksPath:false,maxRepairs:3},
+
+  // ── ECONOMY (7) ──
+  FARM:{name:'Farm',cost:{wood:8},hp:25,color:[180,140,80],letter:'F',tier:1,category:'economy',produces:'food',perWave:3,requiredTile:null,maxRepairs:3},
+  LUMBER:{name:'Lumber Mill',cost:{food:10,stone:5},hp:30,color:[120,90,50],letter:'L',tier:2,category:'economy',upkeep:{food:2},produces:'wood',perWave:3,requiredTile:null,maxRepairs:3},
+  QUARRY:{name:'Quarry',cost:{wood:8,food:5},hp:30,color:[140,140,150],letter:'Q',tier:2,category:'economy',upkeep:{food:2},produces:'stone',perWave:3,requiredTile:null,maxRepairs:3},
+  FORGE:{name:'Forge',cost:{stone:15,wood:5},hp:35,color:[160,100,60],letter:'⚒',tier:3,category:'economy',upkeep:{food:3},produces:'metal',perWave:3,requiredTile:null,maxRepairs:3},
+  MINT:{name:'Mint',cost:{metal:20,stone:10},hp:35,color:[200,180,60],letter:'$',tier:3,category:'economy',upkeep:{food:4},produces:'gold',perWave:3,requiredTile:null,maxRepairs:3},
+  GRANARY:{name:'Granary',cost:{wood:12,stone:5},hp:25,color:[190,170,100],letter:'🌾',tier:1,category:'economy',effect:'granary',maxRepairs:3},
+  STOREHOUSE:{name:'Storehouse',cost:{wood:10,stone:8},hp:30,color:[170,150,110],letter:'📦',tier:2,category:'economy',effect:'storehouse',maxRepairs:3},
+
+  // ── MILITARY (3) ──
+  BARRACKS:{name:'Barracks',cost:{wood:15,stone:10},hp:40,color:[150,90,90],letter:'⚔',tier:1,category:'military',upkeep:{food:2},trains:['MILITIA','SPEARMAN'],maxRepairs:3},
+  ARCHERY_RANGE:{name:'Archery Range',cost:{wood:12,stone:8,metal:3},hp:40,color:[130,110,80],letter:'🏹',tier:2,category:'military',upkeep:{food:2},trains:['ARCHER','CATAPULT'],maxRepairs:3},
+  STABLE:{name:'Stable',cost:{wood:20,stone:10,metal:5},hp:40,color:[140,120,90],letter:'🐴',tier:2,category:'military',upkeep:{food:3},trains:['CAVALRY'],maxRepairs:3},
+
+  // ── INFRASTRUCTURE (2) ──
+  CITIZEN_BLOCK:{name:'Settlement',cost:{wood:50,stone:30},hp:80,color:[170,140,90],letter:'🏘',tier:0,category:'infrastructure',visRadius:12,visExp:14,maxRepairs:3},
+  HOUSE:{name:'House',cost:{wood:5,stone:2},hp:20,color:[190,160,110],letter:'H',tier:1,category:'infrastructure',upkeep:{food:1},maxRepairs:3},
 };
-// Merge resource buildings into STRUCTS so canAfford/rendering/etc. work
-for(const[k,v] of Object.entries(RESOURCE_BUILDINGS)){
-  STRUCTS[k] = v;
+
+// Legacy compat: list of resource-producing building keys
+const RESOURCE_BUILDING_KEYS = ['FARM','LUMBER','QUARRY','FORGE','MINT'];
+// Helper: is this a resource-producing building?
+function isResourceBuilding(key){ return STRUCTS[key] && STRUCTS[key].produces; }
+// Helper: get building tier requirement
+function getBuildingTier(key){ return (STRUCTS[key]&&STRUCTS[key].tier)||0; }
+// Helper: get settlement tier at position
+function getSettlementTierAt(col,row){
+  const ns=settlementInRadius(col,row);
+  if(!ns) return 0;
+  return ns.struct.tier||1;
 }
 let citizenBlockCount=0; // tracks placed citizen blocks for scaling cost
 function getCitizenBlockCost(){
@@ -1086,11 +1134,18 @@ function removeCitizenBlockVision(col,row){
 // ─── PERMANENT BUILDING VISION ───
 // Called when a building is placed — permanently reveals fog and increments visionCount
 function addStructureVision(col,row){
-  modifyVision(col, row, STRUCT_VIS_RADIUS, +1, STRUCT_EXP_RADIUS);
+  // Check if this building has bonus vision (Watchtower, Gatehouse)
+  const sk=col+','+row; const s=structures[sk]; const def=s?STRUCTS[s.type]:null;
+  const vr=def&&def.visRadius?def.visRadius:STRUCT_VIS_RADIUS;
+  const er=vr+2;
+  modifyVision(col, row, vr, +1, er);
 }
 // Called when a building is destroyed — decrements visionCount and re-fogs uncovered tiles
 function removeStructureVision(col,row){
-  modifyVision(col, row, STRUCT_VIS_RADIUS, -1, STRUCT_EXP_RADIUS);
+  const sk=col+','+row; const s=structures[sk]; const def=s?STRUCTS[s.type]:null;
+  const vr=def&&def.visRadius?def.visRadius:STRUCT_VIS_RADIUS;
+  const er=vr+2;
+  modifyVision(col, row, vr, -1, er);
 }
 // Refresh dynamic vision sources (hero only) — call each frame
 // HQ + building vision is permanent via visionCount, no periodic refresh needed
@@ -2214,7 +2269,13 @@ function isWalkable(c,r){
   if(map[c][r]===T.WATER) return false;
   const sk=c+','+r;
   const s=structures[sk];
-  if(s&&(s.type==='WALL'||s.type==='TOWER')) return false;  // Walls & Towers block; Gates are walkable
+  // Buildings with blocksPath=true block movement; Gates/Gatehouses are walkable
+  if(s){
+    const def=STRUCTS[s.type];
+    if(def&&def.blocksPath) return false;
+    // Legacy: towers still block
+    if(s.type==='TOWER'||s.type==='BALLISTA_TOWER'||s.type==='WATCHTOWER') return false;
+  }
   return true;
 }
 
@@ -2562,7 +2623,7 @@ function updateHint(){
     else if(UNIT_TYPES[selectedTool]){const u=UNIT_TYPES[selectedTool];h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave) · 1/2/3 switch tab · Esc back`;}
     else if(selectedTool==='CITIZEN_BLOCK'){const c=getCitizenBlockCost();h.textContent=`Click VISIBLE tile to place Settlement (${c.wood}W ${c.stone}S) · Esc back`;}
     else if(selectedTool==='HOUSE'){h.textContent='Click inside settlement radius to place House (5W 2S, +1 citizen) · Esc back';}
-    else{const rb=RESOURCE_BUILDINGS[selectedTool];if(rb){h.textContent=`${rb.name} — must be placed on ${rb.produces} resource tile · 1-4 switch tab · Esc back`;}else{const s=STRUCTS[selectedTool];if(s)h.textContent=`Click to place ${s.name} · 1-4 switch tab · Esc back`;}}
+    else{const s=STRUCTS[selectedTool];if(s){const tierLabel=s.tier>0?` [T${s.tier}]`:'';h.textContent=`Click to place ${s.name}${tierLabel} · 1-4 switch tab · Esc back`;}}
   }
 }
 function canAfford(key){
@@ -2859,7 +2920,7 @@ function launchWave(){
   // Reset trap cooldowns
   for(const[k,s] of Object.entries(structures)){if(s.type==='TRAP')s.active=true;}
   // Reset tower cooldowns
-  for(const[k,s] of Object.entries(structures)){if(s.type==='TOWER')s.cooldown=0;}
+  for(const[k,s] of Object.entries(structures)){if(s.type==='TOWER'||s.type==='BALLISTA_TOWER')s.cooldown=0;}
 
   // Snapshot unit XP/rank before combat for aftermath comparison
   game._waveDeaths=[];
@@ -2910,6 +2971,56 @@ function endWave(){
   const bonus=2+game.wave;
   game.resources.wood+=bonus;
   game.resources.food+=bonus;
+
+  // ── BUILDING PRODUCTION: resource buildings produce per wave ──
+  let buildingProduction={food:0,wood:0,stone:0,metal:0,gold:0};
+  for(const[k,s] of Object.entries(structures)){
+    if(s.hp<=0) continue; // destroyed buildings don't produce
+    const def=STRUCTS[s.type];
+    if(def&&def.produces&&def.perWave){
+      buildingProduction[def.produces]+=def.perWave;
+      game.resources[def.produces]+=def.perWave;
+    }
+  }
+  game._buildingProduction=buildingProduction;
+
+  // ── GRANARY / STOREHOUSE UPKEEP MODIFIERS ──
+  // Count active granaries and storehouses per settlement
+  let granaryCount=0, storehouseCount=0;
+  for(const[k,s] of Object.entries(structures)){
+    if(s.hp<=0) continue;
+    if(s.type==='GRANARY') granaryCount++;
+    if(s.type==='STOREHOUSE') storehouseCount++;
+  }
+  // Granary: -20% food upkeep per granary (stacks), Storehouse: -15% all upkeep per storehouse (stacks)
+  const foodUpkeepMult=Math.max(0, 1 - 0.2*granaryCount);
+  const allUpkeepMult=Math.max(0, 1 - 0.15*storehouseCount);
+  game._upkeepModifiers={granaryCount,storehouseCount,foodUpkeepMult,allUpkeepMult};
+
+  // ── BUILDING UPKEEP: deduct per-building costs ──
+  let buildingUpkeepTotal={food:0};
+  let buildingUpkeepShort=0;
+  for(const[k,s] of Object.entries(structures)){
+    if(s.hp<=0) continue;
+    const def=STRUCTS[s.type];
+    if(!def||!def.upkeep) continue;
+    for(const[res,amt] of Object.entries(def.upkeep)){
+      let cost=amt;
+      // Apply modifiers
+      if(res==='food') cost=Math.ceil(cost*foodUpkeepMult*allUpkeepMult);
+      else cost=Math.ceil(cost*allUpkeepMult);
+      if(cost<=0) continue;
+      if(game.resources[res]>=cost){
+        game.resources[res]-=cost;
+        buildingUpkeepTotal[res]=(buildingUpkeepTotal[res]||0)+cost;
+      } else {
+        buildingUpkeepShort+=cost-game.resources[res];
+        buildingUpkeepTotal[res]=(buildingUpkeepTotal[res]||0)+game.resources[res];
+        game.resources[res]=0;
+      }
+    }
+  }
+  game._buildingUpkeepInfo={total:buildingUpkeepTotal,short:buildingUpkeepShort};
 
   // ── CITIZEN UPKEEP: 1 food per 2 citizens ──
   const citizenCount=citizens.length;
@@ -3200,6 +3311,9 @@ function findNearestStructure(ec,er,targetsStructuresOnly){
   }
   return nearest;
 }
+// Track buildings under attack for minimap flash
+let buildingsUnderAttack={};  // key -> timestamp of last hit
+
 function destroyStructure(key){
   const[c,r]=key.split(',').map(Number);
   const s=structures[key];
@@ -3209,6 +3323,22 @@ function destroyStructure(key){
   addParticles(c*TILE_SIZE+TILE_SIZE/2,r*TILE_SIZE+TILE_SIZE/2,'rgba(160,120,80,0.8)',12);
   addParticles(c*TILE_SIZE+TILE_SIZE/2,r*TILE_SIZE+TILE_SIZE/2,'rgba(255,100,50,0.6)',8);
   cam.shake=Math.max(cam.shake,5);
+
+  // Granary destruction: lose 25% stored food
+  if(s.type==='GRANARY'){
+    const loss=Math.floor(game.resources.food*0.25);
+    game.resources.food-=loss;
+    if(loss>0) addFloat(`-${loss} food lost!`,c*TILE_SIZE+TILE_SIZE/2,r*TILE_SIZE-TILE_SIZE,'#ff8844');
+  }
+  // Storehouse destruction: lose 15% of ALL stored resources
+  if(s.type==='STOREHOUSE'){
+    for(const res of ['wood','stone','metal','food','gold']){
+      const loss=Math.floor(game.resources[res]*0.15);
+      game.resources[res]-=loss;
+    }
+    addFloat('Resources lost!',c*TILE_SIZE+TILE_SIZE/2,r*TILE_SIZE-TILE_SIZE,'#ff8844');
+  }
+
   // Remove permanent fog vision from this building (re-fog uncovered tiles)
   if(structures[key].type==='CITIZEN_BLOCK'){
     removeCitizenBlockVision(c,r);
@@ -3219,10 +3349,16 @@ function destroyStructure(key){
     removeStructureVision(c,r);
   }
   delete structures[key];
+  delete buildingsUnderAttack[key];
   // Check lose condition: all settlements destroyed = GAME OVER
   if(s.type==='CITIZEN_BLOCK'&&hqPlaced&&getSettlementCount()===0){
     game.phase='GAMEOVER';showGameOverScreen();
   }
+}
+
+// Mark a building as under attack (for minimap flash)
+function markBuildingAttacked(key){
+  buildingsUnderAttack[key]=performance.now();
 }
 
 function killEnemy(e,i,source,sourceUnit){
@@ -3409,6 +3545,7 @@ function updateEnemies(dt){
         if(onSettlement&&e.attackCooldown<=0){
           const sKey=eCol+','+eRow;
           structures[sKey].hp-=eDef.baseDmg;
+          markBuildingAttacked(sKey);
           e.attackCooldown=e.attackRate;
           cam.shake=Math.max(cam.shake,2);
           addFloat(`-${eDef.baseDmg}`,e.x,e.y-10,'#ff4444');
@@ -3425,6 +3562,7 @@ function updateEnemies(dt){
         // Smash the structure
         const sDmg=eDef.structDmg||20;
         nearStruct.struct.hp-=sDmg;
+        markBuildingAttacked(nearStruct.key);
         e.attackCooldown=e.attackRate;
         const sx=nearStruct.c*TILE_SIZE+TILE_SIZE/2, sy=nearStruct.r*TILE_SIZE+TILE_SIZE/2;
         addFloat(`-${sDmg}`,sx,sy-10,'#ff6644');
@@ -3443,9 +3581,10 @@ function updateEnemies(dt){
     // ── BRUTE: smash walls when path is blocked ──
     if(e.type==='brute'&&e.attackCooldown<=0){
       const nearWall=findNearestStructure(eCol,eRow,false);
-      if(nearWall&&nearWall.dist<=2.25&&(nearWall.struct.type==='WALL'||nearWall.struct.type==='GATE'||nearWall.struct.type==='CITIZEN_BLOCK')){
+      if(nearWall&&nearWall.dist<=2.25&&(nearWall.struct.type==='WALL'||nearWall.struct.type==='PALISADE'||nearWall.struct.type==='GATE'||nearWall.struct.type==='GATEHOUSE'||nearWall.struct.type==='CITIZEN_BLOCK')){
         const sDmg=eDef.dmg*2; // brutes do double damage to structures
         nearWall.struct.hp-=sDmg;
+        markBuildingAttacked(nearWall.key);
         e.attackCooldown=e.attackRate;
         const sx=nearWall.c*TILE_SIZE+TILE_SIZE/2, sy=nearWall.r*TILE_SIZE+TILE_SIZE/2;
         addFloat(`💥 -${sDmg}`,sx,sy-10,'#ff6644');
@@ -3508,6 +3647,7 @@ function updateEnemies(dt){
       if(e.attackCooldown<=0){
         const baseDmg=eDef.baseDmg||e.dmg;
         structures[onSettlementKey].hp-=baseDmg;
+        markBuildingAttacked(onSettlementKey);
         e.attackCooldown=e.attackRate;
         cam.shake=Math.max(cam.shake,4);
         addFloat(`-${baseDmg}`,e.x,e.y-10,'#ff4444');
@@ -3564,13 +3704,14 @@ function updateEnemies(dt){
         addParticles(e.x,e.y,'rgba(180,60,40,0.7)',6);
         if(e.hp<=0){killEnemy(e,i,'trap');continue;}
       }
-      // Gate: damages and slows enemies passing through, gate takes damage too
-      if(struct&&struct.type==='GATE'){
-        e.hp-=STRUCTS.GATE.dmg;
-        e.slowTimer=STRUCTS.GATE.slow;
+      // Gate/Gatehouse: damages and slows enemies passing through, takes damage too
+      if(struct&&(struct.type==='GATE'||struct.type==='GATEHOUSE')){
+        const gDef=STRUCTS[struct.type];
+        e.hp-=gDef.dmg;
+        e.slowTimer=gDef.slow;
         e.hitFlash=0.5;
-        struct.hp-=e.dmg;  // enemy damages the gate back
-        addFloat(`-${STRUCTS.GATE.dmg}`,e.x,e.y-10,'#c8a050');
+        struct.hp-=e.dmg; markBuildingAttacked(sk);
+        addFloat(`-${gDef.dmg}`,e.x,e.y-10,'#c8a050');
         addParticles(e.x,e.y,'rgba(90,75,55,0.6)',4);
         if(struct.hp<=0) destroyStructure(sk);
         if(e.hp<=0){killEnemy(e,i,'gate');continue;}
@@ -3597,13 +3738,14 @@ function updateEnemies(dt){
 function updateTowers(dt){
   if(game.phase!=='COMBAT')return;
   for(const[key,s] of Object.entries(structures)){
-    if(s.type!=='TOWER')continue;
+    if(s.type!=='TOWER'&&s.type!=='BALLISTA_TOWER')continue;
     s.cooldown=Math.max(0,(s.cooldown||0)-dt);
     if(s.cooldown>0)continue;
+    const def=STRUCTS[s.type];
 
     const[c,r]=key.split(',').map(Number);
     const tx=c*TILE_SIZE+TILE_SIZE/2, ty=r*TILE_SIZE+TILE_SIZE/2;
-    const range=STRUCTS.TOWER.range*TILE_SIZE;
+    const range=def.range*TILE_SIZE;
 
     // Find nearest VISIBLE enemy in range (fog-gated targeting)
     let nearest=null, nearDist=Infinity;
@@ -3614,16 +3756,19 @@ function updateTowers(dt){
       if(dSq<range*range&&dSq<nearDist){nearDist=dSq;nearest=e;}
     }
     if(nearest){
-      s.cooldown=STRUCTS.TOWER.rate;
+      s.cooldown=def.rate;
       // Fire projectile
-      projectiles.push({
+      const proj={
         x:tx,y:ty,
         tx:nearest.x, ty:nearest.y,
-        speed:300,
-        dmg:STRUCTS.TOWER.dmg,
+        speed:s.type==='BALLISTA_TOWER'?400:300,
+        dmg:def.dmg,
         target:nearest,
         age:0,
-      });
+      };
+      // Ballista: piercing — bolt continues through first target
+      if(s.type==='BALLISTA_TOWER') proj.piercing=true;
+      projectiles.push(proj);
     }
   }
 }
@@ -3697,6 +3842,27 @@ function updateProjectiles(dt){
               } else {
                 killEnemy(p.target,idx,'tower');
               }
+            }
+          }
+          // Piercing: bolt continues to next enemy in direction of travel
+          if(p.piercing&&!p._pierced){
+            p._pierced=true;
+            const dirX=p.tx-p.x, dirY=p.ty-p.y;
+            const dirLen=Math.sqrt(dirX*dirX+dirY*dirY)||1;
+            const ndx=dirX/dirLen, ndy=dirY/dirLen;
+            let best=null, bestDot=0;
+            for(const e2 of enemies){
+              if(e2===p.target||e2.hp<=0) continue;
+              const ex=e2.x-p.x, ey=e2.y-p.y;
+              const dot=ex*ndx+ey*ndy;
+              if(dot>0&&dot<10*TILE_SIZE){
+                const cross=Math.abs(ex*ndy-ey*ndx);
+                if(cross<TILE_SIZE*1.5&&dot>bestDot){bestDot=dot;best=e2;}
+              }
+            }
+            if(best){
+              p.target=best;p.tx=best.x;p.ty=best.y;p.dmg=Math.ceil(p.dmg*0.7);
+              continue; // don't splice — continue flying
             }
           }
         }
@@ -4346,9 +4512,10 @@ window.addEventListener('keydown',e=>{
     // In build mode: 1/2/3 switch categories, X for demolish, Q/W/E/R/T select items
     if(uiMode==='build'){
       if(e.key==='1'){selectCategory('defense');return;}
-      if(e.key==='2'){selectCategory('army');return;}
-      if(e.key==='3'){selectCategory('economy');return;}
-      if(e.key==='4'&&uiMode==='build'){selectCategory('resources');e.preventDefault();}
+      if(e.key==='2'){selectCategory('economy');return;}
+      if(e.key==='3'){selectCategory('military');return;}
+      if(e.key==='4'&&uiMode==='build'){selectCategory('infrastructure');e.preventDefault();}
+      if(e.key==='5'){selectCategory('army');return;}
       if(e.key==='x'||e.key==='X'){selectCategory('demolish');return;}
       // Q/W/E/R/T pick items within the active category
       const itemBtns=document.querySelectorAll(`.tb-item-group[data-cat="${activeCategory}"] .tool-btn`);
@@ -4439,8 +4606,10 @@ function handleGather(col,row){
 // Check if placing a blocking structure would seal ALL paths to base
 // Uses fast BFS flood-fill outward from base — escapes through first gap
 function wouldSealBase(col,row,structType){
-  // Only walls and towers block pathfinding — gates don't
-  if(structType!=='WALL'&&structType!=='TOWER') return false;
+  // Only path-blocking buildings need seal check (walls, palisades, towers)
+  const sdef=STRUCTS[structType];
+  const blocks=sdef&&(sdef.blocksPath||structType==='TOWER'||structType==='BALLISTA_TOWER'||structType==='WATCHTOWER');
+  if(!blocks) return false;
   const sk=col+','+row;
   // Temporarily add the structure
   structures[sk]={type:structType,hp:1,maxHP:1};
@@ -4473,25 +4642,15 @@ function wouldSealBase(col,row,structType){
 }
 
 function handleBuild(col,row){
-  // Resource buildings: must be placed on matching resource tile inside build radius
-  if(RESOURCE_BUILDINGS[selectedTool]){
-    const rb=RESOURCE_BUILDINGS[selectedTool];
-    const sk2=col+','+row;
-    if(map[col][row]!==rb.requiredTile){addFloat('Needs '+(TILE_NAMES[rb.requiredTile]||'special')+' tile!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
-    if(structures[sk2]){addFloat('Occupied!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
-    if(!isInsideBuildRadius(col,row)){addFloat('Must be inside settlement radius!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
-    const dist2=Math.abs(col-heroCol())+Math.abs(row-heroRow());
-    if(dist2>BUILD_RANGE){addFloat('Too far!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
-    if(!canAfford(selectedTool)){addFloat('Can\'t afford!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
-    for(const[r,a] of Object.entries(rb.cost))game.resources[r]-=a;
-    structures[sk2]={type:selectedTool,hp:rb.hp,maxHP:rb.hp,cooldown:0,active:true,repairsUsed:0};
-    addStructureVision(col,row);
-    addFloat(rb.name+' built!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#7aca7a');
-    return;
-  }
-  }
   const def=STRUCTS[selectedTool];if(!def)return;
   const sk=col+','+row;
+  // Tier-gating: check settlement tier meets building requirement
+  if(selectedTool!=='CITIZEN_BLOCK'){
+    const stier=getSettlementTierAt(col,row);
+    const btier=getBuildingTier(selectedTool);
+    if(btier>0 && stier<btier){addFloat('Needs '+['','Village','Town','City'][btier]+'!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+  }
+  // Tile check: resource buildings no longer need special tiles (placed on grass)
   if(map[col][row]!==T.GRASS||structures[sk]){addFloat('Invalid!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
   // Citizen blocks require VISIBLE tile (must be in active vision)
   if(selectedTool==='CITIZEN_BLOCK'){
@@ -4525,7 +4684,7 @@ function handleBuild(col,row){
   } else {
     for(const[r,a] of Object.entries(def.cost))game.resources[r]-=a;
   }
-  structures[sk]={type:selectedTool,hp:def.hp,maxHP:def.hp,cooldown:0,active:true};
+  structures[sk]={type:selectedTool,hp:def.hp,maxHP:def.hp,cooldown:0,active:true,repairsUsed:0};
   // Settlement: add gatherPriority and tier fields
   if(selectedTool==='CITIZEN_BLOCK'){structures[sk].gatherPriority='all';structures[sk].tier=1;}
   // Permanently reveal fog — citizen blocks use their own smaller radius
@@ -4649,6 +4808,35 @@ function handleDemolish(col,row){
   addFloat(`${def.name} demolished`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ffaa44');
 }
 
+// ─── BUILDING REPAIR (click damaged building in gather mode) ───
+function handleRepair(col,row){
+  const sk=col+','+row;
+  const s=structures[sk];
+  if(!s||s.hp>=s.maxHP) return;
+  const def=STRUCTS[s.type];if(!def) return;
+  const px=col*TILE_SIZE+TILE_SIZE/2, py=row*TILE_SIZE;
+  // Check max repairs
+  const maxR=def.maxRepairs||3;
+  if((s.repairsUsed||0)>=maxR){
+    addFloat('Max repairs reached!',px,py,'#ff6666');return;
+  }
+  // Repair costs full build cost
+  const cost=s.type==='CITIZEN_BLOCK'?getCitizenBlockCost():def.cost;
+  for(const[r,a] of Object.entries(cost)){
+    if((game.resources[r]||0)<a){addFloat("Can't afford repair!",px,py,'#ff6666');return;}
+  }
+  // Must be in hero range
+  const dist=Math.abs(col-heroCol())+Math.abs(row-heroRow());
+  if(dist>BUILD_RANGE){addFloat('Too far!',px,py,'#ff6666');return;}
+  // Deduct cost and repair
+  for(const[r,a] of Object.entries(cost)) game.resources[r]-=a;
+  s.hp=s.maxHP;
+  s.repairsUsed=(s.repairsUsed||0)+1;
+  const remaining=maxR-s.repairsUsed;
+  addFloat(`🔧 Repaired! (${remaining} left)`,px,py,'#7aca7a');
+  addParticles(px,py+TILE_SIZE/2,'rgba(100,200,100,0.6)',6);
+}
+
 document.getElementById('game-canvas').addEventListener('click',e=>{
   // Start screen click
   if(game.phase==='MENU'){dismissStartScreen();return;}
@@ -4688,6 +4876,9 @@ document.getElementById('game-canvas').addEventListener('click',e=>{
     openSettlementPanel(col,row);
     return;
   }
+  // Click on a damaged building in gather mode → repair
+  if(clickedStruct&&selectedTool==='gather'&&clickedStruct.hp<clickedStruct.maxHP){
+    handleRepair(col,row);return;
   }
   if(selectedTool==='gather')handleGather(col,row);
   else if(selectedTool==='DEMOLISH')handleDemolish(col,row);
@@ -4973,9 +5164,190 @@ function drawStructures(){
       ctx.beginPath();ctx.moveTo(sx+z*2,sy+sw*0.33);ctx.lineTo(sx+sw-z*2,sy+sw*0.33);
       ctx.moveTo(sx+z*2,sy+sw*0.66);ctx.lineTo(sx+sw-z*2,sy+sw*0.66);ctx.stroke();
     }
+    // ── PALISADE ──
+    if(s.type==='PALISADE'){
+      // Wooden stakes
+      ctx.strokeStyle='rgba(160,130,70,0.7)';ctx.lineWidth=z*2;
+      const stakes=5;
+      for(let i=1;i<=stakes;i++){
+        const px=sx+sw*i/(stakes+1);
+        ctx.beginPath();ctx.moveTo(px,sy+sw*0.85);ctx.lineTo(px,sy+sw*0.15);ctx.stroke();
+        // Pointed tip
+        ctx.fillStyle='rgba(140,110,50,0.8)';
+        ctx.beginPath();ctx.moveTo(px-2*z,sy+sw*0.18);ctx.lineTo(px,sy+sw*0.08);ctx.lineTo(px+2*z,sy+sw*0.18);ctx.fill();
+      }
+      // Horizontal brace
+      ctx.strokeStyle='rgba(130,100,50,0.5)';ctx.lineWidth=z;
+      ctx.beginPath();ctx.moveTo(sx+sw*0.1,sy+sw*0.55);ctx.lineTo(sx+sw*0.9,sy+sw*0.55);ctx.stroke();
+    }
+    // ── WATCHTOWER ──
+    if(s.type==='WATCHTOWER'){
+      // Tall wooden platform
+      ctx.fillStyle='rgba(120,100,70,0.6)';ctx.fillRect(sx+sw*0.3,sy+sw*0.1,sw*0.4,sw*0.5);
+      // Support legs
+      ctx.strokeStyle='rgba(100,80,50,0.7)';ctx.lineWidth=z*2;
+      ctx.beginPath();ctx.moveTo(sx+sw*0.35,sy+sw*0.6);ctx.lineTo(sx+sw*0.2,sy+sw*0.9);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(sx+sw*0.65,sy+sw*0.6);ctx.lineTo(sx+sw*0.8,sy+sw*0.9);ctx.stroke();
+      // Platform/roof
+      ctx.fillStyle='rgba(140,120,80,0.8)';ctx.fillRect(sx+sw*0.2,sy+sw*0.08,sw*0.6,sw*0.12);
+      // Eye symbol
+      ctx.fillStyle='rgba(200,220,255,0.5)';ctx.font=`${Math.max(8,sw*0.3)|0}px system-ui`;
+      ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('👁',sx+sw/2,sy+sw*0.35);
+      // Vision range during BUILD
+      if(game.phase==='BUILD'){
+        ctx.strokeStyle='rgba(180,200,255,0.08)';ctx.lineWidth=z;
+        ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,8*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+      }
+    }
+    // ── BALLISTA TOWER ──
+    if(s.type==='BALLISTA_TOWER'){
+      // Stone base
+      ctx.fillStyle='rgba(90,85,75,0.5)';ctx.fillRect(sx+sw*0.15,sy+sw*0.5,sw*0.7,sw*0.4);
+      // Tower body
+      ctx.fillStyle='rgba(80,75,65,0.7)';ctx.fillRect(sx+sw*0.25,sy+sw*0.15,sw*0.5,sw*0.45);
+      // Ballista crossbow
+      ctx.strokeStyle='rgba(160,130,80,0.8)';ctx.lineWidth=z*2;
+      ctx.beginPath();ctx.moveTo(sx+sw*0.2,sy+sw*0.35);ctx.lineTo(sx+sw*0.5,sy+sw*0.25);ctx.lineTo(sx+sw*0.8,sy+sw*0.35);ctx.stroke();
+      // Bolt
+      ctx.strokeStyle='rgba(200,200,180,0.6)';ctx.lineWidth=z;
+      ctx.beginPath();ctx.moveTo(sx+sw*0.5,sy+sw*0.25);ctx.lineTo(sx+sw*0.5,sy+sw*0.08);ctx.stroke();
+      // Range ring during combat
+      if(game.phase==='COMBAT'){
+        ctx.strokeStyle='rgba(200,160,100,0.06)';ctx.lineWidth=z;
+        ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,10*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+      }
+    }
+    // ── GATEHOUSE ──
+    if(s.type==='GATEHOUSE'){
+      // Larger gate archway
+      ctx.fillStyle='rgba(100,85,65,0.7)';
+      ctx.fillRect(sx+sw*0.05,sy+sw*0.1,sw*0.3,sw*0.8);
+      ctx.fillRect(sx+sw*0.65,sy+sw*0.1,sw*0.3,sw*0.8);
+      // Archway
+      ctx.fillStyle='rgba(40,35,30,0.6)';
+      ctx.beginPath();ctx.moveTo(sx+sw*0.35,sy+sw*0.9);ctx.lineTo(sx+sw*0.35,sy+sw*0.35);
+      ctx.quadraticCurveTo(sx+sw*0.5,sy+sw*0.15,sx+sw*0.65,sy+sw*0.35);
+      ctx.lineTo(sx+sw*0.65,sy+sw*0.9);ctx.fill();
+      // Portcullis bars
+      ctx.strokeStyle='rgba(180,150,80,0.5)';ctx.lineWidth=z;
+      for(let b=0;b<3;b++){const bx=sx+sw*(0.4+b*0.1);ctx.beginPath();ctx.moveTo(bx,sy+sw*0.35);ctx.lineTo(bx,sy+sw*0.9);ctx.stroke();}
+      // Crenellations on top
+      for(let i=0;i<4;i++){
+        ctx.fillStyle='rgba(110,95,70,0.8)';
+        ctx.fillRect(sx+sw*(0.1+i*0.25),sy+sw*0.05,sw*0.12,sw*0.1);
+      }
+    }
+    // ── GRANARY ──
+    if(s.type==='GRANARY'){
+      // Round storage building
+      ctx.fillStyle='rgba(180,160,90,0.7)';
+      ctx.beginPath();ctx.arc(sx+sw/2,sy+sw*0.55,sw*0.35,0,Math.PI*2);ctx.fill();
+      // Conical roof
+      ctx.fillStyle='rgba(160,130,60,0.8)';
+      ctx.beginPath();ctx.moveTo(sx+sw*0.15,sy+sw*0.4);ctx.lineTo(sx+sw*0.5,sy+sw*0.1);ctx.lineTo(sx+sw*0.85,sy+sw*0.4);ctx.fill();
+      // Door
+      ctx.fillStyle='rgba(100,80,40,0.6)';ctx.fillRect(sx+sw*0.4,sy+sw*0.6,sw*0.2,sw*0.3);
+      // Wheat icon
+      ctx.fillStyle='rgba(220,200,80,0.6)';ctx.font=`${Math.max(7,sw*0.22)|0}px system-ui`;
+      ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('🌾',sx+sw/2,sy+sw*0.35);
+    }
+    // ── STOREHOUSE ──
+    if(s.type==='STOREHOUSE'){
+      // Large rectangular building
+      ctx.fillStyle='rgba(160,140,100,0.7)';ctx.fillRect(sx+sw*0.1,sy+sw*0.3,sw*0.8,sw*0.6);
+      // Roof
+      ctx.fillStyle='rgba(140,110,70,0.8)';
+      ctx.beginPath();ctx.moveTo(sx+sw*0.05,sy+sw*0.35);ctx.lineTo(sx+sw*0.5,sy+sw*0.1);ctx.lineTo(sx+sw*0.95,sy+sw*0.35);ctx.fill();
+      // Crate details
+      ctx.strokeStyle='rgba(120,100,60,0.5)';ctx.lineWidth=z;
+      ctx.strokeRect(sx+sw*0.2,sy+sw*0.5,sw*0.25,sw*0.25);
+      ctx.strokeRect(sx+sw*0.55,sy+sw*0.45,sw*0.25,sw*0.3);
+      // Door
+      ctx.fillStyle='rgba(90,70,40,0.6)';ctx.fillRect(sx+sw*0.42,sy+sw*0.6,sw*0.16,sw*0.3);
+    }
+    // ── FORGE ──
+    if(s.type==='FORGE'){
+      // Brick building
+      ctx.fillStyle='rgba(140,80,50,0.7)';ctx.fillRect(sx+sw*0.1,sy+sw*0.3,sw*0.8,sw*0.6);
+      // Chimney
+      ctx.fillStyle='rgba(120,70,40,0.8)';ctx.fillRect(sx+sw*0.7,sy+sw*0.05,sw*0.2,sw*0.35);
+      // Smoke
+      ctx.fillStyle='rgba(100,100,100,0.2)';
+      ctx.beginPath();ctx.arc(sx+sw*0.8,sy+sw*0.02,sw*0.08,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.arc(sx+sw*0.75,sy-sw*0.05,sw*0.06,0,Math.PI*2);ctx.fill();
+      // Anvil
+      ctx.fillStyle='rgba(60,60,70,0.7)';
+      ctx.fillRect(sx+sw*0.25,sy+sw*0.55,sw*0.3,sw*0.1);
+      ctx.fillRect(sx+sw*0.3,sy+sw*0.5,sw*0.2,sw*0.05);
+      // Hammer icon
+      ctx.fillStyle='rgba(200,180,140,0.5)';ctx.font=`${Math.max(7,sw*0.22)|0}px system-ui`;
+      ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⚒',sx+sw*0.4,sy+sw*0.4);
+    }
+    // ── MINT ──
+    if(s.type==='MINT'){
+      // Ornate building
+      ctx.fillStyle='rgba(170,150,80,0.7)';ctx.fillRect(sx+sw*0.1,sy+sw*0.3,sw*0.8,sw*0.6);
+      // Pillars
+      ctx.fillStyle='rgba(200,180,100,0.6)';
+      ctx.fillRect(sx+sw*0.12,sy+sw*0.25,sw*0.08,sw*0.65);
+      ctx.fillRect(sx+sw*0.8,sy+sw*0.25,sw*0.08,sw*0.65);
+      // Pediment roof
+      ctx.fillStyle='rgba(210,190,80,0.8)';
+      ctx.beginPath();ctx.moveTo(sx+sw*0.05,sy+sw*0.3);ctx.lineTo(sx+sw*0.5,sy+sw*0.1);ctx.lineTo(sx+sw*0.95,sy+sw*0.3);ctx.fill();
+      // Gold coin symbol
+      ctx.fillStyle='rgba(255,215,0,0.6)';ctx.beginPath();ctx.arc(sx+sw/2,sy+sw*0.55,sw*0.15,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(180,150,0,0.8)';ctx.font=`bold ${Math.max(6,sw*0.2)|0}px system-ui`;
+      ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('$',sx+sw/2,sy+sw*0.56);
+    }
+    // ── BARRACKS ──
+    if(s.type==='BARRACKS'){
+      // Military building
+      ctx.fillStyle='rgba(130,80,75,0.7)';ctx.fillRect(sx+sw*0.1,sy+sw*0.25,sw*0.8,sw*0.65);
+      // Roof
+      ctx.fillStyle='rgba(110,60,55,0.8)';ctx.fillRect(sx+sw*0.05,sy+sw*0.2,sw*0.9,sw*0.1);
+      // Door (wide)
+      ctx.fillStyle='rgba(80,50,40,0.6)';ctx.fillRect(sx+sw*0.35,sy+sw*0.55,sw*0.3,sw*0.35);
+      // Sword emblem
+      ctx.strokeStyle='rgba(200,200,200,0.5)';ctx.lineWidth=z*2;
+      ctx.beginPath();ctx.moveTo(sx+sw*0.5,sy+sw*0.3);ctx.lineTo(sx+sw*0.5,sy+sw*0.52);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(sx+sw*0.4,sy+sw*0.38);ctx.lineTo(sx+sw*0.6,sy+sw*0.38);ctx.stroke();
+    }
+    // ── ARCHERY RANGE ──
+    if(s.type==='ARCHERY_RANGE'){
+      // Open-sided training ground
+      ctx.fillStyle='rgba(120,100,70,0.5)';ctx.fillRect(sx+sw*0.05,sy+sw*0.6,sw*0.9,sw*0.3);
+      // Target
+      ctx.fillStyle='rgba(200,60,40,0.6)';ctx.beginPath();ctx.arc(sx+sw*0.8,sy+sw*0.45,sw*0.12,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,0.6)';ctx.beginPath();ctx.arc(sx+sw*0.8,sy+sw*0.45,sw*0.07,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(200,60,40,0.8)';ctx.beginPath();ctx.arc(sx+sw*0.8,sy+sw*0.45,sw*0.03,0,Math.PI*2);ctx.fill();
+      // Roof posts
+      ctx.strokeStyle='rgba(100,80,50,0.7)';ctx.lineWidth=z*2;
+      ctx.beginPath();ctx.moveTo(sx+sw*0.1,sy+sw*0.6);ctx.lineTo(sx+sw*0.1,sy+sw*0.3);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(sx+sw*0.5,sy+sw*0.6);ctx.lineTo(sx+sw*0.5,sy+sw*0.3);ctx.stroke();
+      // Lean-to roof
+      ctx.strokeStyle='rgba(120,95,55,0.6)';ctx.lineWidth=z*1.5;
+      ctx.beginPath();ctx.moveTo(sx+sw*0.05,sy+sw*0.28);ctx.lineTo(sx+sw*0.55,sy+sw*0.28);ctx.stroke();
+    }
+    // ── STABLE ──
+    if(s.type==='STABLE'){
+      // Barn-like building
+      ctx.fillStyle='rgba(130,110,80,0.7)';ctx.fillRect(sx+sw*0.08,sy+sw*0.35,sw*0.84,sw*0.55);
+      // Gambrel roof
+      ctx.fillStyle='rgba(140,90,50,0.8)';
+      ctx.beginPath();
+      ctx.moveTo(sx+sw*0.05,sy+sw*0.4);ctx.lineTo(sx+sw*0.25,sy+sw*0.2);
+      ctx.lineTo(sx+sw*0.5,sy+sw*0.1);ctx.lineTo(sx+sw*0.75,sy+sw*0.2);
+      ctx.lineTo(sx+sw*0.95,sy+sw*0.4);ctx.fill();
+      // Stall door
+      ctx.fillStyle='rgba(90,70,40,0.6)';ctx.fillRect(sx+sw*0.3,sy+sw*0.55,sw*0.18,sw*0.35);
+      ctx.fillRect(sx+sw*0.55,sy+sw*0.55,sw*0.18,sw*0.35);
+      // Horse head silhouette
+      ctx.fillStyle='rgba(80,60,40,0.4)';ctx.font=`${Math.max(7,sw*0.22)|0}px system-ui`;
+      ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('🐴',sx+sw/2,sy+sw*0.3);
+    }
     // ── RESOURCE BUILDINGS ──
-    if(RESOURCE_BUILDINGS[s.type]){
-      const rb=RESOURCE_BUILDINGS[s.type];
+    if(isResourceBuilding(s.type)){
+      const rb=STRUCTS[s.type];
       const isDestroyed=s.hp<=0;
       // Unique visuals per resource building type
       if(s.type==='FARM'){
@@ -5078,7 +5450,7 @@ function drawStructures(){
         ctx.fillStyle='rgba(180,80,30,0.8)';ctx.fill();
         ctx.fillStyle='rgba(255,255,255,0.9)';ctx.font=`bold ${Math.max(5,sw*0.15)|0}px system-ui`;
         ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillText((rb.maxRepairs-s.repairsUsed)+'',rpX,rpY);
+        ctx.fillText(((def.maxRepairs||3)-(s.repairsUsed||0))+'',rpX,rpY);
       }
     }
     if(s.type==='CITIZEN_BLOCK'){
@@ -5207,17 +5579,42 @@ function drawStructures(){
       }
     }
 
-    // Letter label (skip for citizen blocks — they use the house icon)
-    if(s.type!=='CITIZEN_BLOCK'&&s.type!=='HOUSE'&&!RESOURCE_BUILDINGS[s.type]){
+    // Letter label — only for simple structures without custom renderers
+    const hasCustomRenderer={'CITIZEN_BLOCK':1,'HOUSE':1,'PALISADE':1,'WATCHTOWER':1,'BALLISTA_TOWER':1,'GATEHOUSE':1,'GRANARY':1,'STOREHOUSE':1,'FORGE':1,'MINT':1,'BARRACKS':1,'ARCHERY_RANGE':1,'STABLE':1};
+    if(!hasCustomRenderer[s.type]&&!isResourceBuilding(s.type)){
       ctx.fillStyle='rgba(255,255,255,0.35)';ctx.font=`bold ${12*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText(def.letter,sx+sw/2,sy+sw/2);
+    }
+
+    // Repair count badge for ALL buildings (not just resource) — bottom-left
+    if((s.repairsUsed||0)>0&&!isResourceBuilding(s.type)){
+      const rpX=sx+sw*0.15,rpY=sy+sw*0.85,rpR=sw*0.14;
+      ctx.beginPath();ctx.arc(rpX,rpY,rpR,0,Math.PI*2);
+      ctx.fillStyle='rgba(180,80,30,0.8)';ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,0.9)';ctx.font=`bold ${Math.max(5,sw*0.15)|0}px system-ui`;
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(((def.maxRepairs||3)-(s.repairsUsed||0))+'',rpX,rpY);
     }
 
     // HP bar if damaged
     if(s.hp<s.maxHP){
       const bw=sw*0.8,bh=3*z;
       ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(sx+(sw-bw)/2,sy-bh-z*2,bw,bh);
-      ctx.fillStyle='#4a4';ctx.fillRect(sx+(sw-bw)/2,sy-bh-z*2,bw*(s.hp/s.maxHP),bh);
+      const hpRatio=s.hp/s.maxHP;
+      ctx.fillStyle=hpRatio>0.5?'#4a4':hpRatio>0.25?'#da4':'#d44';
+      ctx.fillRect(sx+(sw-bw)/2,sy-bh-z*2,bw*hpRatio,bh);
+    }
+
+    // Under-attack flash (red pulse overlay)
+    if(buildingsUnderAttack[key]){
+      const elapsed=(performance.now()-buildingsUnderAttack[key])/1000;
+      if(elapsed<2){
+        const flash=Math.sin(elapsed*8)*0.3+0.1;
+        ctx.fillStyle=`rgba(255,40,20,${Math.max(0,flash)})`;
+        ctx.fillRect(sx,sy,sw,sw);
+      } else {
+        delete buildingsUnderAttack[key];
+      }
     }
 
     ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.lineWidth=z;ctx.strokeRect(sx+z,sy+z,sw-2*z,sw-2*z);
@@ -5785,11 +6182,17 @@ function drawGhostPreview(){
   if(isUnit){
     valid=map[col][row]===T.GRASS&&!structures[sk]&&!unitAt(col,row)&&(Math.abs(col-heroCol())+Math.abs(row-heroRow()))<=BUILD_RANGE&&canAfford(selectedTool);
   } else {
-    const isRes=!!RESOURCE_BUILDINGS[selectedTool];
-    const tileOk=isRes?map[col][row]===RESOURCE_BUILDINGS[selectedTool].requiredTile:(map[col][row]===T.GRASS);
+    const isRes=isResourceBuilding(selectedTool);
+    const tileOk=isRes?map[col][row]===T.GRASS:(map[col][row]===T.GRASS);
     const basicValid=tileOk&&!structures[sk]&&(Math.abs(col-heroCol())+Math.abs(row-heroRow()))<=BUILD_RANGE&&canAfford(selectedTool);
     const radiusOk=selectedTool==='CITIZEN_BLOCK'||isInsideBuildRadius(col,row);
     valid=basicValid&&!cachedWouldSeal(col,row,selectedTool)&&radiusOk;
+    // Tier-gating check for ghost
+    if(valid&&selectedTool!=='CITIZEN_BLOCK'){
+      const stier=getSettlementTierAt(col,row);
+      const btier=getBuildingTier(selectedTool);
+      if(btier>0&&stier<btier)valid=false;
+    }
     // House limit check for ghost
     if(valid&&selectedTool==='HOUSE'){
       const ns=settlementInRadius(col,row);
@@ -5923,7 +6326,13 @@ function drawHoverTile(){
     } else if(hs.type==='HOUSE'){
       label='House ('+hs.hp+'/'+hs.maxHP+' HP) · +1 citizen · 🍖1 food/wave';
     } else {
-      label=STRUCTS[hs.type].name;
+      const hdef=STRUCTS[hs.type];
+      label=`${hdef.name} (${hs.hp}/${hs.maxHP} HP)`;
+      if(hdef.produces) label+=` · +${hdef.perWave} ${hdef.produces}/wave`;
+      if(hdef.upkeep){label+=` · 🍖${Object.entries(hdef.upkeep).map(([r,a])=>a+' '+r).join(', ')}/wave`;}
+      if(hdef.tier>1) label+=` [T${hdef.tier}]`;
+      const rep=hs.repairs||0;const mr=hdef.maxRepairs||3;
+      if(hs.hp<hs.maxHP) label+=` · 🔧${rep}/${mr}`;
     }
   }
   else label=TILE_NAMES[tile];
@@ -6117,6 +6526,18 @@ function drawMinimap(){
       if(structures[k].type!=='CITIZEN_BLOCK') continue;
       const[sc,sr]=k.split(',').map(Number);
       mmCtx.fillStyle='rgba(220,180,60,0.9)';mmCtx.fillRect(sc*sx-1,sr*sy-1,Math.max(sx+2,3),Math.max(sy+2,3));
+    }
+  }
+  // Buildings under attack — flashing red on minimap
+  const now=performance.now();
+  for(const[key,hitTime] of Object.entries(buildingsUnderAttack)){
+    const elapsed=(now-hitTime)/1000;
+    if(elapsed>2){delete buildingsUnderAttack[key];continue;}
+    const flash=Math.sin(elapsed*10)*0.5+0.5;
+    if(flash>0.3){
+      const[bc,br]=key.split(',').map(Number);
+      mmCtx.fillStyle=`rgba(255,50,30,${flash*0.9})`;
+      mmCtx.fillRect(bc*sx-2,br*sy-2,Math.max(sx+4,5),Math.max(sy+4,5));
     }
   }
   // Hero
