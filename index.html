@@ -2073,15 +2073,10 @@ function createCitizen(col, row, blockKey) {
 }
 function spawnCitizensForBlock(blockCol,blockRow){
   const blockKey=blockCol+','+blockRow;
-  // Find 2 nearby walkable tiles to spawn citizens
-  const offsets=[[0,1],[1,0],[0,-1],[-1,0],[1,1],[-1,1],[1,-1],[-1,-1]];
+  // Spawn citizens directly on the settlement tile
   let spawned=0;
-  for(const[dc,dr] of offsets){
-    if(spawned>=CITIZENS_PER_BLOCK) break;
-    const sc=blockCol+dc, sr=blockRow+dr;
-    if(sc<0||sc>=COLS||sr<0||sr>=ROWS) continue;
-    if(map[sc][sr]!==T.GRASS||structures[sc+','+sr]) continue;
-    citizens.push(createCitizen(sc, sr, blockKey));
+  for(let s=0;s<CITIZENS_PER_BLOCK;s++){
+    citizens.push(createCitizen(blockCol, blockRow, blockKey));
     spawned++;
   }
   // Float to show citizens spawned
@@ -2133,7 +2128,8 @@ function triggerCitizenRecall(){
         if(d<bestAdjDist){bestAdjDist=d;bestAdj={c:ac,r:ar};}
       }
       if(bestAdj){
-        const path=citizenFindPath(cit.col,cit.row,bestAdj.c,bestAdj.r);
+        // Use full A* pathfinding (no distance cap) so citizens always find their way home
+        const path=findPath(cit.col,cit.row,bestAdj.c,bestAdj.r,true);
         if(path&&path.length>1){
           cit.path=path; cit.pathIdx=1;
           cit.state='recalling';
@@ -3215,6 +3211,8 @@ function updateWavePreview(dt){
 
 function startWave(){
   if(game.phase!=='BUILD')return;
+  // Always trigger citizen recall before marking exposed — even if SPACE pressed early
+  triggerCitizenRecall();
   game.buildTimer=-1;
   document.getElementById('build-timer').style.display='none';
   document.getElementById('build-timer').classList.remove('urgent');
@@ -3600,6 +3598,7 @@ function closeAftermath(){
     citizens[i].idleTimer=0;
   }
   // Respawn dead citizens — check each settlement and top up to tier citizen count
+  // Spawn directly on the settlement tile itself
   let respawned=0;
   for(const k in structures){
     if(structures[k].type!=='CITIZEN_BLOCK') continue;
@@ -3609,19 +3608,9 @@ function closeAftermath(){
     if(existing<tierCitizens){
       const[bc,br]=k.split(',').map(Number);
       const needed=tierCitizens-existing;
-      const offsets=[[0,1],[1,0],[0,-1],[-1,0],[1,1],[-1,1],[1,-1],[-1,-1]];
-      let spawned=0;
-      for(const[dc,dr] of offsets){
-        if(spawned>=needed) break;
-        const sc=bc+dc, sr=br+dr;
-        if(sc<0||sc>=COLS||sr<0||sr>=ROWS) continue;
-        if(map[sc][sr]!==T.GRASS||structures[sc+','+sr]) continue;
-        // Check no citizen already at this position
-        let occupied=false;
-        for(const c of citizens){if(c.col===sc&&c.row===sr){occupied=true;break;}}
-        if(occupied) continue;
-        citizens.push(createCitizen(sc, sr, k));
-        spawned++; respawned++;
+      for(let s=0;s<needed;s++){
+        citizens.push(createCitizen(bc, br, k));
+        respawned++;
       }
     }
   }
