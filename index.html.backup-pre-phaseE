@@ -441,7 +441,7 @@
       <button class="tb-cat" data-cat="economy" onclick="selectCategory('economy')"><span class="tool-key">2</span> 🌾 Economy</button>
       <button class="tb-cat" data-cat="military" onclick="selectCategory('military')"><span class="tool-key">3</span> ⚔ Military</button>
       <button class="tb-cat" data-cat="infrastructure" onclick="selectCategory('infrastructure')"><span class="tool-key">4</span> 🏘 Infrastructure</button>
-      <!-- Army button removed — units train from military buildings -->
+      <button class="tb-cat" data-cat="army" onclick="selectCategory('army')"><span class="tool-key">5</span> 🗡 Army</button>
       <button class="tb-cat tb-cat-demolish" data-cat="demolish" onclick="selectCategory('demolish')"><span class="tool-key">X</span> 🗑 Demolish</button>
       <button class="tb-back" onclick="toggleBuildMode(false)"><span class="tool-key">Esc</span> ← Back</button>
     </div>
@@ -477,7 +477,14 @@
         <button class="tool-btn citizen" data-tool="CITIZEN_BLOCK" onclick="selectTool('CITIZEN_BLOCK')"><span class="tool-key">Q</span> Settlement <span class="tool-cost" id="citizen-cost">50W 30S</span></button>
         <button class="tool-btn" data-tool="HOUSE" onclick="selectTool('HOUSE')"><span class="tool-key">W</span> House <span class="tool-cost">5W 2S</span></button>
       </div>
-      <!-- ARMY tab removed — units now train from Barracks/Archery/Stable -->
+      <!-- ARMY: Unit recruitment (kept from Phase B) -->
+      <div class="tb-item-group" data-cat="army" style="display:none">
+        <button class="tool-btn recruit" data-tool="MILITIA" onclick="selectTool('MILITIA')"><span class="tool-key">Q</span> Militia <span class="tool-cost">5W 2F</span></button>
+        <button class="tool-btn recruit" data-tool="ARCHER" onclick="selectTool('ARCHER')"><span class="tool-key">W</span> Archer <span class="tool-cost">5W 3M</span></button>
+        <button class="tool-btn recruit" data-tool="SPEARMAN" onclick="selectTool('SPEARMAN')"><span class="tool-key">E</span> Spear <span class="tool-cost">4W 3F</span></button>
+        <button class="tool-btn recruit" data-tool="CAVALRY" onclick="selectTool('CAVALRY')"><span class="tool-key">R</span> Cavalry <span class="tool-cost">8W 5F</span></button>
+        <button class="tool-btn recruit" data-tool="CATAPULT" onclick="selectTool('CATAPULT')"><span class="tool-key">T</span> Catapult <span class="tool-cost">12W 5S 4M</span></button>
+      </div>
       <!-- DEMOLISH -->
       <div class="tb-item-group" data-cat="demolish" style="display:none">
         <button class="tool-btn tb-demolish-btn" data-tool="DEMOLISH" onclick="selectTool('DEMOLISH')"><span class="tool-key">Q</span> Demolish — Click structure to remove</button>
@@ -487,7 +494,7 @@
   <!-- COMBAT HUD (replaces toolbar during combat) -->
   <div id="tb-combat-mode" class="tb-mode" style="display:none">
     <span class="tb-combat-label">⚔️ COMBAT</span>
-    <span class="tb-combat-hint">WASD move · Click select · Right-click move units · Shift+click multi-select · Tab cycle</span>
+    <span class="tb-combat-hint">WASD move · Click to attack · Tab cycle units</span>
   </div>
 </div>
 <div id="settlement-panel">
@@ -1118,19 +1125,15 @@ function updateTrainingQueues(dt) {
       if (spawn) {
         // Create the unit
         const newUnit = {
-          type: current.type,
-          x: spawn.col * TILE_SIZE + TILE_SIZE / 2,
-          y: spawn.row * TILE_SIZE + TILE_SIZE / 2,
+          type: current.type, col: spawn.col, row: spawn.row,
           hp: ud.hp, maxHP: ud.hp, dmg: ud.dmg, range: ud.range,
-          speed: ud.speed || 2.5,
           xp: 0, _lastRank: 0, morale: MORALE_MAX, state: 'idle',
           moraleState: 'normal', fleeTimer: 0, _fleeMoveTimer: 0,
-          atkCooldown: 0, path: null, pathIdx: 0,
-          targetX: null, targetY: null, engageTarget: null,
+          atkCooldown: 0,
         };
         units.push(newUnit);
-        addFloat(ud.name + ' trained!', newUnit.x, newUnit.y - TILE_SIZE, '#8ac0e8');
-        addParticles(newUnit.x, newUnit.y, 'rgba(' + ud.color[0] + ',' + ud.color[1] + ',' + ud.color[2] + ',0.7)', 8);
+        addFloat(ud.name + ' trained!', spawn.col * TILE_SIZE + TILE_SIZE / 2, spawn.row * TILE_SIZE, '#8ac0e8');
+        addParticles(spawn.col * TILE_SIZE + TILE_SIZE / 2, spawn.row * TILE_SIZE + TILE_SIZE / 2, 'rgba(' + ud.color[0] + ',' + ud.color[1] + ',' + ud.color[2] + ',0.7)', 8);
         s.trainingQueue.shift();
         s.trainProgress = 0;
         // Update panel if this building is selected
@@ -1194,15 +1197,15 @@ function getHouseLimitForSettlement(settKey) {
 
 // ─── UNIT DEFINITIONS ───
 const UNIT_TYPES={
-  MILITIA:{name:'Militia',hp:22,dmg:4,range:1.2,speed:3,cost:{wood:5,food:2},upkeep:1,
+  MILITIA:{name:'Militia',hp:22,dmg:4,range:1.2,speed:0,cost:{wood:5,food:2},upkeep:1,
     color:[90,140,200],letter:'M',desc:'Sturdy melee fighter',melee:true,trainTime:10},
-  ARCHER:{name:'Archer',hp:12,dmg:5,range:4,speed:2.5,cost:{wood:5,metal:3},upkeep:1,
+  ARCHER:{name:'Archer',hp:12,dmg:5,range:4,speed:0,cost:{wood:5,metal:3},upkeep:1,
     color:[60,160,90],letter:'A',desc:'Ranged attacker',melee:false,trainTime:20},
-  SPEARMAN:{name:'Spearman',hp:16,dmg:3,range:1.5,speed:2.5,cost:{wood:4,food:3},upkeep:1,
+  SPEARMAN:{name:'Spearman',hp:16,dmg:3,range:1.5,speed:0,cost:{wood:4,food:3},upkeep:1,
     color:[180,160,60],letter:'S',desc:'Anti-fast, zone of control',melee:true,trainTime:15},
-  CAVALRY:{name:'Cavalry',hp:18,dmg:6,range:1.3,speed:6,cost:{wood:8,food:5},upkeep:2,
+  CAVALRY:{name:'Cavalry',hp:18,dmg:6,range:1.3,speed:4.5,cost:{wood:8,food:5},upkeep:2,
     color:[160,100,60],letter:'C',desc:'Mobile patrol, charge bonus',melee:true,trainTime:30},
-  CATAPULT:{name:'Catapult',hp:8,dmg:12,range:6,speed:1.5,cost:{wood:12,stone:5,metal:4},upkeep:2,
+  CATAPULT:{name:'Catapult',hp:8,dmg:12,range:6,speed:0,cost:{wood:12,stone:5,metal:4},upkeep:2,
     color:[120,90,70],letter:'K',desc:'AOE siege, slow fire, fragile',melee:false,trainTime:40},
 };
 const RANK_NAMES=['Recruit','Veteran','Elite','Champion'];
@@ -1258,7 +1261,7 @@ function checkRankUp(u){
 
 // Show rank-up effects
 function showRankUpEffect(u,newRank){
-  const ux=u.x, uy=u.y;
+  const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
   const def=UNIT_TYPES[u.type];
   const rankName=RANK_NAMES[newRank];
   addFloat(`⭐ ${rankName}!`,ux,uy-TILE_SIZE*1.5,'#ffd700');
@@ -2654,23 +2657,7 @@ const hero={
 const structures={}; // "c,r" => { type, hp, maxHP, cooldown }
 const enemies=[];    // array of enemy objects
 const projectiles=[]; // tower projectiles
-const units=[];      // army units: {type, x, y, hp, maxHP, dmg, range, speed, xp, morale, state, path, pathIdx, targetX, targetY}
-
-// ─── UNIT SELECTION STATE ───
-let selectedUnits = [];        // currently selected unit references
-let controlGroups = [null, null, null]; // Ctrl+1/2/3 saved groups
-let boxSelectStart = null;     // {sx, sy} screen coords for box select
-let boxSelectEnd = null;       // {sx, sy} screen coords
-let isBoxSelecting = false;
-const UNIT_RADIUS = 0.4;      // collision radius in tiles
-const UNIT_CIRCLE_PX = 12;    // visual radius in pixels (at zoom 1)
-
-// ─── FORMATION DRAG STATE ───
-let formDragStart = null;   // {wx, wy} world coords where right-click began
-let formDragEnd = null;     // {wx, wy} world coords of current drag position
-let isFormDragging = false;  // true when right-click drag exceeds threshold
-let formGhosts = [];         // [{x,y}] preview positions during drag
-const FORM_DRAG_THRESHOLD = 8; // pixels before counted as drag (not click)
+const units=[];      // placed army units: {type, col, row, hp, maxHP, dmg, range, xp, morale, state}
 
 
 // ═══════════════════════════════════════════════════════
@@ -2897,13 +2884,13 @@ function selectTool(tool){
 function updateHint(){
   const h=document.getElementById('hint');
   if(game.phase==='MENU')return;
-  // Unit movement (works during BUILD too for move orders)
-  if(game.phase==='BUILD') updateUnits(dt);
   if(game.phase==='COMBAT'){h.textContent='⚔️ COMBAT — WASD move · Click attack · Tab cycle units · Defend your settlements!';return;}
   if(uiMode==='gather')h.textContent='WASD move · Click resources to gather · Click Settlement for priority · B build mode · SPACE start wave';
   else if(uiMode==='build'){
     if(selectedTool==='DEMOLISH')h.textContent='Click a structure to demolish · Esc back to gather';
-    // Units now train from barracks — no manual placement
+    else if(cavalryPendingUnit){h.textContent='Click a patrol target (2-12 tiles from cavalry) · Esc to cancel';return;}
+    else if(selectedTool==='CAVALRY'){const u=UNIT_TYPES.CAVALRY;h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave), then click patrol target · Esc back`;}
+    else if(UNIT_TYPES[selectedTool]){const u=UNIT_TYPES[selectedTool];h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave) · 1/2/3 switch tab · Esc back`;}
     else if(selectedTool==='CITIZEN_BLOCK'){const c=getCitizenBlockCost();h.textContent=`Click VISIBLE tile to place Settlement (${c.wood}W ${c.stone}S) · Esc back`;}
     else if(selectedTool==='HOUSE'){h.textContent='Click inside settlement radius to place House (5W 2S, +1 citizen) · Esc back';}
     else{const s=STRUCTS[selectedTool];if(s){const tierLabel=s.tier>0?` [T${s.tier}]`:'';h.textContent=`Click to place ${s.name}${tierLabel} · 1-4 switch tab · Esc back`;}}
@@ -3781,7 +3768,7 @@ function updateEnemyArcherRanged(e,eCol,eRow,dt){
   // Check player units
   for(const u of units){
     if(u.hp<=0)continue;
-  const ux=u.x, uy=u.y;
+    const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
     const dx=ux-e.x, dy=uy-e.y, dSq=dx*dx+dy*dy;
     if(dSq<=rangePx*rangePx&&dSq<targetDist){targetDist=dSq;targetX=ux;targetY=uy;target=u;}
   }
@@ -4193,204 +4180,196 @@ const SPEAR_SLOW_DUR=0.6;    // slow duration applied by zone
 const CAVALRY_CHARGE_MULT=2.5; // first-hit charge bonus multiplier
 const CATAPULT_AOE_RADIUS=1.5; // AOE radius in tiles (covers ~3×3)
 
-// ─── Helper: find nearest visible enemy within range (px) from world position ───
-function findNearestEnemy(wx, wy, rangePx) {
-  let nearest = null, nearDist = Infinity;
-  for (const e of enemies) {
-    const ec = Math.floor(e.x / TILE_SIZE), er = Math.floor(e.y / TILE_SIZE);
-    if (ec < 0 || ec >= COLS || er < 0 || er >= ROWS || fogMap[ec][er] !== FOG_VISIBLE) continue;
-    const dx = e.x - wx, dy = e.y - wy, dSq = dx * dx + dy * dy;
-    if (dSq <= rangePx * rangePx && dSq < nearDist) { nearDist = dSq; nearest = e; }
-  }
-  return nearest;
-}
+function updateUnits(dt){
+  if(game.phase!=='COMBAT')return;
 
-// ─── Unit pathfinding: A* then smooth walk ───
-function unitPathTo(u, goalX, goalY) {
-  const sc = Math.floor(u.x / TILE_SIZE), sr = Math.floor(u.y / TILE_SIZE);
-  const gc = Math.floor(goalX / TILE_SIZE), gr = Math.floor(goalY / TILE_SIZE);
-  if (sc === gc && sr === gr) { u.path = null; u.targetX = goalX; u.targetY = goalY; return; }
-  const path = findPath(sc, sr, gc, gr);
-  if (path && path.length > 0) {
-    u.path = path;
-    u.pathIdx = 0;
-    u.targetX = goalX;
-    u.targetY = goalY;
-    u.state = 'moving';
-  }
-}
-
-// ─── Collision: push units apart if overlapping ───
-function resolveUnitCollisions() {
-  const minDist = TILE_SIZE * UNIT_RADIUS * 2;
-  const minDistSq = minDist * minDist;
-  for (let i = 0; i < units.length; i++) {
-    for (let j = i + 1; j < units.length; j++) {
-      const a = units[i], b = units[j];
-      const dx = b.x - a.x, dy = b.y - a.y;
-      const dSq = dx * dx + dy * dy;
-      if (dSq < minDistSq && dSq > 0.01) {
-        const dist = Math.sqrt(dSq);
-        const overlap = (minDist - dist) / 2;
-        const nx = dx / dist, ny = dy / dist;
-        a.x -= nx * overlap; a.y -= ny * overlap;
-        b.x += nx * overlap; b.y += ny * overlap;
-        // Clamp to map
-        a.x = Math.max(TILE_SIZE / 2, Math.min(MAP_PX_W - TILE_SIZE / 2, a.x));
-        a.y = Math.max(TILE_SIZE / 2, Math.min(MAP_PX_H - TILE_SIZE / 2, a.y));
-        b.x = Math.max(TILE_SIZE / 2, Math.min(MAP_PX_W - TILE_SIZE / 2, b.x));
-        b.y = Math.max(TILE_SIZE / 2, Math.min(MAP_PX_H - TILE_SIZE / 2, b.y));
-      }
-    }
-  }
-}
-
-function updateUnits(dt) {
-  // Movement works in both BUILD and COMBAT; combat only in COMBAT
-  for (let i = units.length - 1; i >= 0; i--) {
-    const u = units[i];
-    if (u.hp <= 0) continue;
-    u.atkCooldown = Math.max(0, u.atkCooldown - dt);
+  for(let i=units.length-1;i>=0;i--){
+    const u=units[i];
+    u.atkCooldown=Math.max(0,u.atkCooldown-dt);
 
     // ── BROKEN MORALE: skip combat AI (handled by updateFleeingUnits) ──
-    if (u.moraleState === 'broken') continue;
+    if(u.moraleState==='broken')continue;
 
-    // ── MOVEMENT along path ──
-    if (u.path && u.pathIdx < u.path.length) {
-      const wp = u.path[u.pathIdx];
-      const tx = wp.c * TILE_SIZE + TILE_SIZE / 2, ty = wp.r * TILE_SIZE + TILE_SIZE / 2;
-      const dx = tx - u.x, dy = ty - u.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const speed = (u.speed || 2.5) * TILE_SIZE * dt;
-      if (dist <= speed) {
-        u.x = tx; u.y = ty;
-        u.pathIdx++;
-        if (u.pathIdx >= u.path.length) {
-          // Arrived at final waypoint — go to exact target
-          if (u.targetX !== null) { u.x = u.targetX; u.y = u.targetY; }
-          u.path = null; u.state = 'idle';
+    // ── CAVALRY PATROL MOVEMENT ──
+    if(u.type==='CAVALRY'&&u.patrol&&u.patrol.length===2){
+      const wp=u.patrol[u.patrolIdx||0];
+      const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
+      const tx=wp.col*TILE_SIZE+TILE_SIZE/2, ty=wp.row*TILE_SIZE+TILE_SIZE/2;
+      const ddx=tx-ux, ddy=ty-uy, dist=Math.sqrt(ddx*ddx+ddy*ddy);
+
+      // Check for VISIBLE enemies to attack while moving (fog-gated)
+      const rangePx=u.range*TILE_SIZE;
+      let nearest=null, nearDist=Infinity;
+      for(const e of enemies){
+        const ec=Math.floor(e.x/TILE_SIZE), er=Math.floor(e.y/TILE_SIZE);
+        if(ec<0||ec>=COLS||er<0||er>=ROWS||fogMap[ec][er]!==FOG_VISIBLE) continue;
+        const edx=e.x-ux, edy=e.y-uy, edSq=edx*edx+edy*edy;
+        if(edSq<=rangePx*rangePx&&edSq<nearDist){nearDist=edSq;nearest=e;}
+      }
+      if(nearest&&u.atkCooldown<=0){
+        cavalryAttack(u, nearest);
+      }
+
+      // Move toward waypoint
+      if(dist>TILE_SIZE*0.5){
+        const speed=UNIT_TYPES.CAVALRY.speed*TILE_SIZE*dt;
+        const ncol=Math.floor((ux+ddx/dist*speed)/TILE_SIZE);
+        const nrow=Math.floor((uy+ddy/dist*speed)/TILE_SIZE);
+        // Only move if target tile is walkable and not occupied by another unit
+        if(ncol>=0&&ncol<COLS&&nrow>=0&&nrow<ROWS&&
+           map[ncol][nrow]!==T.WATER&&!structures[ncol+','+nrow]&&
+           (ncol===u.col&&nrow===u.row||!unitAt(ncol,nrow))){
+          u.col=ncol; u.row=nrow;
         }
       } else {
-        u.x += dx / dist * speed;
-        u.y += dy / dist * speed;
+        // Reached waypoint — switch to other
+        u.patrolIdx=(u.patrolIdx||0)===0?1:0;
+        u.hasCharged=false; // reset charge for next pass
+      }
+      continue; // cavalry handled, skip normal attack logic
+    }
+
+    if(u.atkCooldown>0)continue;
+
+    const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
+    const rangePx=u.range*TILE_SIZE;
+
+    // Find nearest VISIBLE enemy in range (fog-gated targeting)
+    let nearest=null, nearDist=Infinity;
+    for(const e of enemies){
+      const ec=Math.floor(e.x/TILE_SIZE), er=Math.floor(e.y/TILE_SIZE);
+      if(ec<0||ec>=COLS||er<0||er>=ROWS||fogMap[ec][er]!==FOG_VISIBLE) continue;
+      const dx=e.x-ux, dy=e.y-uy, dSq=dx*dx+dy*dy;
+      if(dSq<=rangePx*rangePx&&dSq<nearDist){nearDist=dSq;nearest=e;}
+    }
+    if(!nearest)continue;
+
+    if(u.type==='MILITIA'){
+      // Melee attack — immediate damage
+      u.atkCooldown=getUnitAtkRate(u);
+      let dmg=u.dmg;
+      // Rank 3: Last Stand — 50% DR when below 30% HP
+      const isLastStand=unitRank(u.xp)>=3&&u.hp/u.maxHP<0.3;
+      nearest.hp-=dmg;
+      nearest.hitFlash=1;
+      addFloat(`${isLastStand?'🛡️ ':''}−${dmg}`,nearest.x,nearest.y-14,'#7ab0d8');
+      addParticles(nearest.x,nearest.y,'rgba(90,140,200,0.7)',4);
+      if(nearest.hp<=0){
+        const idx=enemies.indexOf(nearest);
+        if(idx>=0){killEnemy(nearest,idx,'unit',u);u.xp+=10;}
+      } else {
+        u.xp+=1;
+        const nr=checkRankUp(u); if(nr>0) showRankUpEffect(u,nr);
       }
     }
-
-    // ── COMBAT: auto-engage nearest enemy in range ──
-    if (game.phase !== 'COMBAT') continue;
-    if (u.atkCooldown > 0) continue;
-
-    const rangePx = u.range * TILE_SIZE;
-    const nearest = findNearestEnemy(u.x, u.y, rangePx);
-    if (!nearest) continue;
-
-    if (u.type === 'MILITIA') {
-      u.atkCooldown = getUnitAtkRate(u);
-      let dmg = u.dmg;
-      const isLastStand = unitRank(u.xp) >= 3 && u.hp / u.maxHP < 0.3;
-      nearest.hp -= dmg;
-      nearest.hitFlash = 1;
-      addFloat(`${isLastStand ? '🛡️ ' : ''}−${dmg}`, nearest.x, nearest.y - 14, '#7ab0d8');
-      addParticles(nearest.x, nearest.y, 'rgba(90,140,200,0.7)', 4);
-      if (nearest.hp <= 0) {
-        const idx = enemies.indexOf(nearest);
-        if (idx >= 0) { killEnemy(nearest, idx, 'unit', u); u.xp += 10; }
-      } else { u.xp += 1; const nr = checkRankUp(u); if (nr > 0) showRankUpEffect(u, nr); }
-    }
-    else if (u.type === 'ARCHER') {
-      u.atkCooldown = getUnitAtkRate(u);
+    else if(u.type==='ARCHER'){
+      // Ranged attack — fire a projectile
+      u.atkCooldown=getUnitAtkRate(u);
       projectiles.push({
-        x: u.x, y: u.y, tx: nearest.x, ty: nearest.y,
-        speed: 250, dmg: u.dmg, target: nearest, age: 0,
-        source: 'unit', sourceUnit: u,
-        color: 'rgba(80,180,110,0.9)', trailColor: 'rgba(80,180,110,0.3)',
+        x:ux, y:uy, tx:nearest.x, ty:nearest.y,
+        speed:250, dmg:u.dmg, target:nearest, age:0,
+        source:'unit', sourceUnit:u,
+        color:'rgba(80,180,110,0.9)', trailColor:'rgba(80,180,110,0.3)',
       });
-      if (unitRank(u.xp) >= 3) {
-        const spread = TILE_SIZE * 0.3;
+      // Rank 3: Double Shot — fire a second arrow at slight offset
+      if(unitRank(u.xp)>=3){
+        const spread=TILE_SIZE*0.3;
         projectiles.push({
-          x: u.x + spread * (Math.random() - 0.5), y: u.y + spread * (Math.random() - 0.5),
-          tx: nearest.x, ty: nearest.y,
-          speed: 260, dmg: u.dmg, target: nearest, age: 0,
-          source: 'unit', sourceUnit: u,
-          color: 'rgba(120,220,140,0.9)', trailColor: 'rgba(120,220,140,0.3)',
+          x:ux+spread*(Math.random()-0.5), y:uy+spread*(Math.random()-0.5),
+          tx:nearest.x, ty:nearest.y,
+          speed:260, dmg:u.dmg, target:nearest, age:0,
+          source:'unit', sourceUnit:u,
+          color:'rgba(120,220,140,0.9)', trailColor:'rgba(120,220,140,0.3)',
         });
       }
-      u.xp += 1; const nr = checkRankUp(u); if (nr > 0) showRankUpEffect(u, nr);
+      u.xp+=1;
+      const nr=checkRankUp(u); if(nr>0) showRankUpEffect(u,nr);
     }
-    else if (u.type === 'SPEARMAN') {
-      u.atkCooldown = getUnitAtkRate(u);
-      const isChampion = unitRank(u.xp) >= 3;
-      const isFast = ENEMY_TYPES[nearest.type] && ENEMY_TYPES[nearest.type].speed >= 5;
-      const fastMult = isChampion ? 3.0 : SPEAR_FAST_MULT;
-      const dmg = isFast ? Math.round(u.dmg * fastMult) : u.dmg;
-      nearest.hp -= dmg; nearest.hitFlash = 1;
-      const impaleLabel = isChampion && isFast ? '⚔️ IMPALE ' : '';
-      addFloat(`${impaleLabel}${isFast ? '🔱 ' : ''}−${dmg}`, nearest.x, nearest.y - 14, isFast ? '#ffe040' : '#c0b040');
-      addParticles(nearest.x, nearest.y, isFast ? 'rgba(255,220,60,0.8)' : 'rgba(180,160,60,0.7)', isFast ? 6 : 4);
-      const zocMult = isChampion ? 1.5 : 1;
-      const zocPx = SPEAR_SLOW_RADIUS * TILE_SIZE * zocMult;
-      for (const e of enemies) {
-        const edx = e.x - u.x, edy = e.y - u.y;
-        if (edx * edx + edy * edy <= zocPx * zocPx) {
-          e.slowTimer = Math.max(e.slowTimer, isChampion ? SPEAR_SLOW_DUR * 1.5 : SPEAR_SLOW_DUR);
+    else if(u.type==='SPEARMAN'){
+      // Spear thrust — 2× damage vs fast enemies (runners), zone of control slow
+      // Rank 3: Impale — 3× vs fast, extended zone radius
+      u.atkCooldown=getUnitAtkRate(u);
+      const isChampion=unitRank(u.xp)>=3;
+      const isFast=ENEMY_TYPES[nearest.type]&&ENEMY_TYPES[nearest.type].speed>=5;
+      const fastMult=isChampion?3.0:SPEAR_FAST_MULT;
+      const dmg=isFast?Math.round(u.dmg*fastMult):u.dmg;
+      nearest.hp-=dmg;
+      nearest.hitFlash=1;
+      const impaleLabel=isChampion&&isFast?'⚔️ IMPALE ':'';
+      addFloat(`${impaleLabel}${isFast?'🔱 ':''}−${dmg}`,nearest.x,nearest.y-14,isFast?'#ffe040':'#c0b040');
+      addParticles(nearest.x,nearest.y,isFast?'rgba(255,220,60,0.8)':'rgba(180,160,60,0.7)',isFast?6:4);
+      // Zone of control: slow all enemies within radius (Champion: 50% larger zone)
+      const zocMult=isChampion?1.5:1;
+      const zocPx=SPEAR_SLOW_RADIUS*TILE_SIZE*zocMult;
+      for(const e of enemies){
+        const edx=e.x-ux, edy=e.y-uy;
+        if(edx*edx+edy*edy<=zocPx*zocPx){
+          e.slowTimer=Math.max(e.slowTimer,isChampion?SPEAR_SLOW_DUR*1.5:SPEAR_SLOW_DUR);
         }
       }
-      if (nearest.hp <= 0) {
-        const idx = enemies.indexOf(nearest);
-        if (idx >= 0) { killEnemy(nearest, idx, 'unit', u); u.xp += 10; }
-      } else { u.xp += isFast ? 2 : 1; const nr = checkRankUp(u); if (nr > 0) showRankUpEffect(u, nr); }
+      if(nearest.hp<=0){
+        const idx=enemies.indexOf(nearest);
+        if(idx>=0){killEnemy(nearest,idx,'unit',u);u.xp+=10;}
+      } else {
+        u.xp+=isFast?2:1;
+        const nr=checkRankUp(u); if(nr>0) showRankUpEffect(u,nr);
+      }
     }
-    else if (u.type === 'CAVALRY') {
+    else if(u.type==='CAVALRY'){
+      // Stationary cavalry — uses shared cavalryAttack()
       cavalryAttack(u, nearest);
     }
-    else if (u.type === 'CATAPULT') {
-      const isFirestorm = unitRank(u.xp) >= 3;
-      u.atkCooldown = getUnitAtkRate(u);
+    else if(u.type==='CATAPULT'){
+      // Catapult — AOE boulder, slow fire, area damage
+      // Rank 3: Firestorm — 2× AOE radius, fire-colored projectile
+      const isFirestorm=unitRank(u.xp)>=3;
+      u.atkCooldown=getUnitAtkRate(u);
       projectiles.push({
-        x: u.x, y: u.y, tx: nearest.x, ty: nearest.y,
-        speed: 160, dmg: u.dmg, target: nearest, age: 0,
-        source: 'unit', sourceUnit: u, aoe: true,
-        aoeMultiplier: isFirestorm ? 2.0 : 1.0,
-        color: isFirestorm ? 'rgba(255,120,30,0.95)' : 'rgba(160,120,80,0.95)',
-        trailColor: isFirestorm ? 'rgba(255,80,20,0.5)' : 'rgba(140,100,60,0.4)',
-        size: isFirestorm ? 7 : 5,
+        x:ux, y:uy, tx:nearest.x, ty:nearest.y,
+        speed:160, dmg:u.dmg, target:nearest, age:0,
+        source:'unit', sourceUnit:u, aoe:true,
+        aoeMultiplier:isFirestorm?2.0:1.0,
+        color:isFirestorm?'rgba(255,120,30,0.95)':'rgba(160,120,80,0.95)',
+        trailColor:isFirestorm?'rgba(255,80,20,0.5)':'rgba(140,100,60,0.4)',
+        size:isFirestorm?7:5,
       });
-      u.xp += 2; const nr = checkRankUp(u); if (nr > 0) showRankUpEffect(u, nr);
+      u.xp+=2;
+      const nr=checkRankUp(u); if(nr>0) showRankUpEffect(u,nr);
     }
   }
 
   // ── SPEARMAN ZONE OF CONTROL: passive slow aura each frame ──
-  for (const u of units) {
-    if (u.type !== 'SPEARMAN' || u.hp <= 0) continue;
-    const zocPx = SPEAR_SLOW_RADIUS * TILE_SIZE;
-    for (const e of enemies) {
-      const dx = e.x - u.x, dy = e.y - u.y;
-      if (dx * dx + dy * dy <= zocPx * zocPx) {
-        e.slowTimer = Math.max(e.slowTimer, 0.2);
+  for(const u of units){
+    if(u.type!=='SPEARMAN'||u.hp<=0)continue;
+    const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
+    const zocPx=SPEAR_SLOW_RADIUS*TILE_SIZE;
+    for(const e of enemies){
+      const dx=e.x-ux, dy=e.y-uy;
+      if(dx*dx+dy*dy<=zocPx*zocPx){
+        e.slowTimer=Math.max(e.slowTimer,0.2); // constant light slow while in zone
       }
     }
   }
-
-  // ── Resolve collisions between friendly units ──
-  resolveUnitCollisions();
 }
+
 // ─── ENEMY RETARGETING: Enemies attack units — prefer isolated targets ───
-function findAdjacentUnit(eCol, eRow) {
-  // Find player units within melee range of enemy position
-  const ex = eCol * TILE_SIZE + TILE_SIZE / 2, ey = eRow * TILE_SIZE + TILE_SIZE / 2;
-  const meleeDist = TILE_SIZE * 1.8; // slightly wider than 1 tile
-  let candidates = [];
-  for (const u of units) {
-    if (u.hp <= 0) continue;
-    const dx = u.x - ex, dy = u.y - ey;
-    if (dx * dx + dy * dy <= meleeDist * meleeDist) candidates.push(u);
+function findAdjacentUnit(eCol,eRow){
+  // Check 4 adjacent tiles for a unit
+  const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
+  let candidates=[];
+  for(const[dc,dr] of dirs){
+    const nc=eCol+dc, nr=eRow+dr;
+    const u=unitAt(nc,nr);
+    if(u&&u.hp>0)candidates.push(u);
   }
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => {
-    const aF = unitInFormation(a) ? 1 : 0;
-    const bF = unitInFormation(b) ? 1 : 0;
-    if (aF !== bF) return aF - bF;
-    return a.hp - b.hp;
+  if(candidates.length===0)return null;
+
+  // Prefer isolated units (not in formation) — sort by: !formation first, then lowest HP
+  candidates.sort((a,b)=>{
+    const aF=unitInFormation(a)?1:0;
+    const bF=unitInFormation(b)?1:0;
+    if(aF!==bF)return aF-bF;  // isolated units first
+    return a.hp-b.hp;           // then lowest HP
   });
   return candidates[0];
 }
@@ -4403,7 +4382,7 @@ function damageUnit(u,dmg,e){
   if(isLastStand) dr*=0.5;
   const effectiveDmg=Math.max(1,Math.round(dmg*dr));
   u.hp=Math.max(0,u.hp-effectiveDmg);
-  const ux=u.x, uy=u.y;
+  const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
   const drText=isLastStand?`-${effectiveDmg} 🛡️💀`:u.shieldWall?`-${effectiveDmg} 🛡️`:`-${effectiveDmg}`;
   addFloat(drText,ux,uy-14,isLastStand?'#ffd700':u.shieldWall?'#6aa0d8':'#ff6644');
   addParticles(ux,uy,'rgba(255,80,60,0.6)',3);
@@ -4452,7 +4431,7 @@ function damageUnit(u,dmg,e){
       game._waveDeaths.push({type:u.type,rank,xp:u.xp,name:def.name});
 
       // Morale hit — veterans dying hurts more
-      onFriendlyDeath(Math.floor(u.x/TILE_SIZE),Math.floor(u.y/TILE_SIZE),rank);
+      onFriendlyDeath(u.col,u.row,rank);
       units.splice(idx,1);
     }
   }
@@ -4507,7 +4486,7 @@ function applyStarvation(unfedUnits){
   for(const u of unfedUnits){
     u.morale=Math.max(0,u.morale-STARVATION_MORALE_PENALTY);
     u._starving=true; // flag for UI display
-    const ux=u.x, uy=u.y;
+    const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
     addFloat('🍖 Starving! -30 Morale',ux,uy-TILE_SIZE,'#e87a6a');
     addParticles(ux,uy,'rgba(220,100,60,0.6)',4);
   }
@@ -4557,76 +4536,6 @@ const MORALE_RECOVER_ENEMY_KILL=15; // instant boost when enemy dies within 4 ti
 const MORALE_RECOVER_FORMATION=6;   // in any formation (shield wall / protected fire)
 const HERO_MORALE_AURA=3;          // hero aura radius in tiles
 
-// ─── FORMATION POSITION CALCULATOR ───
-// Given drag start/end and unit count, returns [{x,y}] positions
-function calcFormationPositions(sx, sy, ex, ey, count) {
-  if (count === 0) return [];
-  const ddx = ex - sx, ddy = ey - sy;
-  const dragLen = Math.sqrt(ddx * ddx + ddy * ddy);
-  const spacing = TILE_SIZE * UNIT_RADIUS * 2.5;
-
-  // Perpendicular direction (formation line is perpendicular to drag)
-  let perpX, perpY;
-  if (dragLen > 1) {
-    perpX = -ddy / dragLen;
-    perpY = ddx / dragLen;
-  } else {
-    perpX = 1; perpY = 0;
-  }
-  // Forward direction (along drag)
-  const fwdX = dragLen > 1 ? ddx / dragLen : 0;
-  const fwdY = dragLen > 1 ? ddy / dragLen : 1;
-
-  const threshold = count * spacing;
-  const positions = [];
-
-  if (dragLen > threshold * 0.8) {
-    // ── SINGLE LINE: perpendicular to drag direction ──
-    const lineLen = (count - 1) * spacing;
-    const startOff = -lineLen / 2;
-    for (let i = 0; i < count; i++) {
-      positions.push({
-        x: ex + perpX * (startOff + i * spacing),
-        y: ey + perpY * (startOff + i * spacing)
-      });
-    }
-  } else if (dragLen > threshold * 0.4) {
-    // ── DOUBLE LINE: front + back rank ──
-    const frontCount = Math.ceil(count / 2);
-    const backCount = count - frontCount;
-    const rowGap = spacing * 1.2;
-    // Front row (at drag end)
-    const fLineLen = (frontCount - 1) * spacing;
-    for (let i = 0; i < frontCount; i++) {
-      positions.push({
-        x: ex + perpX * (-fLineLen / 2 + i * spacing),
-        y: ey + perpY * (-fLineLen / 2 + i * spacing)
-      });
-    }
-    // Back row (behind front, away from drag direction)
-    const bLineLen = (backCount - 1) * spacing;
-    for (let i = 0; i < backCount; i++) {
-      positions.push({
-        x: ex - fwdX * rowGap + perpX * (-bLineLen / 2 + i * spacing),
-        y: ey - fwdY * rowGap + perpY * (-bLineLen / 2 + i * spacing)
-      });
-    }
-  } else {
-    // ── BLOB: cluster at click point (current behavior) ──
-    const cols = Math.ceil(Math.sqrt(count));
-    for (let i = 0; i < count; i++) {
-      const oc = (i % cols) - Math.floor(cols / 2);
-      const or2 = Math.floor(i / cols) - Math.floor(Math.ceil(count / cols) / 2);
-      positions.push({
-        x: ex + oc * spacing,
-        y: ey + or2 * spacing
-      });
-    }
-  }
-  return positions;
-}
-
-
 // Is this unit type considered melee for formation purposes?
 function isMeleeUnit(type){ return UNIT_TYPES[type]&&UNIT_TYPES[type].melee; }
 // Is this unit type ranged (benefits from Protected Fire)?
@@ -4635,31 +4544,72 @@ function isRangedUnit(type){ return type==='ARCHER'||type==='CATAPULT'; }
 // Check all formation bonuses — called once per frame (in update)
 function checkFormations(){
   // Reset all formation flags
-  for(const u of units){ u.shieldWall=false; u.protectedFire=false; }
-
-  // Shield Wall: 3+ melee units within 3 tiles of each other (distance-based)
-  const meleeUnits = units.filter(u => isMeleeUnit(u.type) && u.hp > 0);
-  const SHIELD_DIST = 3 * TILE_SIZE;
-  for (const u of meleeUnits) {
-    let nearby = 0;
-    for (const v of meleeUnits) {
-      if (v === u) continue;
-      const dx = v.x - u.x, dy = v.y - u.y;
-      if (dx * dx + dy * dy <= SHIELD_DIST * SHIELD_DIST) nearby++;
-    }
-    if (nearby >= SHIELD_WALL_MIN - 1) u.shieldWall = true;
+  for(const u of units){
+    u.shieldWall=false;
+    u.protectedFire=false;
   }
 
-  // Protected Fire: ranged unit within 2 tiles behind a melee unit (distance-based)
-  const PROT_DIST = 2 * TILE_SIZE;
-  for (const u of units) {
-    if (!isRangedUnit(u.type) || u.hp <= 0) continue;
-    for (const m of meleeUnits) {
-      const dx = m.x - u.x, dy = m.y - u.y;
-      if (dx * dx + dy * dy <= PROT_DIST * PROT_DIST) { u.protectedFire = true; break; }
+  // Gather melee units (Militia, Spearman, Cavalry) by grid position
+  const meleeByCol={}, meleeByRow={};
+  const meleeGrid={};
+  for(const u of units){
+    if(isMeleeUnit(u.type)&&u.hp>0){
+      const ck='c'+u.col, rk='r'+u.row;
+      (meleeByCol[ck]=meleeByCol[ck]||[]).push(u);
+      (meleeByRow[rk]=meleeByRow[rk]||[]).push(u);
+      meleeGrid[u.col+','+u.row]=u;
+    }
+  }
+
+  // ── SHIELD WALL: 3+ melee in a horizontal or vertical line ──
+  // Check columns (vertical lines)
+  for(const ck in meleeByCol){
+    const col=meleeByCol[ck];
+    if(col.length<SHIELD_WALL_MIN)continue;
+    col.sort((a,b)=>a.row-b.row);
+    let run=[col[0]];
+    for(let i=1;i<col.length;i++){
+      if(col[i].row===run[run.length-1].row+1){
+        run.push(col[i]);
+      } else {
+        if(run.length>=SHIELD_WALL_MIN)run.forEach(u=>u.shieldWall=true);
+        run=[col[i]];
+      }
+    }
+    if(run.length>=SHIELD_WALL_MIN)run.forEach(u=>u.shieldWall=true);
+  }
+  // Check rows (horizontal lines)
+  for(const rk in meleeByRow){
+    const row=meleeByRow[rk];
+    if(row.length<SHIELD_WALL_MIN)continue;
+    row.sort((a,b)=>a.col-b.col);
+    let run=[row[0]];
+    for(let i=1;i<row.length;i++){
+      if(row[i].col===run[run.length-1].col+1){
+        run.push(row[i]);
+      } else {
+        if(run.length>=SHIELD_WALL_MIN)run.forEach(u=>u.shieldWall=true);
+        run=[row[i]];
+      }
+    }
+    if(run.length>=SHIELD_WALL_MIN)run.forEach(u=>u.shieldWall=true);
+  }
+
+  // ── PROTECTED FIRE: ranged unit (Archer/Catapult) adjacent to a melee unit ──
+  for(const u of units){
+    if(!isRangedUnit(u.type)||u.hp<=0)continue;
+    const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
+    for(const[dc,dr] of dirs){
+      const mk=(u.col+dc)+','+(u.row+dr);
+      if(meleeGrid[mk]){
+        u.protectedFire=true;
+        break;
+      }
     }
   }
 }
+
+// Check if a unit is in ANY formation (for enemy targeting AI)
 function unitInFormation(u){return u.shieldWall||u.protectedFire;}
 
 // Get the effective attack rate for a unit (factoring Protected Fire bonus)
@@ -4692,7 +4642,7 @@ function updateMorale(dt){
         // Rally: restore morale to 30, back to idle
         u.morale=MORALE_RALLY_VALUE;
         u.moraleState='normal';
-        const ux=u.x, uy=u.y;
+        const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
         addFloat('Rallied!',ux,uy-TILE_SIZE,'#7aca7a');
         addParticles(ux,uy,'rgba(120,200,120,0.7)',6);
       }
@@ -4700,7 +4650,7 @@ function updateMorale(dt){
     }
 
     let drainRate=0, recoverRate=0;
-    const ux=u.x, uy=u.y;
+    const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
 
     // ── DRAIN: surrounded by enemies (3+ within 2 tiles) ──
     let nearbyEnemies=0;
@@ -4722,7 +4672,7 @@ function updateMorale(dt){
     }
 
     // ── RECOVER: near base (4 tiles from center) ──
-    const baseDist=Math.abs(Math.floor(u.x/TILE_SIZE)-BASE_CX)+Math.abs(Math.floor(u.y/TILE_SIZE)-BASE_CY);
+    const baseDist=Math.abs(u.col-BASE_CX)+Math.abs(u.row-BASE_CY);
     if(baseDist<=4)recoverRate+=MORALE_RECOVER_NEAR_BASE;
 
     // ── RECOVER: in formation ──
@@ -4736,7 +4686,7 @@ function updateMorale(dt){
     if(u.morale<=MORALE_BREAK_THRESHOLD&&u.moraleState!=='broken'){
       u.moraleState='broken';
       u.fleeTimer=MORALE_FLEE_DURATION;
-      const uxx=u.x, uyy=u.y;
+      const uxx=u.col*TILE_SIZE+TILE_SIZE/2, uyy=u.row*TILE_SIZE+TILE_SIZE/2;
       addFloat('🏳️ BROKEN!',uxx,uyy-TILE_SIZE,'#ff6644');
       addParticles(uxx,uyy,'rgba(255,200,100,0.6)',8);
     }
@@ -4749,7 +4699,7 @@ function onFriendlyDeath(deadCol,deadRow,deadRank){
   const rankMult=1+(deadRank||0)*0.3; // Veteran death: 1.3×, Elite: 1.6×, Champion: 1.9×
   for(const u of units){
     if(u.hp<=0||u.moraleState==='broken')continue;
-    const dist=Math.abs(Math.floor(u.x/TILE_SIZE)-deadCol)+Math.abs(Math.floor(u.y/TILE_SIZE)-deadRow);
+    const dist=Math.abs(u.col-deadCol)+Math.abs(u.row-deadRow);
     if(dist<=3){
       u.morale=Math.max(0,u.morale-MORALE_DRAIN_NEARBY_DEATH*rankMult);
     }
@@ -4760,7 +4710,7 @@ function onFriendlyDeath(deadCol,deadRow,deadRank){
 function onEnemyKillMoraleBoost(ex,ey){
   for(const u of units){
     if(u.hp<=0)continue;
-    const ux=u.x, uy=u.y;
+    const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
     const dx=ex-ux, dy=ey-uy;
     if(dx*dx+dy*dy<=(4*TILE_SIZE)*(4*TILE_SIZE)){
       u.morale=Math.min(MORALE_MAX,u.morale+MORALE_RECOVER_ENEMY_KILL);
@@ -4770,18 +4720,30 @@ function onEnemyKillMoraleBoost(ex,ey){
 
 // Flee AI: move broken unit toward base
 function updateFleeingUnits(dt){
-  const basePx = BASE_CX * TILE_SIZE + TILE_SIZE / 2;
-  const basePy = BASE_CY * TILE_SIZE + TILE_SIZE / 2;
   for(const u of units){
-    if(u.moraleState!=='broken'||u.hp<=0) continue;
-    const dx=basePx-u.x, dy=basePy-u.y;
-    const dist=Math.sqrt(dx*dx+dy*dy);
-    if(dist<=TILE_SIZE*2) continue;
+    if(u.moraleState!=='broken'||u.hp<=0)continue;
+    // Move toward base center (1 tile per second, slow panicked shuffle)
+    const ux=u.col, uy=u.row;
+    const dx=BASE_CX-ux, dy=BASE_CY-uy;
+    const adx=Math.abs(dx), ady=Math.abs(dy);
+    if(adx+ady<=2)continue; // already near base, huddle
+
+    // Move once per ~0.5s (using a sub-timer trick with fleeTimer)
     u._fleeMoveTimer=(u._fleeMoveTimer||0)+dt;
-    if(u._fleeMoveTimer<0.5) continue;
+    if(u._fleeMoveTimer<0.5)continue;
     u._fleeMoveTimer=0;
-    const speed=TILE_SIZE; // 1 tile per flee step
-    u.x+=dx/dist*speed; u.y+=dy/dist*speed;
+
+    // Try to move one tile toward base
+    let nc=ux, nr=uy;
+    if(adx>=ady) nc+=dx>0?1:-1;
+    else nr+=dy>0?1:-1;
+
+    // Validate move
+    if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS&&
+       map[nc][nr]!==T.WATER&&!structures[nc+','+nr]&&
+       (nc===ux&&nr===uy||!unitAt(nc,nr))){
+      u.col=nc; u.row=nr;
+    }
   }
 }
 
@@ -4816,41 +4778,13 @@ window.addEventListener('keydown',e=>{
       toggleBuildMode(uiMode!=='build');
       return;
     }
-    // A: select all units
-    if((e.key==='a'||e.key==='A')&&e.ctrlKey){
-      e.preventDefault();
-      selectedUnits=units.filter(u=>u.hp>0);
-      return;
-    }
     // G: back to gather
     if(e.key==='g'||e.key==='G'){toggleBuildMode(false);return;}
     // Escape: if in build mode go back to gather, else cancel placement
     if(e.key==='Escape'){
-      selectedUnits = [];
-    // cavalryPendingUnit removed
+      cavalryPendingUnit=null;
       if(uiMode==='build'){toggleBuildMode(false);}
       else{selectTool('gather');}
-      return;
-    }
-    // ── CONTROL GROUPS: Ctrl+1/2/3 to save, 1/2/3 to recall (in gather mode) ──
-    if(e.ctrlKey&&(e.key==='1'||e.key==='2'||e.key==='3')){
-      const gi=parseInt(e.key)-1;
-      controlGroups[gi]=selectedUnits.length>0?[...selectedUnits]:null;
-      addFloat(`Group ${e.key} saved (${selectedUnits.length})`,hero.x,hero.y-TILE_SIZE*2,'#64dcff');
-      e.preventDefault(); return;
-    }
-    if(!e.ctrlKey&&uiMode!=='build'&&(e.key==='1'||e.key==='2'||e.key==='3')){
-      const gi=parseInt(e.key)-1;
-      if(controlGroups[gi]&&controlGroups[gi].length>0){
-        selectedUnits=controlGroups[gi].filter(u=>u.hp>0);
-        if(selectedUnits.length>0){
-          // Center camera on group
-          let ax=0,ay=0;
-          for(const u of selectedUnits){ax+=u.x;ay+=u.y;}
-          cam.tx=ax/selectedUnits.length-canvas.width/2;
-          cam.ty=ay/selectedUnits.length-canvas.height/2;
-        }
-      }
       return;
     }
     // In build mode: 1/2/3 switch categories, X for demolish, Q/W/E/R/T select items
@@ -4859,7 +4793,7 @@ window.addEventListener('keydown',e=>{
       if(e.key==='2'){selectCategory('economy');return;}
       if(e.key==='3'){selectCategory('military');return;}
       if(e.key==='4'&&uiMode==='build'){selectCategory('infrastructure');e.preventDefault();}
-      // Key 5 army tab removed — units train from barracks
+      if(e.key==='5'){selectCategory('army');return;}
       if(e.key==='x'||e.key==='X'){selectCategory('demolish');return;}
       // Q/W/E/R/T pick items within the active category
       const itemBtns=document.querySelectorAll(`.tb-item-group[data-cat="${activeCategory}"] .tool-btn`);
@@ -5063,22 +4997,73 @@ function handleBuild(col,row){
   }
 }
 // Cavalry patrol waypoint state
-// cavalryPendingUnit removed — units now spawn from training queue
+let cavalryPendingUnit=null; // unit waiting for second waypoint click
 
-// handleRecruit removed — units now spawn from training queue only
+function handleRecruit(col,row){
+  // If we're placing a cavalry patrol waypoint (2nd click)
+  if(cavalryPendingUnit){
+    const u=cavalryPendingUnit;
+    // Validate waypoint: must be walkable grass, not too far from origin
+    if(map[col][row]===T.GRASS&&!structures[col+','+row]){
+      const wDist=Math.abs(col-u.col)+Math.abs(row-u.row);
+      if(wDist>=2&&wDist<=12){
+        u.patrol=[{col:u.col,row:u.row},{col,row}];
+        u.patrolIdx=0;
+        u.hasCharged=false;
+        cavalryPendingUnit=null;
+        addFloat('Patrol set!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#c88040');
+        addParticles(col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE+TILE_SIZE/2,'rgba(160,100,60,0.7)',6);
+        return;
+      } else {
+        addFloat('2-12 tiles away!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');
+        return;
+      }
+    } else {
+      addFloat('Invalid waypoint!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');
+      return;
+    }
+  }
 
-function unitAt(col,row){const cx=col*TILE_SIZE+TILE_SIZE/2,cy=row*TILE_SIZE+TILE_SIZE/2;return units.find(u=>Math.abs(u.x-cx)<TILE_SIZE&&Math.abs(u.y-cy)<TILE_SIZE);}
+  const def=UNIT_TYPES[selectedTool];if(!def)return;
+  const sk=col+','+row;
+  // Must be grass, no structure, no existing unit, not on base
+  if(map[col][row]!==T.GRASS||structures[sk]){addFloat('Invalid!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+  if(unitAt(col,row)){addFloat('Occupied!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+  const dist=Math.abs(col-heroCol())+Math.abs(row-heroRow());
+  if(dist>BUILD_RANGE){addFloat('Too far!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+  if(!canAfford(selectedTool)){addFloat('Can\'t afford!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+  for(const[r,a]of Object.entries(def.cost))game.resources[r]-=a;
+  const newUnit={
+    type:selectedTool, col, row,
+    hp:def.hp, maxHP:def.hp, dmg:def.dmg, range:def.range,
+    xp:0, _lastRank:0, morale:MORALE_MAX, state:'idle',
+    moraleState:'normal', fleeTimer:0, _fleeMoveTimer:0,
+    atkCooldown:0,
+  };
+  units.push(newUnit);
+
+  if(selectedTool==='CAVALRY'){
+    cavalryPendingUnit=newUnit;
+    addFloat(`${def.name} placed — click patrol target!`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#c88040');
+    addParticles(col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE+TILE_SIZE/2,'rgba(160,100,60,0.7)',6);
+  } else {
+    addFloat(`${def.name} recruited!`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#8ac0e8');
+    addParticles(col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE+TILE_SIZE/2,'rgba(100,160,220,0.7)',6);
+  }
+}
+
+function unitAt(col,row){return units.find(u=>u.col===col&&u.row===row);}
 
 function handleDemolish(col,row){
   const sk=col+','+row;
   // Check for unit first
-  const uIdx=units.findIndex(u=>Math.abs(u.x-(col*TILE_SIZE+TILE_SIZE/2))<TILE_SIZE&&Math.abs(u.y-(row*TILE_SIZE+TILE_SIZE/2))<TILE_SIZE);
+  const uIdx=units.findIndex(u=>u.col===col&&u.row===row);
   if(uIdx>=0){
     const u=units[uIdx];const def=UNIT_TYPES[u.type];
     for(const[r,a]of Object.entries(def.cost))game.resources[r]+=Math.floor(a*0.5);
     const upkeepSaved=def.upkeep||0;
     units.splice(uIdx,1);
-    const ux=u.x, uy=u.y-TILE_SIZE/2;
+    const ux=col*TILE_SIZE+TILE_SIZE/2, uy=row*TILE_SIZE;
     addFloat(`${def.name} disbanded`,ux,uy,'#ffaa44');
     if(upkeepSaved>0) addFloat(`-${upkeepSaved} upkeep/wave`,ux,uy+TILE_SIZE*0.5,'#7aca7a');
     addParticles(ux,uy+TILE_SIZE/2,'rgba(200,160,60,0.5)',6);
@@ -5156,7 +5141,7 @@ document.getElementById('game-canvas').addEventListener('click',e=>{
   const col=Math.floor((cam.x+e.clientX/z)/TILE_SIZE);
   const row=Math.floor((cam.y+e.clientY/z)/TILE_SIZE);
   if(col<0||col>=COLS||row<0||row>=ROWS)return;
-  // cavalryPendingUnit removed
+  if(cavalryPendingUnit){handleRecruit(col,row);return;}
   // Click on a settlement during BUILD phase
   const clickedKey=col+','+row;
   const clickedStruct=structures[clickedKey];
@@ -5181,181 +5166,8 @@ document.getElementById('game-canvas').addEventListener('click',e=>{
   }
   if(selectedTool==='gather')handleGather(col,row);
   else if(selectedTool==='DEMOLISH')handleDemolish(col,row);
-  // old unit recruit call removed — units train from barracks now
+  else if(UNIT_TYPES[selectedTool])handleRecruit(col,row);
   else handleBuild(col,row);
-});
-
-
-// ═══════════════════════════════════════════════════════
-//  UNIT SELECTION & MOVEMENT INPUT  
-// ═══════════════════════════════════════════════════════
-
-// Prevent context menu on canvas (we use right-click for move)
-document.getElementById('game-canvas').addEventListener('contextmenu', e => e.preventDefault());
-
-// ─── Helper: find unit at world position ───
-function unitAtWorld(wx, wy) {
-  const clickR = TILE_SIZE * 0.6; // generous click radius
-  let best = null, bestDist = Infinity;
-  for (const u of units) {
-    if (u.hp <= 0) continue;
-    const dx = u.x - wx, dy = u.y - wy;
-    const d = dx * dx + dy * dy;
-    if (d < clickR * clickR && d < bestDist) { bestDist = d; best = u; }
-  }
-  return best;
-}
-
-// ─── Right-click: formation drag & move ───
-document.getElementById('game-canvas').addEventListener('mousedown', e => {
-  if (e.button !== 2) return;
-  if (game.phase !== 'BUILD' && game.phase !== 'COMBAT') return;
-  if (selectedUnits.length === 0) return;
-  e.preventDefault();
-  const z = cam.zoom;
-  const wx = cam.x + e.clientX / z;
-  const wy = cam.y + e.clientY / z;
-  formDragStart = { wx, wy, sx: e.clientX, sy: e.clientY };
-  formDragEnd = null;
-  isFormDragging = false;
-  formGhosts = [];
-});
-
-// ─── Right-click drag: update formation preview ───
-document.getElementById('game-canvas').addEventListener('mousemove', e => {
-  if (!formDragStart) return;
-  if (!(e.buttons & 2)) { formDragStart = null; isFormDragging = false; formGhosts = []; return; }
-  const dx = e.clientX - formDragStart.sx, dy = e.clientY - formDragStart.sy;
-  if (dx * dx + dy * dy > FORM_DRAG_THRESHOLD * FORM_DRAG_THRESHOLD) {
-    isFormDragging = true;
-    const z = cam.zoom;
-    const wx = cam.x + e.clientX / z;
-    const wy = cam.y + e.clientY / z;
-    formDragEnd = { wx, wy };
-    // Calculate ghost preview positions
-    const alive = selectedUnits.filter(u => u.hp > 0 && u.moraleState !== 'broken');
-    formGhosts = calcFormationPositions(formDragStart.wx, formDragStart.wy, wx, wy, alive.length);
-  }
-});
-
-// ─── Right-click release: assign formation positions or simple move ───
-document.getElementById('game-canvas').addEventListener('mouseup', e => {
-  if (e.button !== 2) return;
-  if (!formDragStart) return;
-  const z = cam.zoom;
-  const wx = cam.x + e.clientX / z;
-  const wy = cam.y + e.clientY / z;
-  const col = Math.floor(wx / TILE_SIZE), row = Math.floor(wy / TILE_SIZE);
-  if (col < 0 || col >= COLS || row < 0 || row >= ROWS) { formDragStart = null; formGhosts = []; return; }
-
-  // Check if clicking on enemy — attack-move
-  let clickedEnemy = null;
-  if (game.phase === 'COMBAT') {
-    for (const en of enemies) {
-      const edx = en.x - wx, edy = en.y - wy;
-      if (edx * edx + edy * edy < (TILE_SIZE * 0.8) * (TILE_SIZE * 0.8)) { clickedEnemy = en; break; }
-    }
-  }
-
-  const alive = selectedUnits.filter(u => u.hp > 0 && u.moraleState !== 'broken');
-
-  if (isFormDragging && formDragEnd) {
-    // ── FORMATION MOVE: assign each unit to its calculated position ──
-    const positions = calcFormationPositions(formDragStart.wx, formDragStart.wy, formDragEnd.wx, formDragEnd.wy, alive.length);
-    for (let i = 0; i < alive.length; i++) {
-      unitPathTo(alive[i], positions[i].x, positions[i].y);
-    }
-    addFloat('⚔ Formation', wx, wy - 10, '#64dcff');
-    addParticles(wx, wy, 'rgba(100,220,255,0.4)', 6);
-  } else {
-    // ── SIMPLE CLICK MOVE: blob spread like before ──
-    const n = alive.length;
-    const spacing = TILE_SIZE * UNIT_RADIUS * 2.5;
-    const cols = Math.ceil(Math.sqrt(n));
-    for (let i = 0; i < n; i++) {
-      const u = alive[i];
-      const offsetCol = (i % cols) - Math.floor(cols / 2);
-      const offsetRow = Math.floor(i / cols) - Math.floor(Math.ceil(n / cols) / 2);
-      unitPathTo(u, wx + offsetCol * spacing, wy + offsetRow * spacing);
-    }
-    addFloat('⚔', wx, wy - 10, clickedEnemy ? '#ff6644' : '#64dcff');
-    addParticles(wx, wy, clickedEnemy ? 'rgba(255,100,60,0.5)' : 'rgba(100,220,255,0.4)', 4);
-  }
-
-  formDragStart = null;
-  formDragEnd = null;
-  isFormDragging = false;
-  formGhosts = [];
-});
-
-// ─── Left-click unit selection (mousedown for box select start) ───
-let _leftDownForSelect = null; // track left-click for box vs click
-
-document.getElementById('game-canvas').addEventListener('mousedown', e => {
-  if (e.button !== 0) return; // left-click only
-  if (game.phase !== 'BUILD' && game.phase !== 'COMBAT') return;
-  // Don't interfere with build mode clicks
-  if (uiMode === 'build' && selectedTool !== 'gather' && selectedTool !== 'DEMOLISH') return;
-  if (e.clientY < 88) return; // skip toolbar area
-  _leftDownForSelect = { sx: e.clientX, sy: e.clientY, time: performance.now() };
-  boxSelectStart = { sx: e.clientX, sy: e.clientY };
-  boxSelectEnd = null;
-  isBoxSelecting = false;
-});
-
-document.getElementById('game-canvas').addEventListener('mousemove', e => {
-  if (!_leftDownForSelect) return;
-  if (e.buttons !== 1) { _leftDownForSelect = null; isBoxSelecting = false; return; }
-  const dx = e.clientX - _leftDownForSelect.sx, dy = e.clientY - _leftDownForSelect.sy;
-  if (dx * dx + dy * dy > 64) { // 8px threshold for drag
-    isBoxSelecting = true;
-    boxSelectEnd = { sx: e.clientX, sy: e.clientY };
-  }
-});
-
-document.getElementById('game-canvas').addEventListener('mouseup', e => {
-  if (e.button !== 0) return;
-  if (!_leftDownForSelect) return;
-  const z = cam.zoom;
-
-  if (isBoxSelecting && boxSelectStart && boxSelectEnd) {
-    // ── BOX SELECT: select all units within the box ──
-    const x1 = Math.min(boxSelectStart.sx, boxSelectEnd.sx);
-    const y1 = Math.min(boxSelectStart.sy, boxSelectEnd.sy);
-    const x2 = Math.max(boxSelectStart.sx, boxSelectEnd.sx);
-    const y2 = Math.max(boxSelectStart.sy, boxSelectEnd.sy);
-    if (!e.shiftKey) selectedUnits = [];
-    for (const u of units) {
-      if (u.hp <= 0) continue;
-      const sx = (u.x - cam.x) * z, sy = (u.y - cam.y) * z;
-      if (sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2) {
-        if (!selectedUnits.includes(u)) selectedUnits.push(u);
-      }
-    }
-  } else {
-    // ── CLICK SELECT: single unit ──
-    const wx = cam.x + e.clientX / z;
-    const wy = cam.y + e.clientY / z;
-    const clicked = unitAtWorld(wx, wy);
-    if (clicked) {
-      if (e.shiftKey) {
-        // Toggle selection
-        const idx = selectedUnits.indexOf(clicked);
-        if (idx >= 0) selectedUnits.splice(idx, 1);
-        else selectedUnits.push(clicked);
-      } else {
-        selectedUnits = [clicked];
-      }
-    } else if (!e.shiftKey) {
-      // Click empty ground — only deselect if we're in gather mode
-      if (selectedTool === 'gather') selectedUnits = [];
-    }
-  }
-
-  _leftDownForSelect = null;
-  isBoxSelecting = false;
-  boxSelectStart = null;
-  boxSelectEnd = null;
 });
 
 document.getElementById('minimap').addEventListener('mousedown',e=>{
@@ -6130,169 +5942,220 @@ function drawStructures(){
 function drawUnits(now){
   const z=cam.zoom;
   for(const u of units){
-    if(u.hp<=0)continue;
-    // Fog gate
-    const uc=Math.floor(u.x/TILE_SIZE),ur=Math.floor(u.y/TILE_SIZE);
-    if(hqPlaced&&fogMap[uc]&&fogMap[uc][ur]!==FOG_VISIBLE)continue;
-    const sx=(u.x-cam.x)*z, sy=(u.y-cam.y)*z;
-    const r=UNIT_CIRCLE_PX*z;
-    // Frustum cull
-    if(sx+r<0||sx-r>canvas.width||sy+r<0||sy-r>canvas.height)continue;
+    // Fog gate: only render on VISIBLE tiles
+    if(hqPlaced&&fogMap[u.col]&&fogMap[u.col][u.row]!==FOG_VISIBLE) continue;
+    const sx=(u.col*TILE_SIZE-cam.x)*z, sy=(u.row*TILE_SIZE-cam.y)*z, sw=TILE_SIZE*z;
+    if(sx+sw<0||sx>canvas.width||sy+sw<0||sy>canvas.height)continue;
     const def=UNIT_TYPES[u.type];
     const[cr,cg,cb]=def.color;
     const rank=unitRank(u.xp);
 
-    // Morale flicker
+    // ── MORALE: flickering at low morale ──
     const isBroken=u.moraleState==='broken';
     const isLowMorale=u.morale<MORALE_LOW_THRESHOLD&&!isBroken;
     let moraleAlpha=1;
-    if(isBroken) moraleAlpha=Math.sin(now*0.015)*0.3+0.5;
-    else if(isLowMorale) moraleAlpha=Math.sin(now*0.008)*0.15+0.75;
+    if(isBroken){
+      // Rapid flicker when broken (fleeing)
+      moraleAlpha=Math.sin(now*0.015)*0.3+0.5;
+    } else if(isLowMorale){
+      // Subtle flicker when low morale
+      moraleAlpha=Math.sin(now*0.008)*0.15+0.75;
+    }
     ctx.globalAlpha=moraleAlpha;
 
-    // Selection ring (under body)
-    const isSelected=selectedUnits.includes(u);
-    if(isSelected){
-      ctx.strokeStyle='rgba(100,220,255,0.7)'; ctx.lineWidth=2*z;
-      ctx.beginPath();ctx.arc(sx,sy,r+3*z,0,Math.PI*2);ctx.stroke();
-    }
-
-    // Formation glow
+    // Formation glow (under body)
     if(u.shieldWall){
+      // Shield Wall: blue glow around unit
       const swPulse=Math.sin(now*0.004)*0.1+0.25;
       ctx.fillStyle=`rgba(80,140,220,${swPulse})`;
-      ctx.beginPath();ctx.arc(sx,sy,r+2*z,0,Math.PI*2);ctx.fill();
+      ctx.fillRect(sx,sy,sw,sw);
     }
     if(u.protectedFire){
+      // Protected Fire: green glow around unit
       const pfPulse=Math.sin(now*0.005+1)*0.1+0.2;
       ctx.fillStyle=`rgba(80,200,100,${pfPulse})`;
-      ctx.beginPath();ctx.arc(sx,sy,r+2*z,0,Math.PI*2);ctx.fill();
+      ctx.fillRect(sx,sy,sw,sw);
     }
 
-    // Body circle
+    // Body tile
     ctx.fillStyle=isBroken?`rgb(${Math.min(255,cr+60)},${Math.max(0,cg-40)},${Math.max(0,cb-40)})`:`rgb(${cr},${cg},${cb})`;
-    ctx.beginPath();ctx.arc(sx,sy,r,0,Math.PI*2);ctx.fill();
+    ctx.fillRect(sx+z*1.5,sy+z*1.5,sw-z*3,sw-z*3);
 
-    // Formation tint overlays
-    if(u.shieldWall){ctx.fillStyle='rgba(80,150,255,0.2)';ctx.beginPath();ctx.arc(sx,sy,r,0,Math.PI*2);ctx.fill();}
-    if(u.protectedFire){ctx.fillStyle='rgba(80,220,100,0.15)';ctx.beginPath();ctx.arc(sx,sy,r,0,Math.PI*2);ctx.fill();}
+    // Shield Wall blue tint overlay on body
+    if(u.shieldWall){
+      ctx.fillStyle='rgba(80,150,255,0.2)';
+      ctx.fillRect(sx+z*1.5,sy+z*1.5,sw-z*3,sw-z*3);
+    }
+    // Protected Fire green tint overlay
+    if(u.protectedFire){
+      ctx.fillStyle='rgba(80,220,100,0.15)';
+      ctx.fillRect(sx+z*1.5,sy+z*1.5,sw-z*3,sw-z*3);
+    }
 
-    // Attack flash
+    // Attack flash (unit just attacked — cooldown near max)
     const atkRate=getUnitAtkRate(u);
     if(game.phase==='COMBAT'&&u.atkCooldown>atkRate*0.7){
-      ctx.fillStyle='rgba(255,255,200,0.25)';ctx.beginPath();ctx.arc(sx,sy,r,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(255,255,200,0.25)';
+      ctx.fillRect(sx+z*1.5,sy+z*1.5,sw-z*3,sw-z*3);
     }
 
-    // Border/rank glow
+    // Rank border glow
     if(rank>0){
-      const rankColors=['','rgba(180,180,100,0.4)','rgba(200,160,60,0.5)','rgba(255,200,80,0.6)'];
-      ctx.strokeStyle=rankColors[rank];ctx.lineWidth=2*z;
-      ctx.beginPath();ctx.arc(sx,sy,r,0,Math.PI*2);ctx.stroke();
+      const rankColors=['','rgba(180,180,100,0.3)','rgba(200,160,60,0.4)','rgba(255,200,80,0.5)'];
+      ctx.strokeStyle=rankColors[rank];ctx.lineWidth=z*2;
+      ctx.strokeRect(sx+z,sy+z,sw-z*2,sw-z*2);
+    } else if(u.shieldWall){
+      // Shield Wall border: blue
+      ctx.strokeStyle='rgba(80,150,255,0.5)';ctx.lineWidth=z*2;
+      ctx.strokeRect(sx+z,sy+z,sw-z*2,sw-z*2);
+    } else if(u.protectedFire){
+      // Protected Fire border: green
+      ctx.strokeStyle='rgba(80,220,100,0.45)';ctx.lineWidth=z*1.5;
+      ctx.strokeRect(sx+z,sy+z,sw-z*2,sw-z*2);
     } else {
-      ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=z;
-      ctx.beginPath();ctx.arc(sx,sy,r,0,Math.PI*2);ctx.stroke();
+      ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=z;
+      ctx.strokeRect(sx+z*1.5,sy+z*1.5,sw-z*3,sw-z*3);
+    }
+
+    // Unit-specific body details
+    if(u.type==='SPEARMAN'){
+      // Spear line across tile (diagonal)
+      ctx.strokeStyle='rgba(220,200,60,0.5)';ctx.lineWidth=z*1.5;
+      ctx.beginPath();ctx.moveTo(sx+sw*0.2,sy+sw*0.8);ctx.lineTo(sx+sw*0.8,sy+sw*0.15);ctx.stroke();
+      // Spear tip
+      ctx.fillStyle='rgba(240,230,120,0.7)';
+      ctx.beginPath();ctx.moveTo(sx+sw*0.75,sy+sw*0.15);ctx.lineTo(sx+sw*0.85,sy+sw*0.2);ctx.lineTo(sx+sw*0.8,sy+sw*0.25);ctx.fill();
+    }
+    if(u.type==='CAVALRY'){
+      // Horse silhouette hint (chevron shape under letter)
+      ctx.fillStyle='rgba(120,80,40,0.3)';
+      ctx.beginPath();ctx.moveTo(sx+sw*0.3,sy+sw*0.7);ctx.lineTo(sx+sw*0.5,sy+sw*0.55);ctx.lineTo(sx+sw*0.7,sy+sw*0.7);ctx.lineTo(sx+sw*0.5,sy+sw*0.85);ctx.fill();
+    }
+    if(u.type==='CATAPULT'){
+      // Catapult arm line
+      ctx.strokeStyle='rgba(100,80,60,0.5)';ctx.lineWidth=z*2;
+      ctx.beginPath();ctx.moveTo(sx+sw*0.25,sy+sw*0.7);ctx.lineTo(sx+sw*0.75,sy+sw*0.3);ctx.stroke();
+      // Wheels
+      ctx.strokeStyle='rgba(90,70,50,0.4)';ctx.lineWidth=z;
+      ctx.beginPath();ctx.arc(sx+sw*0.3,sy+sw*0.75,3*z,0,Math.PI*2);ctx.stroke();
+      ctx.beginPath();ctx.arc(sx+sw*0.7,sy+sw*0.75,3*z,0,Math.PI*2);ctx.stroke();
     }
 
     // Letter icon
-    ctx.fillStyle='rgba(255,255,255,0.9)';ctx.font=`bold ${11*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText(def.letter,sx,sy+z);
+    ctx.fillStyle='rgba(255,255,255,0.85)';ctx.font=`bold ${14*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(def.letter,sx+sw/2,sy+sw/2);
 
-    // Range indicator for ranged units (combat only)
+    // Range indicator for ranged units (subtle ring)
     if(def.range>1.5&&game.phase==='COMBAT'){
       ctx.strokeStyle=`rgba(${cr},${cg},${cb},0.1)`;ctx.lineWidth=z;
-      ctx.beginPath();ctx.arc(sx,sy,def.range*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+      ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,def.range*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
     }
 
-    // HP bar
+    // Spearman zone of control indicator (yellow ring)
+    if(u.type==='SPEARMAN'&&game.phase==='COMBAT'){
+      ctx.strokeStyle='rgba(220,200,60,0.12)';ctx.lineWidth=z;
+      ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,SPEAR_SLOW_RADIUS*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+    }
+
+    // Cavalry patrol path line
+    if(u.type==='CAVALRY'&&u.patrol&&u.patrol.length===2){
+      const p0=u.patrol[0], p1=u.patrol[1];
+      const lx0=(p0.col*TILE_SIZE+TILE_SIZE/2-cam.x)*z, ly0=(p0.row*TILE_SIZE+TILE_SIZE/2-cam.y)*z;
+      const lx1=(p1.col*TILE_SIZE+TILE_SIZE/2-cam.x)*z, ly1=(p1.row*TILE_SIZE+TILE_SIZE/2-cam.y)*z;
+      ctx.strokeStyle='rgba(160,100,60,0.25)';ctx.lineWidth=z*1.5;
+      ctx.setLineDash([4*z,4*z]);
+      ctx.beginPath();ctx.moveTo(lx0,ly0);ctx.lineTo(lx1,ly1);ctx.stroke();
+      ctx.setLineDash([]);
+      // Waypoint markers
+      ctx.fillStyle='rgba(160,100,60,0.4)';
+      ctx.beginPath();ctx.arc(lx0,ly0,3*z,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.arc(lx1,ly1,3*z,0,Math.PI*2);ctx.fill();
+    }
+
+    // Catapult AOE indicator during combat (splash radius)
+    if(u.type==='CATAPULT'&&game.phase==='COMBAT'){
+      // Show AOE radius on the catapult's current target direction (subtle)
+      ctx.strokeStyle='rgba(180,140,80,0.08)';ctx.lineWidth=z;
+      ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,CATAPULT_AOE_RADIUS*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+    }
+
+    // HP bar — always visible during combat, or when damaged
     if(game.phase==='COMBAT'||u.hp<u.maxHP){
-      const bw=r*2.2,bh=3*z;
-      ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(sx-bw/2,sy-r-bh-4*z,bw,bh);
+      const bw=sw*0.8,bh=3*z;
+      ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(sx+(sw-bw)/2,sy-bh-z*2,bw,bh);
       const hpPct=u.hp/u.maxHP;
       ctx.fillStyle=hpPct>0.5?'#4a4':hpPct>0.25?'#da4':'#d44';
-      ctx.fillRect(sx-bw/2,sy-r-bh-4*z,bw*hpPct,bh);
+      ctx.fillRect(sx+(sw-bw)/2,sy-bh-z*2,bw*hpPct,bh);
     }
 
-    // Morale bar (above HP)
+    // Morale bar — below HP bar, thinner, yellow-to-red gradient
     if(game.phase==='COMBAT'||u.morale<MORALE_MAX){
-      const bw=r*2.2,bh=2*z;
-      const mby=sy-r-5*z-bh-3*z;
-      ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(sx-bw/2,mby,bw,bh);
+      const bw=sw*0.8, bh=2*z;
+      const hpBarH=3*z;
+      const mby=sy-hpBarH-z*2-bh-z; // just above HP bar
+      ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(sx+(sw-bw)/2,mby,bw,bh);
       const mPct=u.morale/MORALE_MAX;
       ctx.fillStyle=mPct>0.5?'rgba(220,200,60,0.9)':mPct>0.2?'rgba(220,140,40,0.9)':'rgba(220,60,40,0.9)';
-      ctx.fillRect(sx-bw/2,mby,bw*mPct,bh);
+      ctx.fillRect(sx+(sw-bw)/2,mby,bw*mPct,bh);
     }
 
-    // Rank chevrons
+    // Rank chevrons (1-3 dots below letter)
     if(rank>0){
       const dotR=2*z;
-      const dotY=sy+r+3*z;
-      const startX=sx-(rank-1)*dotR*1.5;
-      const rankDotColors=['','#cccc70','#dda840','#ffc840'];
+      const dotY=sy+sw-z*4;
+      const totalW=(rank-1)*dotR*3;
+      const startX=sx+sw/2-totalW/2;
+      const rankDotColors=['','rgba(180,180,100,0.9)','rgba(220,180,60,0.95)','rgba(255,215,0,1)'];
       ctx.fillStyle=rankDotColors[rank];
-      for(let d=0;d<rank;d++){ctx.beginPath();ctx.arc(startX+d*dotR*3,dotY,dotR,0,Math.PI*2);ctx.fill();}
+      for(let d=0;d<rank;d++){
+        ctx.beginPath();
+        ctx.arc(startX+d*dotR*3,dotY,dotR,0,Math.PI*2);
+        ctx.fill();
+      }
+      // Champion: extra glow ring around dots
+      if(rank===3){
+        ctx.strokeStyle='rgba(255,215,0,0.4)';ctx.lineWidth=z;
+        for(let d=0;d<rank;d++){
+          ctx.beginPath();
+          ctx.arc(startX+d*dotR*3,dotY,dotR+z,0,Math.PI*2);
+          ctx.stroke();
+        }
+      }
     }
 
-    // Move order indicator (line from unit to target)
-    if(u.path&&u.pathIdx<u.path.length&&isSelected){
-      const tgt=u.path[u.path.length-1];
-      const tx=(tgt.c*TILE_SIZE+TILE_SIZE/2-cam.x)*z, ty=(tgt.r*TILE_SIZE+TILE_SIZE/2-cam.y)*z;
-      ctx.strokeStyle='rgba(100,220,255,0.2)';ctx.lineWidth=z;
-      ctx.setLineDash([3*z,3*z]);
-      ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(tx,ty);ctx.stroke();
-      ctx.setLineDash([]);
+    // White flag on broken units
+    if(isBroken){
+      ctx.fillStyle='rgba(255,255,255,0.95)';ctx.font=`bold ${12*z}px system-ui`;
+      ctx.fillText('🏳️',sx+sw/2,sy-z*8);
+      // "FLEEING" text
+      ctx.fillStyle='rgba(255,100,60,0.85)';ctx.font=`bold ${8*z}px system-ui`;
+      ctx.fillText('FLEE',sx+sw/2,sy+sw+z*6);
     }
 
+    // Starving indicator
+    if(u._starving){
+      const starvePulse=Math.sin(now*0.008)*0.2+0.8;
+      ctx.globalAlpha=starvePulse;
+      ctx.fillStyle='rgba(220,80,50,0.85)';ctx.font=`bold ${9*z}px system-ui`;
+      ctx.fillText('🍖',sx+sw*0.85,sy+sw*0.15);
+      ctx.globalAlpha=moraleAlpha;
+    }
+
+    // Formation bonus icon (tiny indicator below HP bar)
+    if(u.shieldWall&&!isBroken){
+      ctx.fillStyle='rgba(80,150,255,0.85)';ctx.font=`bold ${8*z}px system-ui`;
+      ctx.fillText('🛡️',sx+sw/2,sy-z*10);
+    }
+    if(u.protectedFire&&!isBroken){
+      ctx.fillStyle='rgba(80,220,100,0.85)';ctx.font=`bold ${8*z}px system-ui`;
+      const offset=u.shieldWall?sw*0.3:0;
+      ctx.fillText('🏹',sx+sw/2+offset,sy-z*10);
+    }
+
+    // Reset alpha after morale flicker
     ctx.globalAlpha=1;
   }
   ctx.textAlign='start';ctx.textBaseline='alphabetic';
-
-  // ── BOX SELECT PREVIEW ──
-  if(isBoxSelecting&&boxSelectStart&&boxSelectEnd){
-    const bx=Math.min(boxSelectStart.sx,boxSelectEnd.sx);
-    const by=Math.min(boxSelectStart.sy,boxSelectEnd.sy);
-    const bw=Math.abs(boxSelectEnd.sx-boxSelectStart.sx);
-    const bh=Math.abs(boxSelectEnd.sy-boxSelectStart.sy);
-    ctx.strokeStyle='rgba(100,220,255,0.6)';ctx.lineWidth=1;
-    ctx.strokeRect(bx,by,bw,bh);
-    ctx.fillStyle='rgba(100,220,255,0.08)';
-    ctx.fillRect(bx,by,bw,bh);
-  }
-
-  // ── FORMATION DRAG PREVIEW ──
-  if (isFormDragging && formGhosts.length > 0 && formDragStart) {
-    const z = cam.zoom;
-    const r = UNIT_CIRCLE_PX * z;
-    // Draw drag direction line
-    const dsx = (formDragStart.wx - cam.x) * z, dsy = (formDragStart.wy - cam.y) * z;
-    const dex = (formDragEnd.wx - cam.x) * z, dey = (formDragEnd.wy - cam.y) * z;
-    ctx.strokeStyle = 'rgba(100,220,255,0.3)'; ctx.lineWidth = 2;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.moveTo(dsx, dsy); ctx.lineTo(dex, dey); ctx.stroke();
-    ctx.setLineDash([]);
-    // Draw ghost circles at formation positions
-    for (let i = 0; i < formGhosts.length; i++) {
-      const gx = (formGhosts[i].x - cam.x) * z;
-      const gy = (formGhosts[i].y - cam.y) * z;
-      // Ghost circle
-      ctx.fillStyle = 'rgba(100,220,255,0.12)';
-      ctx.beginPath(); ctx.arc(gx, gy, r, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(100,220,255,0.35)'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(gx, gy, r, 0, Math.PI * 2); ctx.stroke();
-    }
-    // Formation type label
-    const alive = selectedUnits.filter(u => u.hp > 0 && u.moraleState !== 'broken');
-    const ddx = formDragEnd.wx - formDragStart.wx, ddy = formDragEnd.wy - formDragStart.wy;
-    const dragLen = Math.sqrt(ddx * ddx + ddy * ddy);
-    const spacing = TILE_SIZE * UNIT_RADIUS * 2.5;
-    const threshold = alive.length * spacing;
-    let formLabel = 'Cluster';
-    if (dragLen > threshold * 0.8) formLabel = 'Line';
-    else if (dragLen > threshold * 0.4) formLabel = 'Double Line';
-    ctx.fillStyle = 'rgba(100,220,255,0.8)'; ctx.font = `bold ${13 * z}px system-ui`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    ctx.fillText(formLabel + ' (' + alive.length + ')', dex, dey - r - 6 * z);
-    ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
-  }
 }
 
 // ─── DRAW ENEMY SPAWN POINTS ───
@@ -6593,19 +6456,48 @@ function drawHQGhostPreview(){
 
 function drawGhostPreview(){
   if(game.phase!=='BUILD'||game.phase==='PREVIEW'||isTouching)return;
-  // Old cavalry waypoint preview removed — units now use RTS movement
+  // Cavalry waypoint mode: show the patrol line preview instead of normal ghost
+  if(cavalryPendingUnit){
+    const z=cam.zoom;
+    const col=Math.floor((cam.x+mouseX/z)/TILE_SIZE),row=Math.floor((cam.y+mouseY/z)/TILE_SIZE);
+    if(col<0||col>=COLS||row<0||row>=ROWS)return;
+    const sx=(col*TILE_SIZE-cam.x)*z,sy=(row*TILE_SIZE-cam.y)*z,sw=TILE_SIZE*z;
+    const pu=cavalryPendingUnit;
+    const wDist=Math.abs(col-pu.col)+Math.abs(row-pu.row);
+    const valid=map[col][row]===T.GRASS&&!structures[col+','+row]&&wDist>=2&&wDist<=12;
+    // Draw patrol line
+    const pux=(pu.col*TILE_SIZE+TILE_SIZE/2-cam.x)*z, puy=(pu.row*TILE_SIZE+TILE_SIZE/2-cam.y)*z;
+    ctx.strokeStyle=valid?'rgba(160,100,60,0.5)':'rgba(200,50,50,0.4)';ctx.lineWidth=z*2;ctx.setLineDash([4*z,4*z]);
+    ctx.beginPath();ctx.moveTo(pux,puy);ctx.lineTo(sx+sw/2,sy+sw/2);ctx.stroke();ctx.setLineDash([]);
+    // Waypoint marker
+    ctx.fillStyle=valid?'rgba(160,100,60,0.5)':'rgba(200,50,50,0.3)';
+    ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,5*z,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle=valid?'rgba(160,100,60,0.6)':'rgba(200,50,50,0.5)';ctx.lineWidth=z;ctx.strokeRect(sx+z,sy+z,sw-2*z,sw-2*z);
+    // Distance label
+    ctx.fillStyle='rgba(10,10,18,0.8)';ctx.font=`bold ${10*z}px system-ui`;ctx.textAlign='center';
+    const distLabel=valid?`🐎 ${wDist} tiles`:`${wDist<2?'Too close':'Too far'} (2-12)`;
+    const tw2=ctx.measureText(distLabel).width+12;
+    ctx.fillRect(sx+sw/2-tw2/2,sy+sw+z*2,tw2,14*z);
+    ctx.fillStyle=valid?'rgba(200,160,80,0.9)':'rgba(255,100,80,0.9)';
+    ctx.fillText(distLabel,sx+sw/2,sy+sw+z*2+10*z);
+    ctx.textAlign='start';
+    return;
+  }
   if(selectedTool==='gather'||selectedTool==='DEMOLISH')return;
   const z=cam.zoom;
   const col=Math.floor((cam.x+mouseX/z)/TILE_SIZE),row=Math.floor((cam.y+mouseY/z)/TILE_SIZE);
   if(col<0||col>=COLS||row<0||row>=ROWS)return;
   const sx=(col*TILE_SIZE-cam.x)*z,sy=(row*TILE_SIZE-cam.y)*z,sw=TILE_SIZE*z;
   const sk=col+','+row;
-  const def=STRUCTS[selectedTool];
+  const isUnit=!!UNIT_TYPES[selectedTool];
+  const def=isUnit?UNIT_TYPES[selectedTool]:STRUCTS[selectedTool];
   if(!def)return;
   const[cr,cg,cb]=def.color;
 
   let valid;
-  {
+  if(isUnit){
+    valid=map[col][row]===T.GRASS&&!structures[sk]&&!unitAt(col,row)&&(Math.abs(col-heroCol())+Math.abs(row-heroRow()))<=BUILD_RANGE&&canAfford(selectedTool);
+  } else {
     const isRes=isResourceBuilding(selectedTool);
     const tileOk=isRes?map[col][row]===T.GRASS:(map[col][row]===T.GRASS);
     const basicValid=tileOk&&!structures[sk]&&(Math.abs(col-heroCol())+Math.abs(row-heroRow()))<=BUILD_RANGE&&canAfford(selectedTool);
@@ -6625,10 +6517,50 @@ function drawGhostPreview(){
   }
 
   ctx.fillStyle=valid?`rgba(${cr},${cg},${cb},0.45)`:'rgba(200,50,50,0.25)';ctx.fillRect(sx,sy,sw,sw);
-  ctx.fillStyle=`rgba(255,255,255,${valid?0.3:0.15})`;ctx.font=`bold ${12*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle=`rgba(255,255,255,${valid?0.3:0.15})`;ctx.font=`bold ${(isUnit?14:12)*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
   ctx.fillText(def.letter,sx+sw/2,sy+sw/2);
-  ctx.strokeStyle=valid?'rgba(90,180,90,0.4)':'rgba(200,50,50,0.4)';
-  ctx.lineWidth=z*1.5;ctx.strokeRect(sx+z,sy+z,sw-2*z,sw-2*z);
+  const borderColor=isUnit?(valid?'rgba(100,160,220,0.5)':'rgba(200,50,50,0.4)'):(valid?'rgba(90,180,90,0.4)':'rgba(200,50,50,0.4)');
+  ctx.strokeStyle=borderColor;ctx.lineWidth=z*1.5;ctx.strokeRect(sx+z,sy+z,sw-2*z,sw-2*z);
+
+  // Show range preview for ranged units
+  if(isUnit&&valid&&def.range>1.5){
+    ctx.strokeStyle=`rgba(${cr},${cg},${cb},0.15)`;ctx.lineWidth=z;
+    ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,def.range*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+  }
+  // Spearman zone of control preview
+  if(isUnit&&valid&&selectedTool==='SPEARMAN'){
+    ctx.strokeStyle='rgba(220,200,60,0.15)';ctx.lineWidth=z;
+    ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,SPEAR_SLOW_RADIUS*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+  }
+  // Catapult AOE splash radius preview (at max range)
+  if(isUnit&&valid&&selectedTool==='CATAPULT'){
+    ctx.strokeStyle='rgba(180,140,80,0.12)';ctx.lineWidth=z;ctx.setLineDash([3*z,3*z]);
+    ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,CATAPULT_AOE_RADIUS*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  // Cavalry pending waypoint line preview
+  if(cavalryPendingUnit){
+    const pu=cavalryPendingUnit;
+    const pux=(pu.col*TILE_SIZE+TILE_SIZE/2-cam.x)*z, puy=(pu.row*TILE_SIZE+TILE_SIZE/2-cam.y)*z;
+    ctx.strokeStyle='rgba(160,100,60,0.4)';ctx.lineWidth=z*2;ctx.setLineDash([4*z,4*z]);
+    ctx.beginPath();ctx.moveTo(pux,puy);ctx.lineTo(sx+sw/2,sy+sw/2);ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Formation preview: show what bonus this placement would create
+  if(isUnit&&valid){
+    const bonuses=previewFormationBonus(col,row,selectedTool);
+    if(bonuses.length>0){
+      // Formation indicator text
+      ctx.fillStyle='rgba(10,10,18,0.8)';
+      const bonusText=bonuses.join(' + ');
+      const tw=ctx.measureText(bonusText).width+14;
+      ctx.font=`bold ${10*z}px system-ui`;ctx.textAlign='center';
+      ctx.fillRect(sx+sw/2-tw/2,sy+sw+z*2,tw,14*z);
+      ctx.fillStyle='rgba(140,220,255,0.9)';
+      ctx.fillText(bonusText,sx+sw/2,sy+sw+z*2+10*z);
+    }
+  }
   ctx.textAlign='start';ctx.textBaseline='alphabetic';
 }
 
@@ -6637,7 +6569,7 @@ function previewFormationBonus(col,row,unitType){
   const bonuses=[];
   const meleeGrid={};
   for(const u of units){
-    if(isMeleeUnit(u.type)&&u.hp>0)meleeGrid[Math.floor(u.x/TILE_SIZE)+','+Math.floor(u.y/TILE_SIZE)]=u;
+    if(isMeleeUnit(u.type)&&u.hp>0)meleeGrid[u.col+','+u.row]=u;
   }
 
   if(isMeleeUnit(unitType)){
@@ -6877,13 +6809,9 @@ function drawMinimap(){
   }
   // Units on minimap
   for(const u of units){
-    if(u.hp<=0)continue;
     const def=UNIT_TYPES[u.type];
-    const isSelected=selectedUnits.includes(u);
-    mmCtx.fillStyle=isSelected?'rgba(100,220,255,0.9)':`rgb(${def.color[0]},${def.color[1]},${def.color[2]})`;
-    mmCtx.fillRect((u.x/TILE_SIZE)*sx-0.5,(u.y/TILE_SIZE)*sy-0.5,Math.max(sx,1.5),Math.max(sy,1.5));
-  }
-    mmCtx.fillRect((u.x/TILE_SIZE)*sx,(u.y/TILE_SIZE)*sy,Math.max(sx,1.5),Math.max(sy,1.5));
+    mmCtx.fillStyle=`rgb(${def.color[0]},${def.color[1]},${def.color[2]})`;
+    mmCtx.fillRect(u.col*sx,u.row*sy,Math.max(sx,1.5),Math.max(sy,1.5));
   }
   // Citizens on minimap
   mmCtx.fillStyle='rgba(180,200,230,0.8)';
@@ -6965,7 +6893,7 @@ function updateUI(){
   const heroHPText=hero.stunTimer>0?`💀 ${Math.ceil(hero.stunTimer)}s`:`${hero.hp}/${hero.maxHP}`;
   document.getElementById('hero-hp-text').textContent=heroHPText;
   document.getElementById('wave-num').textContent=game.wave;
-  document.querySelectorAll('.tool-btn[data-tool]').forEach(btn=>{const t=btn.dataset.tool;if(STRUCTS[t])btn.style.opacity=canAfford(t)?'1':'0.5';});
+  document.querySelectorAll('.tool-btn[data-tool]').forEach(btn=>{const t=btn.dataset.tool;if(STRUCTS[t]||UNIT_TYPES[t])btn.style.opacity=canAfford(t)?'1':'0.5';});
   // Upkeep indicator — show during BUILD phase when units exist
   const upkeepWrap=document.getElementById('upkeep-wrap');
   const upkeepVal=document.getElementById('upkeep-val');
@@ -7050,7 +6978,7 @@ function restartGame(){
   for(const k in structures) delete structures[k];
   citizenBlockCount=0; updateCitizenCostUI();
   citizenRecallTriggered=false;
-  selectedUnits=[]; controlGroups=[null,null,null]; boxSelectStart=null; boxSelectEnd=null; isBoxSelecting=false;
+  cavalryPendingUnit=null;
   regrowthQueue=[];
   enemyCamps=[];
   spawnRingCache=[];
@@ -7093,13 +7021,12 @@ function cycleUnit(reverse){
   }
   const u=units[game.selectedUnitIdx];
   if(!u)return;
-  // Also set as the active selection
-  selectedUnits=[u];
   // Snap camera to the selected unit
-  const ux=u.x, uy=u.y;
+  const ux=u.col*TILE_SIZE+TILE_SIZE/2, uy=u.row*TILE_SIZE+TILE_SIZE/2;
   cam.tx=ux-canvas.width/(2*cam.tZoom);
   cam.ty=uy-canvas.height/(2*cam.tZoom);
   clampCam();
+  // Show ring effect around selected unit
   addFloat(`▸ ${UNIT_TYPES[u.type].name} ◂`,ux,uy-TILE_SIZE*1.5,'#8ac0e8');
 }
 
@@ -7295,14 +7222,19 @@ function draw(now){
   if(game.selectedUnitIdx>=0&&game.selectedUnitIdx<units.length){
     const su=units[game.selectedUnitIdx];
     const sz=cam.zoom;
-    const sux=(su.x-cam.x)*sz, suy=(su.y-cam.y)*sz;
-    const selR=UNIT_CIRCLE_PX*sz+5*sz;
+    const sux=(su.col*TILE_SIZE-cam.x)*sz, suy=(su.row*TILE_SIZE-cam.y)*sz, ssw=TILE_SIZE*sz;
     const selPulse=Math.sin(now*0.006)*0.2+0.6;
     ctx.strokeStyle=`rgba(140,200,240,${selPulse})`;ctx.lineWidth=sz*2;
-    ctx.beginPath();ctx.arc(sux,suy,selR,0,Math.PI*2);ctx.stroke();
-    // Outer accent ring
+    ctx.strokeRect(sux-sz*2,suy-sz*2,ssw+sz*4,ssw+sz*4);
+    // Corner accents
+    const cl=6*sz;
     ctx.strokeStyle=`rgba(200,230,255,${selPulse*0.8})`;ctx.lineWidth=sz*2.5;
-    ctx.beginPath();ctx.arc(sux,suy,selR+3*sz,0,Math.PI*2);ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(sux-sz*2,suy-sz*2+cl);ctx.lineTo(sux-sz*2,suy-sz*2);ctx.lineTo(sux-sz*2+cl,suy-sz*2);
+    ctx.moveTo(sux+ssw+sz*2-cl,suy-sz*2);ctx.lineTo(sux+ssw+sz*2,suy-sz*2);ctx.lineTo(sux+ssw+sz*2,suy-sz*2+cl);
+    ctx.moveTo(sux+ssw+sz*2,suy+ssw+sz*2-cl);ctx.lineTo(sux+ssw+sz*2,suy+ssw+sz*2);ctx.lineTo(sux+ssw+sz*2-cl,suy+ssw+sz*2);
+    ctx.moveTo(sux-sz*2+cl,suy+ssw+sz*2);ctx.lineTo(sux-sz*2,suy+ssw+sz*2);ctx.lineTo(sux-sz*2,suy+ssw+sz*2-cl);
+    ctx.stroke();
   }
 
   updateUI();
