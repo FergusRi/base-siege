@@ -1128,460 +1128,506 @@ function centerDist(c,r){
   return Math.max(dx,dy); // Chebyshev so edges form a rectangle
 }
 
-function generateMap(){
-  map=[];tileVariant=[];depositHP=[];
+// ═══════════════════════════════════════════════════════
+//  MAP GENERATION V4 — Layered Climate (RimWorld-style)
+// ═══════════════════════════════════════════════════════
+
+// ─── TUNING LEVERS ───
+const MAP_GEN = {
+  // Elevation
+  BASE_FREQ: 0.006,        // Lower = bigger mountain masses
+  BASE_OCT: 6,
+  RIDGE_FREQ: 0.008,       // Ridge line frequency (lower = wider ridges)
+  RIDGE_OCT: 5,
+  RIDGE_WEIGHT: 0.50,      // Higher = more prominent ridges
+  WARP_FREQ: 0.004,        // Domain warp frequency
+  WARP_STRENGTH: 100,      // Domain warp in tiles (organic shapes)
+
+  // Moisture
+  MOIST_FREQ: 0.007,       // Moisture variation scale
+  MOIST_OCT: 5,
+  WATER_PROX_BONUS: 0.10,  // Extra moisture near water
+  WATER_PROX_RADIUS: 10,   // Tiles to check for water proximity
+
+  // Thresholds (Whittaker lookup)
+  WATER_LEVEL: 0.28,       // Below = water
+  MOUNTAIN_LEVEL: 0.65,    // Above = stone (slightly higher = ~15% mountain)
+  FOREST_ELEV_MIN: 0.43,   // Forest minimum elevation
+  FOREST_ELEV_MAX: 0.65,   // Forest max (must match mountain level)
+  FOREST_MOIST: 0.56,      // Forest needs this moisture (balanced ~15-18%)
+  BERRY_ELEV_MAX: 0.44,    // Berries in low-elevation
+  BERRY_MOIST: 0.52,       // Berries need this moisture
+
+  // Dithering
+  DITHER_FREQ: 0.05,       // High-freq noise for biome boundaries
+  DITHER_AMP: 0.05,        // Dither amplitude (bigger = more jagged boundaries)
+
+  // Resources
+  STONE_EDGE_CHANCE: 0.12, // Stone at mountain edges
+  ORE_CHANCE: 0.10,        // Inner mountain ore
+  GOLD_CHANCE: 0.03,       // Deep mountain gold
+  BERRY_CHANCE: 0.12,      // Berry in qualifying grass
+  RESOURCE_CLUSTER_FREQ: 0.04, // Clustering noise freq
+
+  // Rivers
+  RIVER_COUNT_MIN: 2,
+  RIVER_COUNT_MAX: 4,
+  RIVER_MEANDER: 0.15,     // Lateral drift probability
+
+  // Polish
+  MIN_CLUSTER_SIZE: 3,     // Remove smaller clusters
+  EDGE_BUFFER: 25,         // Tiles from edge kept as grass for spawning
+};
+
+// ─── NOISE HELPERS (use different seeds for independent layers) ───
+// fbm with offset seeds for independent layers
+function fbmLayer(x, y, oct, freq, seedOffX, seedOffY) {
+  return fbm(x + seedOffX, y + seedOffY, oct, freq, 2.0, 0.5);
+}
+
+// Ridged multifractal: 1 - |noise| creates connected ridge lines
+function ridgedMultifractal(x, y, oct, freq, seedOffX, seedOffY) {
+  let v = 0, a = 1, f = freq, ta = 0;
+  for (let i = 0; i < oct; i++) {
+    const n = smoothNoise((x + seedOffX) * f, (y + seedOffY) * f);
+    v += (1.0 - Math.abs(n * 2 - 1)) * a; // fold at zero → ridges
+    ta += a;
+    f *= 2.0;
+    a *= 0.5;
+  }
+  return v / ta;
+}
+
+// ─── ELEVATION FIELD ───
+function computeElevation(c, r) {
+  const G = MAP_GEN;
+
+  // Domain warping for organic shapes
+  const warpX = fbmLayer(c, r, 4, G.WARP_FREQ, 3000, 7000) * G.WARP_STRENGTH;
+  const warpY = fbmLayer(c, r, 4, G.WARP_FREQ, 8000, 2000) * G.WARP_STRENGTH;
+  const wc = c + warpX, wr = r + warpY;
+
+  // Base elevation (smooth rolling hills)
+  const base = fbmLayer(wc, wr, G.BASE_OCT, G.BASE_FREQ, 0, 0);
+
+  // Ridged multifractal (connected mountain chains)
+  const ridges = ridgedMultifractal(wc, wr, G.RIDGE_OCT, G.RIDGE_FREQ, 5000, 5000);
+
+  // Combine
+  let elev = base * (1.0 - G.RIDGE_WEIGHT) + ridges * G.RIDGE_WEIGHT;
+
+  // Edge falloff — keep edges as grass for enemy spawning
+  const ed = Math.min(c, r, COLS - 1 - c, ROWS - 1 - r);
+  const edgeFactor = Math.min(ed / G.EDGE_BUFFER, 1.0);
+  elev *= edgeFactor;
+
+  return elev;
+}
+
+// ─── MOISTURE FIELD ───
+function computeMoisture(c, r) {
+  return fbmLayer(c, r, MAP_GEN.MOIST_OCT, MAP_GEN.MOIST_FREQ, 12000, 15000);
+}
+
+// ─── MAIN GENERATE MAP ───
+function generateMap() {
+  map = []; tileVariant = []; depositHP = [];
   initFogMap();
+  initMapRand();
 
-  // ═══════════════════════════════════════════════════════
-  //  CONTINENT BUILDER v3 — Feature-first map generation
-  // ═══════════════════════════════════════════════════════
+  const G = MAP_GEN;
 
-  // Init arrays
-  for(let c=0;c<COLS;c++){
-    map[c]=[];tileVariant[c]=[];depositHP[c]=[];
-    for(let r=0;r<ROWS;r++){
-      tileVariant[c][r]=(hash(c*7+31,r*13+47)-0.5)*2;
-      depositHP[c][r]=0;
-      map[c][r]=T.GRASS;
+  // ═══ Init arrays ═══
+  for (let c = 0; c < COLS; c++) {
+    map[c] = []; tileVariant[c] = []; depositHP[c] = [];
+    for (let r = 0; r < ROWS; r++) {
+      tileVariant[c][r] = (hash(c * 7 + 31, r * 13 + 47) - 0.5) * 2;
+      depositHP[c][r] = 0;
+      map[c][r] = T.GRASS;
     }
   }
 
-  // ─── PHASE 1: MOUNTAIN RANGES (Bézier spines) ───
-  const heightMap=[];
-  for(let c=0;c<COLS;c++){heightMap[c]=new Float32Array(ROWS);}
+  // ═══ PASS 1 & 2: Compute elevation and moisture fields ═══
+  const elevMap = [];
+  const moistMap = [];
+  for (let c = 0; c < COLS; c++) {
+    elevMap[c] = new Float32Array(ROWS);
+    moistMap[c] = new Float32Array(ROWS);
+  }
 
-  const spines=generateSpines(3+Math.floor(seededRand()*3)); // 3-5 spines
+  for (let c = 0; c < COLS; c++) {
+    for (let r = 0; r < ROWS; r++) {
+      elevMap[c][r] = computeElevation(c, r);
+      moistMap[c][r] = computeMoisture(c, r);
+    }
+  }
 
-  for(let c=0;c<COLS;c++){
-    for(let r=0;r<ROWS;r++){
-      let maxH=0;
-      for(let s=0;s<spines.length;s++){
-        const sp=spines[s];
-        const t=closestParamOnBezier(sp,c,r);
-        const pt=evalBezier(sp,t);
-        const dx=c-pt.x, dy=r-pt.y;
-        const dist=Math.sqrt(dx*dx+dy*dy);
-        // Width tapers from center to ends
-        let w=sp.baseWidth*(1.0-sp.taper*Math.abs(t-0.5)*2);
-        // Fractal displacement on edges
-        w+=fbm(c*0.8+sp.seed,r*0.8,2,0.02,2,0.5)*14-7;
-        if(w<2) w=2;
-        if(dist<w){
-          const h=1.0-(dist/w);
-          if(h>maxH) maxH=h;
+  // Compute percentile-based thresholds for consistent biome coverage across seeds
+  // Sample ~10% of tiles for speed
+  const sampleSize = Math.floor(COLS * ROWS * 0.1);
+  const elevSamples = new Float32Array(sampleSize);
+  const moistSamples = new Float32Array(sampleSize);
+  for (let i = 0; i < sampleSize; i++) {
+    const sc = Math.floor(seededRand() * COLS);
+    const sr = Math.floor(seededRand() * ROWS);
+    elevSamples[i] = elevMap[sc][sr];
+    moistSamples[i] = elevMap[sc][sr]; // reuse for sorting
+  }
+  // Re-sample moisture independently
+  for (let i = 0; i < sampleSize; i++) {
+    const sc = Math.floor(seededRand() * COLS);
+    const sr = Math.floor(seededRand() * ROWS);
+    moistSamples[i] = moistMap[sc][sr];
+  }
+  elevSamples.sort();
+  moistSamples.sort();
+
+  // Target: ~7% water, ~15% mountain, ~15% forest → ~63% grass
+  const waterThresh = elevSamples[Math.floor(sampleSize * 0.07)];
+  const mountainThresh = elevSamples[Math.floor(sampleSize * 0.85)]; // top 15%
+  const forestMoistThresh = moistSamples[Math.floor(sampleSize * 0.72)]; // top 28% moisture (forest only in wet zones)
+
+  // ═══ PASS 3: Water + Biome assignment using percentile thresholds ═══
+  // First pass: place water
+  for (let c = 0; c < COLS; c++) {
+    for (let r = 0; r < ROWS; r++) {
+      if (elevMap[c][r] < waterThresh) {
+        map[c][r] = T.WATER;
+      }
+    }
+  }
+
+  // Moisture bonus near water (cross-pattern sampling for speed)
+  const proxRad = G.WATER_PROX_RADIUS;
+  for (let c = 0; c < COLS; c++) {
+    for (let r = 0; r < ROWS; r++) {
+      if (map[c][r] === T.WATER) continue;
+      let nearWater = false;
+      for (let d = 1; d <= proxRad && !nearWater; d++) {
+        if (c - d >= 0 && map[c - d][r] === T.WATER) nearWater = true;
+        if (c + d < COLS && map[c + d][r] === T.WATER) nearWater = true;
+        if (r - d >= 0 && map[c][r - d] === T.WATER) nearWater = true;
+        if (r + d < ROWS && map[c][r + d] === T.WATER) nearWater = true;
+      }
+      if (nearWater) moistMap[c][r] += G.WATER_PROX_BONUS;
+    }
+  }
+
+  // Biome assignment with dithered boundaries
+  // forestElevMin: halfway between water and mountain thresholds
+  const forestElevMin = waterThresh + (mountainThresh - waterThresh) * 0.35;
+
+  for (let c = 0; c < COLS; c++) {
+    for (let r = 0; r < ROWS; r++) {
+      if (map[c][r] === T.WATER) continue;
+
+      const elev = elevMap[c][r];
+      const moist = moistMap[c][r];
+      const dither = fbmLayer(c, r, 2, G.DITHER_FREQ, 20000, 20000) * G.DITHER_AMP;
+
+      if (elev > mountainThresh + dither) {
+        // HIGH ELEVATION → Mountain (stone)
+        map[c][r] = T.STONE;
+      } else if (elev > forestElevMin + dither && elev <= mountainThresh + dither) {
+        // MID-HIGH ELEVATION — forest if wet enough
+        if (moist > forestMoistThresh + dither * 0.5) {
+          map[c][r] = T.TREE;
+        } else {
+          map[c][r] = T.GRASS;
         }
-      }
-      heightMap[c][r]=maxH;
-    }
-  }
-
-  // Classify mountain tiles from height
-  for(let c=0;c<COLS;c++){
-    for(let r=0;r<ROWS;r++){
-      const h=heightMap[c][r];
-      if(h>0.35){
-        // Mountain zone — will place stone/ore later in Phase 4
-        map[c][r]=T.STONE; // placeholder, will refine
+      } else {
+        map[c][r] = T.GRASS;
       }
     }
   }
 
-  // ─── PHASE 2: RIVER CARVING ───
-  const numRivers=2+Math.floor(seededRand()*3); // 2-4 rivers
-  for(let i=0;i<numRivers;i++){
-    // Pick source on a mountain spine
-    const sp=spines[i%spines.length];
-    const t=0.2+seededRand()*0.6;
-    const pt=evalBezier(sp,t);
-    const sc=Math.round(pt.x), sr=Math.round(pt.y);
-    if(sc>=0&&sc<COLS&&sr>=0&&sr<ROWS){
-      carveRiver(sc,sr,heightMap);
+  // ═══ PASS 5: River carving ═══
+  const numRivers = G.RIVER_COUNT_MIN + Math.floor(seededRand() * (G.RIVER_COUNT_MAX - G.RIVER_COUNT_MIN + 1));
+  for (let i = 0; i < numRivers; i++) {
+    // Find a high-elevation source point
+    let bestC = 0, bestR = 0, bestE = 0;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const tc = 30 + Math.floor(seededRand() * (COLS - 60));
+      const tr = 30 + Math.floor(seededRand() * (ROWS - 60));
+      if (elevMap[tc][tr] > bestE && map[tc][tr] === T.STONE) {
+        bestE = elevMap[tc][tr];
+        bestC = tc; bestR = tr;
+      }
+    }
+    if (bestE > mountainThresh * 0.9) {
+      carveRiverV4(bestC, bestR, elevMap, moistMap);
     }
   }
 
-  // ─── PHASE 3: FOREST REGIONS (cellular automata) ───
-  growForests(heightMap);
+  // ═══ PASS 6: Resource scattering (within parent biomes) ═══
+  scatterResourcesV4(elevMap, moistMap, mountainThresh, forestMoistThresh);
 
-  // ─── PHASE 4: RESOURCE SCATTERING ───
-  scatterResources(heightMap);
+  // ═══ PASS 7: Polish ═══
+  polishMapV4(elevMap);
 
-  // ─── PHASE 5: POLISH ───
-  polishMap(heightMap);
-
-  // Init deposit HP
-  for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
-    const dep=DEPOSITS[map[c][r]];
-    if(dep) depositHP[c][r]=dep.maxHP;
+  // ═══ Init deposit HP ═══
+  for (let c = 0; c < COLS; c++) {
+    for (let r = 0; r < ROWS; r++) {
+      const dep = DEPOSITS[map[c][r]];
+      if (dep) depositHP[c][r] = dep.maxHP;
+    }
   }
 }
 
-// ─── SEEDED RANDOM (deterministic from map seed) ───
-let _mapRandState=0;
-function initMapRand(){_mapRandState=_seed;}
-function seededRand(){
-  _mapRandState=(_mapRandState*1103515245+12345)&0x7fffffff;
-  return _mapRandState/0x7fffffff;
-}
-// Call once at start
-initMapRand();
+// ─── RIVER CARVING V4 (downhill steepest-descent) ───
+function carveRiverV4(startC, startR, elevMap, moistMap) {
+  let c = startC, r = startR;
+  let width = 1;
+  const visited = new Set();
+  const maxSteps = COLS + ROWS;
+  const dirs = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
 
-// ─── BÉZIER SPINE GENERATION ───
-function generateSpines(count){
-  const spines=[];
-  for(let i=0;i<count;i++){
-    // Pick start/end on different map regions
-    const side1=Math.floor(seededRand()*4); // 0=top,1=right,2=bottom,3=left
-    const side2=(side1+1+Math.floor(seededRand()*2))%4;
-    const start=randomEdgePt(side1);
-    const end=randomEdgePt(side2);
-    // Interior control points
-    const mx=(start.x+end.x)/2, my=(start.y+end.y)/2;
-    const cp1={
-      x:mx*0.5+start.x*0.5+(seededRand()-0.5)*COLS*0.4,
-      y:my*0.5+start.y*0.5+(seededRand()-0.5)*ROWS*0.4
-    };
-    const cp2={
-      x:mx*0.5+end.x*0.5+(seededRand()-0.5)*COLS*0.4,
-      y:my*0.5+end.y*0.5+(seededRand()-0.5)*ROWS*0.4
-    };
-    // Clamp control points inside map
-    cp1.x=Math.max(20,Math.min(COLS-20,cp1.x));
-    cp1.y=Math.max(20,Math.min(ROWS-20,cp1.y));
-    cp2.x=Math.max(20,Math.min(COLS-20,cp2.x));
-    cp2.y=Math.max(20,Math.min(ROWS-20,cp2.y));
-
-    spines.push({
-      sx:start.x, sy:start.y,
-      cp1x:cp1.x, cp1y:cp1.y,
-      cp2x:cp2.x, cp2y:cp2.y,
-      ex:end.x, ey:end.y,
-      baseWidth:12+seededRand()*16, // 12-28 tiles wide (narrower ranges)
-      taper:0.30+seededRand()*0.2,  // 0.30-0.50 taper
-      seed:seededRand()*9999
-    });
-  }
-  return spines;
-}
-
-function randomEdgePt(side){
-  const margin=40;
-  switch(side){
-    case 0: return {x:margin+seededRand()*(COLS-2*margin), y:margin}; // top
-    case 1: return {x:COLS-margin, y:margin+seededRand()*(ROWS-2*margin)}; // right
-    case 2: return {x:margin+seededRand()*(COLS-2*margin), y:ROWS-margin}; // bottom
-    case 3: return {x:margin, y:margin+seededRand()*(ROWS-2*margin)}; // left
-  }
-  return {x:COLS/2,y:ROWS/2};
-}
-
-// ─── BÉZIER EVALUATION ───
-function evalBezier(sp,t){
-  const t1=1-t;
-  const t12=t1*t1, t13=t12*t1;
-  const t2=t*t, t3=t2*t;
-  return {
-    x: t13*sp.sx + 3*t12*t*sp.cp1x + 3*t1*t2*sp.cp2x + t3*sp.ex,
-    y: t13*sp.sy + 3*t12*t*sp.cp1y + 3*t1*t2*sp.cp2y + t3*sp.ey
-  };
-}
-
-function closestParamOnBezier(sp,px,py){
-  // Binary search + sampling for closest point on cubic Bézier
-  let bestT=0, bestDist=Infinity;
-  // Coarse pass: 20 samples
-  for(let i=0;i<=20;i++){
-    const t=i/20;
-    const pt=evalBezier(sp,t);
-    const dx=px-pt.x, dy=py-pt.y;
-    const d=dx*dx+dy*dy;
-    if(d<bestDist){bestDist=d;bestT=t;}
-  }
-  // Refine: 10 steps of binary narrowing
-  let lo=Math.max(0,bestT-0.05), hi=Math.min(1,bestT+0.05);
-  for(let iter=0;iter<10;iter++){
-    const m1=lo+(hi-lo)/3, m2=hi-(hi-lo)/3;
-    const p1=evalBezier(sp,m1), p2=evalBezier(sp,m2);
-    const d1=(px-p1.x)**2+(py-p1.y)**2;
-    const d2=(px-p2.x)**2+(py-p2.y)**2;
-    if(d1<d2) hi=m2; else lo=m1;
-  }
-  return (lo+hi)/2;
-}
-
-// ─── RIVER CARVING ───
-function carveRiver(startC,startR,heightMap){
-  let c=startC, r=startR, width=1;
-  const visited=new Set();
-  let steps=0;
-  const maxSteps=COLS+ROWS;
-
-  while(c>=0&&c<COLS&&r>=0&&r<ROWS&&steps<maxSteps){
-    // Set water tiles in width radius
-    const w=Math.ceil(width);
-    for(let dc=-w;dc<=w;dc++){
-      for(let dr=-w;dr<=w;dr++){
-        const nc=c+dc, nr=r+dr;
-        if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS){
-          if(dc*dc+dr*dr<=width*width){
-            map[nc][nr]=T.WATER;
+  for (let step = 0; step < maxSteps; step++) {
+    // Carve water in current width
+    const w = Math.ceil(width);
+    for (let dc = -w; dc <= w; dc++) {
+      for (let dr = -w; dr <= w; dr++) {
+        const nc = c + dc, nr = r + dr;
+        if (nc >= 0 && nc < COLS && nr >= 0 && nr < ROWS) {
+          if (dc * dc + dr * dr <= width * width) {
+            map[nc][nr] = T.WATER;
           }
         }
       }
     }
 
-    // Find downhill direction with wander
-    const wander=fbm(c*1.3+500,r*1.3+500,2,0.01,2,0.5)*0.4-0.2;
-    let bestDC=0, bestDR=1, bestH=99;
-    const dirs=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
-    for(const[dc,dr] of dirs){
-      const nc=c+dc, nr=r+dr;
-      if(nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
-      // Height with wander bias toward one direction
-      let h=heightMap[nc][nr]+wander*(dc*0.5+dr*0.3);
-      // Prefer moving toward edges
-      const ed=Math.min(nc,nr,COLS-1-nc,ROWS-1-nr);
-      h-=0.001*(maxSteps-ed); // subtle pull toward edges
-      if(h<bestH){bestH=h;bestDC=dc;bestDR=dr;}
+    // Boost moisture near river
+    const boostR = 6;
+    for (let dc = -boostR; dc <= boostR; dc++) {
+      for (let dr = -boostR; dr <= boostR; dr++) {
+        const nc = c + dc, nr = r + dr;
+        if (nc >= 0 && nc < COLS && nr >= 0 && nr < ROWS) {
+          if (dc * dc + dr * dr <= boostR * boostR) {
+            moistMap[nc][nr] = Math.min(1.0, moistMap[nc][nr] + 0.08);
+          }
+        }
+      }
     }
 
-    c+=bestDC; r+=bestDR;
-    steps++;
-    width=Math.min(4,1.5+steps/80); // wider rivers, faster growth
+    // Find steepest downhill neighbor
+    let bestDC = 0, bestDR = 1, bestH = Infinity;
+    for (const [dc, dr] of dirs) {
+      const nc = c + dc, nr = r + dr;
+      if (nc < 1 || nc >= COLS - 1 || nr < 1 || nr >= ROWS - 1) continue;
+      let h = elevMap[nc][nr];
+      // Small random meander
+      if (seededRand() < MAP_GEN.RIVER_MEANDER) {
+        h += (seededRand() - 0.5) * 0.05;
+      }
+      if (h < bestH) { bestH = h; bestDC = dc; bestDR = dr; }
+    }
 
-    const key=c+','+r;
-    if(visited.has(key)) break;
+    c += bestDC; r += bestDR;
+    width = Math.min(3.5, 1.0 + step / 120); // gradual widening
+
+    const key = c * 10000 + r;
+    if (visited.has(key)) break;
     visited.add(key);
 
-    // Stop at map edge
-    if(c<=1||c>=COLS-2||r<=1||r>=ROWS-2) break;
+    // Stop at map edge or existing water body
+    if (c <= 2 || c >= COLS - 3 || r <= 2 || r >= ROWS - 3) break;
+    if (map[c][r] === T.WATER && step > 10) break; // merge into existing water
   }
 }
 
-// ─── FOREST GROWTH (Cellular Automata) ───
-function growForests(heightMap){
-  // Step 1: Seed from moisture noise
-  const isForest=[];
-  for(let c=0;c<COLS;c++){
-    isForest[c]=new Uint8Array(ROWS);
-  }
+// ─── RESOURCE SCATTERING V4 (within parent biomes, clustered) ───
+function scatterResourcesV4(elevMap, moistMap, mtnThresh, fMoistThresh) {
+  const G = MAP_GEN;
 
-  for(let c=0;c<COLS;c++){
-    for(let r=0;r<ROWS;r++){
-      if(map[c][r]!==T.GRASS) continue;
-      const moisture=fbm(c+1000,r+1000,3,0.004,2,0.5);
-      // Near mountain (high height) → no forest
-      if(heightMap[c][r]>0.15) continue;
-      if(moisture>0.60){ // higher threshold = less forest seeding
-        isForest[c][r]=1;
-      }
-    }
-  }
+  for (let c = 0; c < COLS; c++) {
+    for (let r = 0; r < ROWS; r++) {
+      const tile = map[c][r];
+      const elev = elevMap[c][r];
+      const moist = moistMap[c][r];
+      const detail = hash(c * 131 + 7, r * 173 + 13);
 
-  // Step 2: Grow via cellular automata (3 iterations)
-  for(let iter=0;iter<3;iter++){
-    const newF=[];
-    for(let c=0;c<COLS;c++) newF[c]=new Uint8Array(ROWS);
-    for(let c=1;c<COLS-1;c++){
-      for(let r=1;r<ROWS-1;r++){
-        if(isForest[c][r]){newF[c][r]=1;continue;}
-        if(map[c][r]!==T.GRASS) continue;
-        if(heightMap[c][r]>0.15) continue;
-        // Count forest neighbors (8-dir)
-        let cnt=0;
-        for(let dc=-1;dc<=1;dc++) for(let dr=-1;dr<=1;dr++){
-          if(dc===0&&dr===0) continue;
-          if(isForest[c+dc][r+dr]) cnt++;
+      if (tile === T.STONE) {
+        // Clustering noise for ore/gold
+        const oreCluster = fbmLayer(c, r, 2, G.RESOURCE_CLUSTER_FREQ, 30000, 30000);
+        const goldCluster = fbmLayer(c, r, 2, G.RESOURCE_CLUSTER_FREQ * 0.7, 35000, 35000);
+
+        // Deep mountain → gold (top 30% of mountain elevation, rare, clustered)
+        const deepMtn = mtnThresh + (1.0 - mtnThresh) * 0.5;
+        if (elev > deepMtn && goldCluster > 0.6 && detail < G.GOLD_CHANCE) {
+          map[c][r] = T.GOLD;
+        } else if (oreCluster > 0.55 && detail < G.ORE_CHANCE) {
+          // Inner mountain → ore (clustered)
+          map[c][r] = T.ORE;
         }
-        const moisture=fbm(c+1000,r+1000,3,0.004,2,0.5);
-        if(cnt>=4&&moisture>0.48) newF[c][r]=1; // stricter growth
-      }
-    }
-    // Merge
-    for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
-      if(newF[c][r]) isForest[c][r]=1;
-    }
-  }
 
-  // Step 3: Carve clearings
-  const numClearings=6+Math.floor(seededRand()*6);
-  for(let i=0;i<numClearings;i++){
-    // Find a random forest tile
-    let tries=0;
-    while(tries<100){
-      const c=Math.floor(seededRand()*COLS);
-      const r=Math.floor(seededRand()*ROWS);
-      if(isForest[c][r]){
-        const radius=4+Math.floor(seededRand()*5);
-        for(let dc=-radius;dc<=radius;dc++){
-          for(let dr=-radius;dr<=radius;dr++){
-            const nc=c+dc, nr=r+dr;
-            if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS){
-              if(dc*dc+dr*dr<=radius*radius) isForest[nc][nr]=0;
-            }
+      } else if (tile === T.GRASS) {
+        // Berries in low-elevation wet areas
+        if (elev < mtnThresh * 0.6 && moist > fMoistThresh * 0.9) {
+          const berryCluster = fbmLayer(c, r, 2, G.RESOURCE_CLUSTER_FREQ, 40000, 40000);
+          if (berryCluster > 0.55 && detail < G.BERRY_CHANCE) {
+            map[c][r] = T.BERRY;
           }
         }
-        break;
-      }
-      tries++;
-    }
-  }
-
-  // Apply forest to map
-  for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
-    if(isForest[c][r]) map[c][r]=T.TREE;
-  }
-}
-
-// ─── RESOURCE SCATTERING ───
-function scatterResources(heightMap){
-  // Refine mountain tiles: cores get ore/gold, slopes get stone, outer = grass
-  for(let c=0;c<COLS;c++){
-    for(let r=0;r<ROWS;r++){
-      if(map[c][r]!==T.STONE) continue; // only process mountain placeholders
-      const h=heightMap[c][r];
-      const detail=hash(c*131+7,r*173+13);
-      const detail2=hash(c*37+997,r*53+853);
-
-      if(h>0.75){
-        // Deep core — stone with rare ore/gold
-        if(detail<0.12) map[c][r]=T.ORE;
-        else if(detail<0.15&&h>0.85) map[c][r]=T.GOLD;
-        else map[c][r]=T.STONE;
-      } else if(h>0.5){
-        // Mid mountain — stone dominant
-        if(detail<0.25) map[c][r]=T.STONE;
-        else if(detail<0.30) map[c][r]=T.ORE;
-        else map[c][r]=T.STONE;
-      } else {
-        // Foothills — sparse stone
-        if(detail<0.15) map[c][r]=T.STONE;
-        else map[c][r]=T.GRASS; // flatten back to grass
-      }
-    }
-  }
-
-  // Berry clusters at forest edges
-  const berryCount=120+Math.floor(seededRand()*80);
-  for(let i=0;i<berryCount;i++){
-    let tries=0;
-    while(tries<300){
-      const c=Math.floor(seededRand()*COLS);
-      const r=Math.floor(seededRand()*ROWS);
-      if(map[c][r]===T.GRASS){
-        let nearForest=false;
-        for(let dc=-5;dc<=5&&!nearForest;dc++){
-          for(let dr=-5;dr<=5&&!nearForest;dr++){
-            const nc=c+dc,nr=r+dr;
-            if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS&&map[nc][nr]===T.TREE) nearForest=true;
-          }
-        }
-        if(nearForest){
-          const clusterSize=4+Math.floor(seededRand()*6); // 4-9 per cluster
-          for(let j=0;j<clusterSize;j++){
-            const dc=Math.floor(seededRand()*7)-3;
-            const dr=Math.floor(seededRand()*7)-3;
-            const nc=c+dc, nr=r+dr;
-            if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS&&map[nc][nr]===T.GRASS){
-              map[nc][nr]=T.BERRY;
-            }
-          }
-          break;
-        }
-      }
-      tries++;
-    }
-  }
-
-  // Meadow berries: scattered in open grass with moderate moisture
-  for(let c=0;c<COLS;c++){
-    for(let r=0;r<ROWS;r++){
-      if(map[c][r]!==T.GRASS) continue;
-      const moisture=fbm(c+1000,r+1000,3,0.004,2,0.5);
-      if(moisture>0.45&&moisture<0.58){
-        const detail=hash(c*131+7,r*173+13);
-        if(detail<0.008) map[c][r]=T.BERRY;
       }
     }
   }
 }
 
-// ─── MAP POLISH ───
-function polishMap(heightMap){
-  // Remove isolated single tiles (mountain/tree tiles with <2 same-type neighbors)
-  for(let c=1;c<COLS-1;c++){
-    for(let r=1;r<ROWS-1;r++){
-      const t=map[c][r];
-      if(t===T.STONE||t===T.ORE||t===T.TREE){
-        let cnt=0;
-        for(let dc=-1;dc<=1;dc++) for(let dr=-1;dr<=1;dr++){
-          if(dc===0&&dr===0) continue;
-          const nt=map[c+dc][r+dr];
-          // Same biome family
-          if(t===T.TREE&&nt===T.TREE) cnt++;
-          else if((t===T.STONE||t===T.ORE)&&(nt===T.STONE||nt===T.ORE||nt===T.GOLD)) cnt++;
+// ─── MAP POLISH V4 ───
+function polishMapV4(elevMap) {
+  const G = MAP_GEN;
+
+  // Pass 1: Remove isolated single tiles
+  for (let c = 1; c < COLS - 1; c++) {
+    for (let r = 1; r < ROWS - 1; r++) {
+      const t = map[c][r];
+      if (t === T.STONE || t === T.ORE || t === T.GOLD || t === T.TREE) {
+        let cnt = 0;
+        for (let dc = -1; dc <= 1; dc++) {
+          for (let dr = -1; dr <= 1; dr++) {
+            if (dc === 0 && dr === 0) continue;
+            const nt = map[c + dc][r + dr];
+            if (t === T.TREE && nt === T.TREE) cnt++;
+            else if ((t === T.STONE || t === T.ORE || t === T.GOLD) &&
+                     (nt === T.STONE || nt === T.ORE || nt === T.GOLD)) cnt++;
+          }
         }
-        if(cnt<2) map[c][r]=T.GRASS;
+        if (cnt < G.MIN_CLUSTER_SIZE - 1) map[c][r] = T.GRASS;
       }
     }
   }
 
-  // Clear 25×25 area near map center for base
-  const cx=Math.floor(COLS/2), cy=Math.floor(ROWS/2);
+  // Pass 2: Remove single-tile water
+  for (let c = 1; c < COLS - 1; c++) {
+    for (let r = 1; r < ROWS - 1; r++) {
+      if (map[c][r] === T.WATER) {
+        let cnt = 0;
+        for (let dc = -1; dc <= 1; dc++) {
+          for (let dr = -1; dr <= 1; dr++) {
+            if (dc === 0 && dr === 0) continue;
+            if (map[c + dc][r + dr] === T.WATER) cnt++;
+          }
+        }
+        if (cnt < 2) map[c][r] = T.GRASS;
+      }
+    }
+  }
+
+  // Pass 3: Remove single-tile grass in water (islands)
+  for (let c = 1; c < COLS - 1; c++) {
+    for (let r = 1; r < ROWS - 1; r++) {
+      if (map[c][r] === T.GRASS || map[c][r] === T.BERRY) {
+        let waterCnt = 0;
+        for (let dc = -1; dc <= 1; dc++) {
+          for (let dr = -1; dr <= 1; dr++) {
+            if (dc === 0 && dr === 0) continue;
+            if (map[c + dc][r + dr] === T.WATER) waterCnt++;
+          }
+        }
+        if (waterCnt >= 7) map[c][r] = T.WATER; // surrounded by water → fill in
+      }
+    }
+  }
+
+  // Pass 4: Clear base zone near center
+  const cx = Math.floor(COLS / 2), cy = Math.floor(ROWS / 2);
   // Find nearest grass-heavy spot near center
-  let bestC=cx, bestR=cy, bestGrass=0;
-  for(let dc=-30;dc<=30;dc+=5){
-    for(let dr=-30;dr<=30;dr+=5){
-      const tc=cx+dc, tr=cy+dr;
-      if(tc<30||tc>=COLS-30||tr<30||tr>=ROWS-30) continue;
-      let grassCnt=0;
-      for(let i=-12;i<=12;i++) for(let j=-12;j<=12;j++){
-        if(map[tc+i][tr+j]===T.GRASS) grassCnt++;
+  let bestC = cx, bestR = cy, bestGrass = 0;
+  for (let dc = -40; dc <= 40; dc += 5) {
+    for (let dr = -40; dr <= 40; dr += 5) {
+      const tc = cx + dc, tr = cy + dr;
+      if (tc < 30 || tc >= COLS - 30 || tr < 30 || tr >= ROWS - 30) continue;
+      let grassCnt = 0;
+      for (let i = -12; i <= 12; i++) {
+        for (let j = -12; j <= 12; j++) {
+          if (tc + i >= 0 && tc + i < COLS && tr + j >= 0 && tr + j < ROWS) {
+            if (map[tc + i][tr + j] === T.GRASS) grassCnt++;
+          }
+        }
       }
-      if(grassCnt>bestGrass){bestGrass=grassCnt;bestC=tc;bestR=tr;}
+      if (grassCnt > bestGrass) { bestGrass = grassCnt; bestC = tc; bestR = tr; }
     }
   }
 
   // Clear the base zone
-  for(let dc=-15;dc<=15;dc++){
-    for(let dr=-15;dr<=15;dr++){
-      const nc=bestC+dc, nr=bestR+dr;
-      if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS){
-        if(dc*dc+dr*dr<=15*15){
-          map[nc][nr]=T.GRASS;
-          heightMap[nc][nr]=0;
+  for (let dc = -15; dc <= 15; dc++) {
+    for (let dr = -15; dr <= 15; dr++) {
+      const nc = bestC + dc, nr = bestR + dr;
+      if (nc >= 0 && nc < COLS && nr >= 0 && nr < ROWS) {
+        if (dc * dc + dr * dr <= 15 * 15) {
+          map[nc][nr] = T.GRASS;
         }
       }
     }
   }
 
-  // Ensure minimum resources within 80 tiles of center
-  ensureMinResources(bestC,bestR,80,T.TREE,40);
-  ensureMinResources(bestC,bestR,80,T.STONE,15);
-  ensureMinResources(bestC,bestR,80,T.BERRY,8);
+  // Pass 5: Ensure minimum resources near base
+  ensureMinResources(bestC, bestR, 80, T.TREE, 40);
+  ensureMinResources(bestC, bestR, 80, T.STONE, 15);
+  ensureMinResources(bestC, bestR, 80, T.BERRY, 8);
+
+  // Pass 6: Ensure spawn paths from all 4 edges
+  ensureSpawnPaths(bestC, bestR);
 }
 
-function ensureMinResources(cx,cy,radius,tileType,minCount){
-  let count=0;
-  for(let dc=-radius;dc<=radius;dc++){
-    for(let dr=-radius;dr<=radius;dr++){
-      const nc=cx+dc, nr=cy+dr;
-      if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS){
-        if(map[nc][nr]===tileType) count++;
+// ─── ENSURE MIN RESOURCES ───
+function ensureMinResources(cx, cy, radius, tileType, minCount) {
+  let count = 0;
+  for (let dc = -radius; dc <= radius; dc++) {
+    for (let dr = -radius; dr <= radius; dr++) {
+      const nc = cx + dc, nr = cy + dr;
+      if (nc >= 0 && nc < COLS && nr >= 0 && nr < ROWS) {
+        if (map[nc][nr] === tileType) count++;
       }
     }
   }
-  // If short, sprinkle some in
-  while(count<minCount){
-    const angle=seededRand()*Math.PI*2;
-    const dist=20+seededRand()*(radius-25);
-    const nc=Math.round(cx+Math.cos(angle)*dist);
-    const nr=Math.round(cy+Math.sin(angle)*dist);
-    if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS&&map[nc][nr]===T.GRASS){
-      map[nc][nr]=tileType;
+  while (count < minCount) {
+    const angle = seededRand() * Math.PI * 2;
+    const dist = 20 + seededRand() * (radius - 25);
+    const nc = Math.round(cx + Math.cos(angle) * dist);
+    const nr = Math.round(cy + Math.sin(angle) * dist);
+    if (nc >= 0 && nc < COLS && nr >= 0 && nr < ROWS && map[nc][nr] === T.GRASS) {
+      map[nc][nr] = tileType;
       count++;
     }
   }
 }
+
+// ─── ENSURE SPAWN PATHS (BFS from center to all 4 edges) ───
+function ensureSpawnPaths(cx, cy) {
+  // Check if a 2-wide path exists from base to each edge using BFS
+  // If blocked, carve a minimal grass path
+  const edges = [
+    { c: cx, r: 0 },          // top
+    { c: cx, r: ROWS - 1 },   // bottom
+    { c: 0, r: cy },          // left
+    { c: COLS - 1, r: cy },   // right
+  ];
+
+  for (const target of edges) {
+    // Carve a straight-ish path from base to edge, only converting blocking tiles
+    let c = cx, r = cy;
+    const tc = target.c, tr = target.r;
+    while (c !== tc || r !== tr) {
+      // Move toward target
+      if (Math.abs(c - tc) > Math.abs(r - tr)) {
+        c += (tc > c) ? 1 : -1;
+      } else {
+        r += (tr > r) ? 1 : -1;
+      }
+      if (c >= 0 && c < COLS && r >= 0 && r < ROWS) {
+        if (map[c][r] !== T.GRASS && map[c][r] !== T.BERRY && map[c][r] !== T.TREE) {
+          map[c][r] = T.GRASS;
+        }
+        // Also clear adjacent tile for 2-wide path
+        if (c + 1 < COLS && map[c + 1][r] !== T.GRASS && map[c + 1][r] !== T.BERRY && map[c + 1][r] !== T.TREE) {
+          map[c + 1][r] = T.GRASS;
+        }
+      }
+    }
+  }
+}
+
 
 
 // Place first Settlement — clear area, set BASE_CX/CY, carve spawn paths
