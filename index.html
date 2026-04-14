@@ -1583,6 +1583,14 @@ function computeMoisture(c, r) {
   return fbmLayer(c, r, MAP_GEN.MOIST_OCT, MAP_GEN.MOIST_FREQ, 12000, 15000);
 }
 
+// ─── SEEDED RANDOM (deterministic per-map) ───
+let _mapRandState=0;
+function initMapRand(){_mapRandState=_seed;}
+function seededRand(){
+  _mapRandState=(_mapRandState*1103515245+12345)&0x7fffffff;
+  return _mapRandState/0x7fffffff;
+}
+
 // ─── MAIN GENERATE MAP ───
 function generateMap() {
   map = []; tileVariant = []; depositHP = [];
