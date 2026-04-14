@@ -324,6 +324,31 @@
   #ui-morale { color: #e8c56a; }
   #ui-upkeep { color: #d87aa0; }
   #ui-formation { color: #8ad0ff; }
+  /* Settlement Info Panel */
+  #settlement-panel {
+    position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+    background: rgba(15,15,25,0.92); border: 1px solid rgba(200,170,60,0.3);
+    border-radius: 8px; padding: 10px 16px; color: #d0ccc0;
+    font: 12px/1.5 system-ui; display: none; z-index: 200;
+    min-width: 240px; text-align: center; backdrop-filter: blur(6px);
+  }
+  #settlement-panel .sp-title { font-size: 14px; font-weight: bold; color: #e8c56a; margin-bottom: 4px; }
+  #settlement-panel .sp-stats { display: flex; gap: 12px; justify-content: center; margin: 6px 0; }
+  #settlement-panel .sp-stat { font-size: 11px; color: #a0a0a8; }
+  #settlement-panel .sp-stat b { color: #d0d0d8; }
+  #settlement-panel .sp-actions { margin-top: 6px; display: flex; gap: 6px; justify-content: center; }
+  #settlement-panel .sp-btn {
+    background: rgba(90,180,90,0.15); border: 1px solid rgba(90,180,90,0.3);
+    color: #7aca7a; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px;
+  }
+  #settlement-panel .sp-btn:hover { background: rgba(90,180,90,0.25); }
+  #settlement-panel .sp-btn.disabled { opacity: 0.4; pointer-events: none; }
+  #settlement-panel .sp-btn.sp-close {
+    background: rgba(180,60,40,0.15); border-color: rgba(180,60,40,0.3); color: #e87a6a;
+  }
+  .tool-btn[data-tool="HOUSE"] { border-color: rgba(190,160,110,0.25); }
+  .tool-btn[data-tool="HOUSE"]:hover { background: rgba(190,160,110,0.12); }
+  .tool-btn[data-tool="HOUSE"].active { background: rgba(190,160,110,0.18); border-color: rgba(190,160,110,0.4); color: #c8a86a; }
 </style>
 </head>
 <body>
@@ -390,6 +415,7 @@
       </div>
       <div class="tb-item-group" data-cat="economy" style="display:none">
         <button class="tool-btn citizen" data-tool="CITIZEN_BLOCK" onclick="selectTool('CITIZEN_BLOCK')"><span class="tool-key">Q</span> Settlement <span class="tool-cost" id="citizen-cost">50W 30S</span></button>
+        <button class="tool-btn" data-tool="HOUSE" onclick="selectTool('HOUSE')"><span class="tool-key">W</span> House <span class="tool-cost">5W 2S</span></button>
       </div>
       <div class="tb-item-group" data-cat="resources" style="display:none">
         <button class="tool-btn" data-tool="FARM" onclick="selectTool('FARM')"><span class="tool-key">Q</span> Farm <span class="tool-cost">Free</span></button>
@@ -407,6 +433,20 @@
   <div id="tb-combat-mode" class="tb-mode" style="display:none">
     <span class="tb-combat-label">⚔️ COMBAT</span>
     <span class="tb-combat-hint">WASD move · Click to attack · Tab cycle units</span>
+  </div>
+</div>
+<div id="settlement-panel">
+  <div class="sp-title" id="sp-title">Village</div>
+  <div class="sp-stats">
+    <span class="sp-stat">HP: <b id="sp-hp">80/80</b></span>
+    <span class="sp-stat">Houses: <b id="sp-houses">0/3</b></span>
+    <span class="sp-stat">Citizens: <b id="sp-citizens">2</b></span>
+    <span class="sp-stat">Radius: <b id="sp-radius">15</b></span>
+  </div>
+  <div class="sp-actions">
+    <button class="sp-btn" id="sp-upgrade" onclick="panelUpgrade()">⬆ Upgrade</button>
+    <button class="sp-btn" id="sp-priority" onclick="panelCyclePriority()">⚖️ Priority: All</button>
+    <button class="sp-btn sp-close" onclick="closeSettlementPanel()">✕ Close</button>
   </div>
 </div>
 <div class="glass-lg" id="unit-info">
@@ -593,9 +633,9 @@ const CITIZEN_UPKEEP_RATE=0.5;   // food per citizen per wave (1 food per 2 citi
 // Tier 1 = base settlement. Click during BUILD to upgrade.
 const SETTLEMENT_TIERS=[
   null, // index 0 unused
-  {citizens:2, visRadius:12, visExp:14, speedMult:1.0, gatherRadius:10, upgradeCost:null, name:'Settlement'},
-  {citizens:3, visRadius:15, visExp:17, speedMult:1.3, gatherRadius:10, upgradeCost:{stone:30,metal:10}, name:'Settlement II'},
-  {citizens:4, visRadius:15, visExp:17, speedMult:1.6, gatherRadius:15, upgradeCost:{metal:20,gold:5}, name:'Settlement III'},
+  {citizens:2, visRadius:12, visExp:14, speedMult:1.0, gatherRadius:10, buildRadius:15, maxHouses:3, upgradeCost:null, name:'Village'},
+  {citizens:3, visRadius:15, visExp:17, speedMult:1.3, gatherRadius:10, buildRadius:20, maxHouses:6, upgradeCost:{stone:30,metal:10}, name:'Town'},
+  {citizens:4, visRadius:15, visExp:17, speedMult:1.6, gatherRadius:15, buildRadius:25, maxHouses:9, upgradeCost:{metal:20,gold:5}, name:'City'},
 ];
 const MAX_SETTLEMENT_TIER=3;
 
@@ -621,6 +661,7 @@ const STRUCTS={
   TRAP:{name:'Spike Trap',cost:{wood:3,metal:1},hp:1,color:[55,50,45],letter:'X',dmg:8,slow:0.5},
   GATE:{name:'Gate',cost:{wood:5,stone:2},hp:30,color:[90,75,55],letter:'G',dmg:3,slow:0.6},
   CITIZEN_BLOCK:{name:'Settlement',cost:{wood:50,stone:30},hp:80,color:[170,140,90],letter:'🏘',visRadius:12,visExp:14},
+  HOUSE:{name:'House',cost:{wood:5,stone:2},hp:20,color:[190,160,110],letter:'H',upkeep:{food:1},maxRepairs:3},
 };
 
 // ─── RESOURCE BUILDINGS ───
@@ -716,6 +757,124 @@ function upgradeSettlement(col,row){
   addFloat(`⬆ Upgraded to ${tierDef.name}!`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE-TILE_SIZE,'#ffd700');
   addParticles(col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE+TILE_SIZE/2,'rgba(255,215,0,0.7)',10);
   cam.shake=Math.max(cam.shake,3);
+}
+
+// ─── SETTLEMENT PANEL UI ───
+let panelSettKey = null; // key of settlement currently shown in panel
+
+function openSettlementPanel(col, row) {
+  const sk = col + ',' + row;
+  const s = structures[sk];
+  if (!s || s.type !== 'CITIZEN_BLOCK') return;
+  panelSettKey = sk;
+  updateSettlementPanel();
+  document.getElementById('settlement-panel').style.display = '';
+}
+
+function closeSettlementPanel() {
+  panelSettKey = null;
+  document.getElementById('settlement-panel').style.display = 'none';
+}
+
+function updateSettlementPanel() {
+  if (!panelSettKey) return;
+  const s = structures[panelSettKey];
+  if (!s) { closeSettlementPanel(); return; }
+  const tier = s.tier || 1;
+  const td = getSettlementTierData(tier);
+  const hCount = countHousesForSettlement(panelSettKey);
+  // Count citizens belonging to this settlement + its houses
+  const citCount = citizens.filter(c => c.blockKey === panelSettKey).length;
+  // Also count citizens from houses near this settlement
+  let houseCits = 0;
+  for (const [hk, hs] of Object.entries(structures)) {
+    if (hs.type !== 'HOUSE') continue;
+    const [hc, hr] = hk.split(',').map(Number);
+    const ns = settlementInRadius(hc, hr);
+    if (ns && ns.key === panelSettKey) {
+      houseCits += citizens.filter(c => c.blockKey === ns.key).length;
+    }
+  }
+  document.getElementById('sp-title').textContent = td.name + (tier < MAX_SETTLEMENT_TIER ? ' (Tier ' + tier + ')' : ' (MAX)');
+  document.getElementById('sp-hp').textContent = s.hp + '/' + s.maxHP;
+  document.getElementById('sp-houses').textContent = hCount + '/' + td.maxHouses;
+  document.getElementById('sp-citizens').textContent = citCount;
+  document.getElementById('sp-radius').textContent = td.buildRadius;
+  // Upgrade button
+  const upBtn = document.getElementById('sp-upgrade');
+  if (tier >= MAX_SETTLEMENT_TIER) {
+    upBtn.textContent = '👑 Max Tier';
+    upBtn.classList.add('disabled');
+  } else {
+    const nextTd = SETTLEMENT_TIERS[tier + 1];
+    const costStr = Object.entries(nextTd.upgradeCost).map(([r, a]) => a + ' ' + r).join(', ');
+    const affordable = canUpgradeSettlement(panelSettKey.split(',')[0] | 0, panelSettKey.split(',')[1] | 0);
+    upBtn.textContent = '⬆ Upgrade to ' + nextTd.name + ' (' + costStr + ')';
+    upBtn.classList.toggle('disabled', !affordable);
+  }
+  // Priority button
+  const pri = s.gatherPriority || 'all';
+  const priIcon = RES_ICONS[pri] || '⚖️';
+  document.getElementById('sp-priority').textContent = priIcon + ' Priority: ' + pri.charAt(0).toUpperCase() + pri.slice(1);
+}
+
+function panelUpgrade() {
+  if (!panelSettKey) return;
+  const [c, r] = panelSettKey.split(',').map(Number);
+  if (canUpgradeSettlement(c, r)) {
+    upgradeSettlement(c, r);
+    updateSettlementPanel();
+  }
+}
+
+function panelCyclePriority() {
+  if (!panelSettKey) return;
+  const [c, r] = panelSettKey.split(',').map(Number);
+  cycleSettlementPriority(c, r);
+  updateSettlementPanel();
+}
+
+
+// ─── SETTLEMENT BUILD RADIUS HELPERS ───
+function settlementInRadius(col, row) {
+  // Returns {key, col, row, struct, dist} of the closest settlement whose build radius covers (col,row), or null
+  let best = null;
+  for (const [key, s] of Object.entries(structures)) {
+    if (s.type !== 'CITIZEN_BLOCK') continue;
+    const [sc, sr] = key.split(',').map(Number);
+    const tier = s.tier || 1;
+    const td = getSettlementTierData(tier);
+    const dist = Math.sqrt((col - sc) ** 2 + (row - sr) ** 2);
+    if (dist <= td.buildRadius && (!best || dist < best.dist)) {
+      best = { key, col: sc, row: sr, struct: s, dist };
+    }
+  }
+  return best;
+}
+
+function isInsideBuildRadius(col, row) {
+  return settlementInRadius(col, row) !== null;
+}
+
+function countHousesForSettlement(settKey) {
+  // Count houses closest to this settlement
+  const [sx, sy] = settKey.split(',').map(Number);
+  let count = 0;
+  for (const [key, s] of Object.entries(structures)) {
+    if (s.type !== 'HOUSE') continue;
+    const [hc, hr] = key.split(',').map(Number);
+    // Find nearest settlement for this house
+    const ns = settlementInRadius(hc, hr);
+    if (ns && ns.key === settKey) count++;
+  }
+  return count;
+}
+
+function getHouseLimitForSettlement(settKey) {
+  const s = structures[settKey];
+  if (!s || s.type !== 'CITIZEN_BLOCK') return 0;
+  const tier = s.tier || 1;
+  return getSettlementTierData(tier).maxHouses;
 }
 
 // ─── UNIT DEFINITIONS ───
@@ -2323,6 +2482,7 @@ function selectCategory(cat){
 }
 
 function enterCombatUI(){
+  closeSettlementPanel();
   uiMode='combat';
   document.getElementById('tb-gather-mode').style.display='none';
   document.getElementById('tb-build-mode').style.display='none';
@@ -2355,6 +2515,7 @@ function updateHint(){
     else if(selectedTool==='CAVALRY'){const u=UNIT_TYPES.CAVALRY;h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave), then click patrol target · Esc back`;}
     else if(UNIT_TYPES[selectedTool]){const u=UNIT_TYPES[selectedTool];h.textContent=`Click to place ${u.name} (🍖${u.upkeep}/wave) · 1/2/3 switch tab · Esc back`;}
     else if(selectedTool==='CITIZEN_BLOCK'){const c=getCitizenBlockCost();h.textContent=`Click VISIBLE tile to place Settlement (${c.wood}W ${c.stone}S) · Esc back`;}
+    else if(selectedTool==='HOUSE'){h.textContent='Click inside settlement radius to place House (5W 2S, +1 citizen) · Esc back';}
     else{const rb=RESOURCE_BUILDINGS[selectedTool];if(rb){h.textContent=`${rb.name} — must be placed on ${rb.produces} resource tile · 1-4 switch tab · Esc back`;}else{const s=STRUCTS[selectedTool];if(s)h.textContent=`Click to place ${s.name} · 1-4 switch tab · Esc back`;}}
   }
 }
@@ -4266,10 +4427,22 @@ function wouldSealBase(col,row,structType){
 }
 
 function handleBuild(col,row){
-  // Resource buildings: placement not yet implemented (Step 2 — toolbar only)
+  // Resource buildings: must be placed on matching resource tile inside build radius
   if(RESOURCE_BUILDINGS[selectedTool]){
-    addFloat('Building system coming soon!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#e8c56a');
+    const rb=RESOURCE_BUILDINGS[selectedTool];
+    const sk2=col+','+row;
+    if(map[col][row]!==rb.requiredTile){addFloat('Needs '+(TILE_NAMES[rb.requiredTile]||'special')+' tile!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+    if(structures[sk2]){addFloat('Occupied!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+    if(!isInsideBuildRadius(col,row)){addFloat('Must be inside settlement radius!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+    const dist2=Math.abs(col-heroCol())+Math.abs(row-heroRow());
+    if(dist2>BUILD_RANGE){addFloat('Too far!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+    if(!canAfford(selectedTool)){addFloat('Can\'t afford!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+    for(const[r,a] of Object.entries(rb.cost))game.resources[r]-=a;
+    structures[sk2]={type:selectedTool,hp:rb.hp,maxHP:rb.hp,cooldown:0,active:true,repairsUsed:0};
+    addStructureVision(col,row);
+    addFloat(rb.name+' built!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#7aca7a');
     return;
+  }
   }
   const def=STRUCTS[selectedTool];if(!def)return;
   const sk=col+','+row;
@@ -4279,6 +4452,18 @@ function handleBuild(col,row){
     if(hqPlaced&&(!fogMap[col]||fogMap[col][row]!==FOG_VISIBLE)){
       addFloat('Must place in VISIBLE area!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;
     }
+  }
+  // Build radius enforcement: non-settlement buildings must be inside a settlement radius
+  if(selectedTool!=='CITIZEN_BLOCK'){
+    if(!isInsideBuildRadius(col,row)){addFloat('Must be inside settlement radius!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+  }
+  // HOUSE placement: enforce per-settlement house limit
+  if(selectedTool==='HOUSE'){
+    const ns=settlementInRadius(col,row);
+    if(!ns){addFloat('Must be inside settlement radius!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+    const houseCount=countHousesForSettlement(ns.key);
+    const houseLimit=getHouseLimitForSettlement(ns.key);
+    if(houseCount>=houseLimit){addFloat('House limit reached ('+houseLimit+')!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
   }
   const dist=Math.abs(col-heroCol())+Math.abs(row-heroRow());
   if(dist>BUILD_RANGE){addFloat('Too far!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
@@ -4307,6 +4492,25 @@ function handleBuild(col,row){
   // Spawn citizens for new settlements
   if(selectedTool==='CITIZEN_BLOCK'){
     spawnCitizensForBlock(col,row);
+  }
+  // Spawn citizen for new HOUSE
+  if(selectedTool==='HOUSE'){
+    const ns=settlementInRadius(col,row);
+    if(ns){
+      // Spawn 1 citizen near the house
+      const offsets=[[0,1],[1,0],[0,-1],[-1,0],[1,1],[-1,1],[1,-1],[-1,-1]];
+      for(const[dc,dr] of offsets){
+        const sc=col+dc, sr=row+dr;
+        if(sc<0||sc>=COLS||sr<0||sr>=ROWS) continue;
+        if(map[sc][sr]!==T.GRASS||structures[sc+','+sr]) continue;
+        let occupied=false;
+        for(const c of citizens){if(c.col===sc&&c.row===sr){occupied=true;break;}}
+        if(occupied) continue;
+        citizens.push(createCitizen(sc, sr, ns.key));
+        addFloat('+1 Citizen',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE-TILE_SIZE*0.5,'#c8e0ff');
+        break;
+      }
+    }
   }
 }
 // Cavalry patrol waypoint state
@@ -4434,21 +4638,10 @@ document.getElementById('game-canvas').addEventListener('click',e=>{
       cycleSettlementPriority(col,row);return;
     }
     if(selectedTool==='DEMOLISH'){handleDemolish(col,row);return;}
-    // Any other tool/click on settlement → attempt upgrade
-    const tier=clickedStruct.tier||1;
-    if(tier<MAX_SETTLEMENT_TIER){
-      if(canUpgradeSettlement(col,row)){
-        upgradeSettlement(col,row);
-      } else {
-        const nextDef=SETTLEMENT_TIERS[tier+1];
-        const costStr=nextDef?Object.entries(nextDef.upgradeCost).map(([r,a])=>`${a} ${r}`).join(', '):'';
-        addFloat(`Need ${costStr}`,col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');
-      }
-      return;
-    } else {
-      addFloat('Max tier!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ffcc00');
-      return;
-    }
+    // Open settlement panel
+    openSettlementPanel(col,row);
+    return;
+  }
   }
   if(selectedTool==='gather')handleGather(col,row);
   else if(selectedTool==='DEMOLISH')handleDemolish(col,row);
@@ -4663,6 +4856,38 @@ function drawFogOverlay(){
 
 function drawStructures(){
   const z=cam.zoom;
+  // ── BUILD RADIUS CIRCLES ── (render during BUILD phase)
+  if(game.phase==='BUILD'||game.phase==='PLACE_HQ'){
+    for(const[key,s] of Object.entries(structures)){
+      if(s.type!=='CITIZEN_BLOCK') continue;
+      const[c,r]=key.split(',').map(Number);
+      if(fogMap[c]&&fogMap[c][r]===FOG_UNEXPLORED) continue;
+      const tier=s.tier||1;
+      const td=getSettlementTierData(tier);
+      const radPx=td.buildRadius*TILE_SIZE*z;
+      const cx=(c*TILE_SIZE+TILE_SIZE/2-cam.x)*z;
+      const cy=(r*TILE_SIZE+TILE_SIZE/2-cam.y)*z;
+      // Skip if fully offscreen
+      if(cx+radPx<0||cx-radPx>canvas.width||cy+radPx<0||cy-radPx>canvas.height) continue;
+      // Faint fill
+      const tierColors=['rgba(200,170,60,','rgba(180,200,220,','rgba(255,215,0,'];
+      const tc=tierColors[tier-1]||tierColors[0];
+      ctx.beginPath();ctx.arc(cx,cy,radPx,0,Math.PI*2);
+      ctx.fillStyle=tc+'0.03)';ctx.fill();
+      ctx.strokeStyle=tc+'0.18)';ctx.lineWidth=z*1.5;ctx.setLineDash([4*z,6*z]);ctx.stroke();ctx.setLineDash([]);
+      // House count badge
+      const hCount=countHousesForSettlement(key);
+      const hLimit=td.maxHouses;
+      const label=td.name+' · 🏠 '+hCount+'/'+hLimit;
+      ctx.font=(Math.max(9,10*z))+'px system-ui';ctx.textAlign='center';
+      const tw=ctx.measureText(label).width+12;
+      ctx.fillStyle='rgba(10,10,18,0.6)';ctx.fillRect(cx-tw/2,cy-radPx-16*z,tw,14*z);
+      ctx.fillStyle=tc+'0.85)';
+      ctx.fillText(label,cx,cy-radPx-16*z+10*z);
+    }
+    ctx.textAlign='start';ctx.textBaseline='alphabetic';
+  }
+
   for(const[key,s]of Object.entries(structures)){
     const[c,r]=key.split(',').map(Number);
     // Fog gate: only render on VISIBLE or EXPLORED tiles
@@ -4887,8 +5112,57 @@ function drawStructures(){
       }
     }
 
+    // ── HOUSE BUILDING ──
+    if(s.type==='HOUSE'){
+      const isDestroyed=s.hp<=0;
+      // House body
+      ctx.fillStyle=isDestroyed?'rgba(100,80,50,0.4)':'rgba(200,170,120,0.8)';
+      ctx.fillRect(sx+sw*0.15,sy+sw*0.4,sw*0.7,sw*0.5);
+      // Roof (triangle)
+      ctx.fillStyle=isDestroyed?'rgba(80,40,20,0.4)':'rgba(160,70,35,0.85)';
+      ctx.beginPath();
+      ctx.moveTo(sx+sw*0.1,sy+sw*0.42);
+      ctx.lineTo(sx+sw*0.5,sy+sw*0.12);
+      ctx.lineTo(sx+sw*0.9,sy+sw*0.42);
+      ctx.fill();
+      // Door
+      if(!isDestroyed){
+        ctx.fillStyle='rgba(80,50,25,0.7)';
+        ctx.fillRect(sx+sw*0.4,sy+sw*0.6,sw*0.2,sw*0.3);
+      }
+      // Window
+      if(!isDestroyed){
+        ctx.fillStyle='rgba(220,200,120,0.5)';
+        ctx.fillRect(sx+sw*0.22,sy+sw*0.5,sw*0.14,sw*0.12);
+        ctx.fillRect(sx+sw*0.64,sy+sw*0.5,sw*0.14,sw*0.12);
+      }
+      // Chimney smoke (alive only)
+      if(!isDestroyed){
+        ctx.fillStyle='rgba(160,160,170,0.3)';
+        const smokeT=performance.now()*0.001;
+        ctx.beginPath();ctx.arc(sx+sw*0.75,sy+sw*0.08+Math.sin(smokeT*2)*2*z,3*z,0,Math.PI*2);ctx.fill();
+        ctx.beginPath();ctx.arc(sx+sw*0.78,sy-sw*0.05+Math.sin(smokeT*2+1)*2*z,2*z,0,Math.PI*2);ctx.fill();
+      }
+      // Destroyed overlay
+      if(isDestroyed){
+        ctx.strokeStyle='rgba(180,50,30,0.6)';ctx.lineWidth=z*1.5;
+        ctx.beginPath();ctx.moveTo(sx+sw*0.15,sy+sw*0.15);ctx.lineTo(sx+sw*0.85,sy+sw*0.85);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(sx+sw*0.85,sy+sw*0.15);ctx.lineTo(sx+sw*0.15,sy+sw*0.85);ctx.stroke();
+        ctx.fillStyle='rgba(30,20,15,0.3)';ctx.fillRect(sx+z,sy+z,sw-2*z,sw-2*z);
+      }
+      // Repair badge
+      if(s.repairsUsed>0){
+        const rpX=sx+sw*0.15,rpY=sy+sw*0.85,rpR=sw*0.14;
+        ctx.beginPath();ctx.arc(rpX,rpY,rpR,0,Math.PI*2);
+        ctx.fillStyle='rgba(180,80,30,0.8)';ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,0.9)';ctx.font=`bold ${Math.max(5,sw*0.15)|0}px system-ui`;
+        ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText((3-(s.repairsUsed||0))+'',rpX,rpY);
+      }
+    }
+
     // Letter label (skip for citizen blocks — they use the house icon)
-    if(s.type!=='CITIZEN_BLOCK'&&!RESOURCE_BUILDINGS[s.type]){
+    if(s.type!=='CITIZEN_BLOCK'&&s.type!=='HOUSE'&&!RESOURCE_BUILDINGS[s.type]){
       ctx.fillStyle='rgba(255,255,255,0.35)';ctx.font=`bold ${12*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText(def.letter,sx+sw/2,sy+sw/2);
     }
@@ -5391,7 +5665,7 @@ function drawHQGhostPreview(){
   const valid=isValidHQLocation(col,row);
   const sx=(col*TILE_SIZE-cam.x)*z, sy=(row*TILE_SIZE-cam.y)*z, ts=TILE_SIZE*z;
   // Draw clear radius preview (faint circle)
-  const radPx=BASE_CLEAR_RADIUS*TILE_SIZE*z;
+  const radPx=SETTLEMENT_TIERS[1].buildRadius*TILE_SIZE*z; // build radius preview
   const cx=sx+ts/2, cy=sy+ts/2;
   ctx.beginPath();ctx.arc(cx,cy,radPx,0,Math.PI*2);
   ctx.fillStyle=valid?'rgba(90,180,90,0.06)':'rgba(220,60,40,0.06)';
@@ -5413,7 +5687,7 @@ function drawHQGhostPreview(){
   ctx.fillStyle=valid?'rgba(255,255,255,0.7)':'rgba(255,100,80,0.5)';
   ctx.fillText('🏘',sx+ts/2,sy+ts/2);
   // Label
-  const label=valid?'Click to place Settlement (FREE!)':'Too close to edge / water';
+  const label=valid?'Click to place Village (FREE!) · Build radius: '+SETTLEMENT_TIERS[1].buildRadius+' tiles':'Too close to edge / water';
   ctx.font=`${Math.max(11,Math.floor(12*z))}px system-ui`;ctx.textAlign='center';ctx.textBaseline='top';
   const tw=ctx.measureText(label).width+16;
   ctx.fillStyle='rgba(10,10,18,0.8)';ctx.fillRect(sx+ts/2-tw/2,sy-22*z,tw,18*z);
@@ -5465,8 +5739,16 @@ function drawGhostPreview(){
   if(isUnit){
     valid=map[col][row]===T.GRASS&&!structures[sk]&&!unitAt(col,row)&&(Math.abs(col-heroCol())+Math.abs(row-heroRow()))<=BUILD_RANGE&&canAfford(selectedTool);
   } else {
-    const basicValid=map[col][row]===T.GRASS&&!structures[sk]&&(Math.abs(col-heroCol())+Math.abs(row-heroRow()))<=BUILD_RANGE&&canAfford(selectedTool);
-    valid=basicValid&&!cachedWouldSeal(col,row,selectedTool);
+    const isRes=!!RESOURCE_BUILDINGS[selectedTool];
+    const tileOk=isRes?map[col][row]===RESOURCE_BUILDINGS[selectedTool].requiredTile:(map[col][row]===T.GRASS);
+    const basicValid=tileOk&&!structures[sk]&&(Math.abs(col-heroCol())+Math.abs(row-heroRow()))<=BUILD_RANGE&&canAfford(selectedTool);
+    const radiusOk=selectedTool==='CITIZEN_BLOCK'||isInsideBuildRadius(col,row);
+    valid=basicValid&&!cachedWouldSeal(col,row,selectedTool)&&radiusOk;
+    // House limit check for ghost
+    if(valid&&selectedTool==='HOUSE'){
+      const ns=settlementInRadius(col,row);
+      if(ns){const hc=countHousesForSettlement(ns.key);const hl=getHouseLimitForSettlement(ns.key);if(hc>=hl)valid=false;}
+    }
   }
 
   ctx.fillStyle=valid?`rgba(${cr},${cg},${cb},0.45)`:'rgba(200,50,50,0.25)';ctx.fillRect(sx,sy,sw,sw);
@@ -5592,6 +5874,8 @@ function drawHoverTile(){
         const cs=Object.entries(nd.upgradeCost).map(([r,a])=>`${a} ${r}`).join(', ');
         label+=` · ⬆ ${cs}`;
       }
+    } else if(hs.type==='HOUSE'){
+      label='House ('+hs.hp+'/'+hs.maxHP+' HP) · +1 citizen · 🍖1 food/wave';
     } else {
       label=STRUCTS[hs.type].name;
     }
