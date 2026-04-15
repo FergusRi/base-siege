@@ -613,10 +613,8 @@ function cavalryAttack(u, nearest){
   if(isCharge){
     cam.shake=Math.max(cam.shake,isThunder?6:3);
     if(isThunder){
-      for(const se of enemies){
-        const sdx=se.x-nearest.x,sdy=se.y-nearest.y;
-        if(sdx*sdx+sdy*sdy<=(2*TILE_SIZE)*(2*TILE_SIZE)) se.slowTimer=Math.max(se.slowTimer,0.8);
-      }
+      const thunderNearby=gridEnemies.query(nearest.x,nearest.y,2*TILE_SIZE);
+      for(let ti=0;ti<thunderNearby.length;ti++) thunderNearby[ti].slowTimer=Math.max(thunderNearby[ti].slowTimer,0.8);
       addParticles(nearest.x,nearest.y,'rgba(255,255,100,0.9)',10);
     }
   }
@@ -659,6 +657,70 @@ const HERO_SPEED=8*TILE_SIZE;
 const HARVEST_RANGE=14, BUILD_RANGE=30;
 const HERO_ATK_DMG=8, HERO_ATK_RATE=0.4, HERO_ATK_RANGE=1.2*TILE_SIZE;
 const HERO_KNOCKDOWN_TIME=10, HERO_REVIVE_PCT=0.25;
+
+// ═══════════════════════════════════════════════════════
+//  §1b  SPATIAL HASH GRID (Performance O(n²) → O(n))
+// ═══════════════════════════════════════════════════════
+const SPATIAL_CELL=128; // 4 tiles per cell (TILE_SIZE * 4)
+class SpatialHash{
+  constructor(cellSize){
+    this.cs=cellSize;
+    this.cells=new Map();
+  }
+  clear(){this.cells.clear();}
+  _key(cx,cy){return (cx<<16)^cy;}
+  _cellOf(x,y){return{cx:Math.floor(x/this.cs),cy:Math.floor(y/this.cs)};}
+  insert(entity){
+    const{cx,cy}=this._cellOf(entity.x,entity.y);
+    const k=this._key(cx,cy);
+    let bucket=this.cells.get(k);
+    if(!bucket){bucket=[];this.cells.set(k,bucket);}
+    bucket.push(entity);
+  }
+  // Query all entities within radius of (x,y)
+  query(x,y,radius,out){
+    if(!out)out=[];
+    const r=radius;
+    const minCX=Math.floor((x-r)/this.cs), maxCX=Math.floor((x+r)/this.cs);
+    const minCY=Math.floor((y-r)/this.cs), maxCY=Math.floor((y+r)/this.cs);
+    const rSq=r*r;
+    for(let cx=minCX;cx<=maxCX;cx++){
+      for(let cy=minCY;cy<=maxCY;cy++){
+        const bucket=this.cells.get(this._key(cx,cy));
+        if(!bucket)continue;
+        for(let i=0;i<bucket.length;i++){
+          const e=bucket[i];
+          const dx=e.x-x, dy=e.y-y;
+          if(dx*dx+dy*dy<=rSq)out.push(e);
+        }
+      }
+    }
+    return out;
+  }
+  // Query all entities in cell neighborhood (no radius filter — caller checks)
+  queryRect(x,y,radius){
+    const out=[];
+    const r=radius;
+    const minCX=Math.floor((x-r)/this.cs), maxCX=Math.floor((x+r)/this.cs);
+    const minCY=Math.floor((y-r)/this.cs), maxCY=Math.floor((y+r)/this.cs);
+    for(let cx=minCX;cx<=maxCX;cx++){
+      for(let cy=minCY;cy<=maxCY;cy++){
+        const bucket=this.cells.get(this._key(cx,cy));
+        if(bucket)for(let i=0;i<bucket.length;i++)out.push(bucket[i]);
+      }
+    }
+    return out;
+  }
+}
+// Two grids: one for friendly units, one for enemies
+const gridUnits=new SpatialHash(SPATIAL_CELL);
+const gridEnemies=new SpatialHash(SPATIAL_CELL);
+function rebuildSpatialGrids(){
+  gridUnits.clear();
+  gridEnemies.clear();
+  for(let i=0;i<units.length;i++){const u=units[i];if(u.hp>0)gridUnits.insert(u);}
+  for(let i=0;i<enemies.length;i++)gridEnemies.insert(enemies[i]);
+}
 
 // Tile types
 
@@ -1153,6 +1215,7 @@ function updateTrainingQueues(dt) {
       if (spawn) {
         // Create the unit
         const newUnit = {
+          id: _nextUnitId++,
           type: current.type,
           x: spawn.col * TILE_SIZE + TILE_SIZE / 2,
           y: spawn.row * TILE_SIZE + TILE_SIZE / 2,
@@ -2705,6 +2768,7 @@ const structures={}; // "c,r" => { type, hp, maxHP, cooldown }
 const enemies=[];    // array of enemy objects
 const projectiles=[]; // tower projectiles
 const units=[];      // army units: {type, x, y, hp, maxHP, dmg, range, speed, xp, morale, state, path, pathIdx, targetX, targetY}
+let _nextUnitId=1;   // auto-increment id for spatial hash deduplication
 
 // ─── UNIT SELECTION STATE ───
 let selectedUnits = [];        // currently selected unit references
@@ -2947,8 +3011,7 @@ function selectTool(tool){
 function updateHint(){
   const h=document.getElementById('hint');
   if(game.phase==='MENU')return;
-  // Unit movement (works during BUILD too for move orders)
-  if(game.phase==='BUILD') updateUnits(dt);
+  // Note: unit movement during BUILD is handled by updateUnits(dt) in the main game loop
   if(game.phase==='COMBAT'){const gC=heroGuards.length,gMax=hero.guardLevel>0?GUARD_UPGRADES[hero.guardLevel].maxGuards:0;h.textContent='⚔️ COMBAT — WASD move · Click attack · Tab cycle units'+(gMax>0?' · 🛡️'+gC+'/'+gMax+' guards':'')+' · G=dismiss guard';return;}
   if(uiMode==='gather')h.textContent='WASD move · Click resources to gather · Click Settlement for priority · B build mode · SPACE start wave';
   else if(uiMode==='build'){
@@ -3780,11 +3843,13 @@ function killEnemy(e,i,source,sourceUnit){
 
 function heroAttack(){
   if(game.phase!=='COMBAT'||hero.atkCooldown>0||hero.stunTimer>0)return;
-  // Find nearest enemy within melee range
+  // Find nearest enemy within melee range (spatial-hash accelerated)
   let nearest=null, nearDist=Infinity;
-  for(const e of enemies){
+  const heroNearby=gridEnemies.query(hero.x,hero.y,HERO_ATK_RANGE);
+  for(let hi=0;hi<heroNearby.length;hi++){
+    const e=heroNearby[hi];
     const dx=e.x-hero.x, dy=e.y-hero.y, dSq=dx*dx+dy*dy;
-    if(dSq<=HERO_ATK_RANGE*HERO_ATK_RANGE&&dSq<nearDist){nearDist=dSq;nearest=e;}
+    if(dSq<nearDist){nearDist=dSq;nearest=e;}
   }
   if(!nearest)return;
 
@@ -3843,16 +3908,15 @@ function damageHero(dmg){
 function updateWarchiefAuras(){
   // Reset buff flags
   for(const e of enemies) e.buffed=false;
-  // Apply auras from warchiefs
+  // Apply auras from warchiefs (spatial-hash accelerated)
+  const def=ENEMY_TYPES.warchief;
+  const buffPx=def.buffRadius*TILE_SIZE;
   for(const wc of enemies){
     if(wc.type!=='warchief'||wc.hp<=0) continue;
-    const def=ENEMY_TYPES.warchief;
-    for(const e of enemies){
-      if(e===wc||e.hp<=0) continue;
-      const dx=e.x-wc.x, dy=e.y-wc.y;
-      if(dx*dx+dy*dy<=(def.buffRadius*TILE_SIZE)*(def.buffRadius*TILE_SIZE)){
-        e.buffed=true;
-      }
+    const nearby=gridEnemies.query(wc.x,wc.y,buffPx);
+    for(let i=0;i<nearby.length;i++){
+      const e=nearby[i];
+      if(e!==wc&&e.hp>0) e.buffed=true;
     }
   }
 }
@@ -3869,12 +3933,14 @@ function updateEnemyArcherRanged(e,eCol,eRow,dt){
     const hdx=hero.x-e.x, hdy=hero.y-e.y, hdSq=hdx*hdx+hdy*hdy;
     if(hdSq<=rangePx*rangePx&&hdSq<targetDist){targetDist=hdSq;targetX=hero.x;targetY=hero.y;target='hero';}
   }
-  // Check player units
-  for(const u of units){
+  // Check player units (spatial-hash accelerated)
+  const nearbyU=gridUnits.query(e.x,e.y,rangePx);
+  for(let ni=0;ni<nearbyU.length;ni++){
+    const u=nearbyU[ni];
     if(u.hp<=0)continue;
-  const ux=u.x, uy=u.y;
+    const ux=u.x, uy=u.y;
     const dx=ux-e.x, dy=uy-e.y, dSq=dx*dx+dy*dy;
-    if(dSq<=rangePx*rangePx&&dSq<targetDist){targetDist=dSq;targetX=ux;targetY=uy;target=u;}
+    if(dSq<targetDist){targetDist=dSq;targetX=ux;targetY=uy;target=u;}
   }
 
   if(target&&e.attackCooldown<=0){
@@ -4129,13 +4195,15 @@ function updateTowers(dt){
     const tx=c*TILE_SIZE+TILE_SIZE/2, ty=r*TILE_SIZE+TILE_SIZE/2;
     const range=def.range*TILE_SIZE;
 
-    // Find nearest VISIBLE enemy in range (fog-gated targeting)
+    // Find nearest VISIBLE enemy in range (spatial-hash accelerated, fog-gated targeting)
     let nearest=null, nearDist=Infinity;
-    for(const e of enemies){
+    const tNearby=gridEnemies.query(tx,ty,range);
+    for(let ti=0;ti<tNearby.length;ti++){
+      const e=tNearby[ti];
       const ec=Math.floor(e.x/TILE_SIZE), er=Math.floor(e.y/TILE_SIZE);
       if(ec<0||ec>=COLS||er<0||er>=ROWS||fogMap[ec][er]!==FOG_VISIBLE) continue;
       const dx=e.x-tx, dy=e.y-ty, dSq=dx*dx+dy*dy;
-      if(dSq<range*range&&dSq<nearDist){nearDist=dSq;nearest=e;}
+      if(dSq<nearDist){nearDist=dSq;nearest=e;}
     }
     if(nearest){
       s.cooldown=def.rate;
@@ -4186,19 +4254,21 @@ function updateProjectiles(dt){
         addParticles(impactX,impactY,'rgba(180,140,80,0.9)',12);
         addParticles(impactX,impactY,'rgba(255,200,100,0.6)',8);
         cam.shake=Math.max(cam.shake,4);
-        // Damage all enemies in AOE
-        for(let ei=enemies.length-1;ei>=0;ei--){
-          const ae=enemies[ei];
+        // Damage all enemies in AOE (spatial-hash accelerated)
+        const aoeHits=gridEnemies.query(impactX,impactY,aoePx);
+        for(let ai=aoeHits.length-1;ai>=0;ai--){
+          const ae=aoeHits[ai];
           const adx=ae.x-impactX, ady=ae.y-impactY;
           const adistSq=adx*adx+ady*ady;
-          if(adistSq<=aoePx*aoePx){
-            // Damage falls off with distance: full at center, 50% at edge
-            const falloff=1-0.5*(Math.sqrt(adistSq)/aoePx);
-            const aoeDmg=Math.max(1,Math.round(p.dmg*falloff));
-            ae.hp-=aoeDmg;
-            ae.hitFlash=1;
-            addFloat(`💥 −${aoeDmg}`,ae.x,ae.y-10,'#daa040');
-            if(ae.hp<=0){
+          // Damage falls off with distance: full at center, 50% at edge
+          const falloff=1-0.5*(Math.sqrt(adistSq)/aoePx);
+          const aoeDmg=Math.max(1,Math.round(p.dmg*falloff));
+          ae.hp-=aoeDmg;
+          ae.hitFlash=1;
+          addFloat(`💥 −${aoeDmg}`,ae.x,ae.y-10,'#daa040');
+          if(ae.hp<=0){
+            const ei=enemies.indexOf(ae);
+            if(ei>=0){
               if(p.source==='unit'&&p.sourceUnit){
                 killEnemy(ae,ei,'unit',p.sourceUnit);
               } else {
@@ -4226,14 +4296,16 @@ function updateProjectiles(dt){
               }
             }
           }
-          // Piercing: bolt continues to next enemy in direction of travel
+          // Piercing: bolt continues to next enemy in direction of travel (spatial-hash accelerated)
           if(p.piercing&&!p._pierced){
             p._pierced=true;
             const dirX=p.tx-p.x, dirY=p.ty-p.y;
             const dirLen=Math.sqrt(dirX*dirX+dirY*dirY)||1;
             const ndx=dirX/dirLen, ndy=dirY/dirLen;
             let best=null, bestDot=0;
-            for(const e2 of enemies){
+            const pierceNearby=gridEnemies.query(p.x,p.y,10*TILE_SIZE);
+            for(let pi2=0;pi2<pierceNearby.length;pi2++){
+              const e2=pierceNearby[pi2];
               if(e2===p.target||e2.hp<=0) continue;
               const ex=e2.x-p.x, ey=e2.y-p.y;
               const dot=ex*ndx+ey*ndy;
@@ -4284,14 +4356,16 @@ const SPEAR_SLOW_DUR=0.6;    // slow duration applied by zone
 const CAVALRY_CHARGE_MULT=2.5; // first-hit charge bonus multiplier
 const CATAPULT_AOE_RADIUS=1.5; // AOE radius in tiles (covers ~3×3)
 
-// ─── Helper: find nearest visible enemy within range (px) from world position ───
+// ─── Helper: find nearest visible enemy within range (px) from world position (spatial-hash accelerated) ───
 function findNearestEnemy(wx, wy, rangePx) {
   let nearest = null, nearDist = Infinity;
-  for (const e of enemies) {
+  const nearby = gridEnemies.query(wx, wy, rangePx);
+  for (let i = 0; i < nearby.length; i++) {
+    const e = nearby[i];
     const ec = Math.floor(e.x / TILE_SIZE), er = Math.floor(e.y / TILE_SIZE);
     if (ec < 0 || ec >= COLS || er < 0 || er >= ROWS || fogMap[ec][er] !== FOG_VISIBLE) continue;
     const dx = e.x - wx, dy = e.y - wy, dSq = dx * dx + dy * dy;
-    if (dSq <= rangePx * rangePx && dSq < nearDist) { nearDist = dSq; nearest = e; }
+    if (dSq < nearDist) { nearDist = dSq; nearest = e; }
   }
   return nearest;
 }
@@ -4311,13 +4385,23 @@ function unitPathTo(u, goalX, goalY) {
   }
 }
 
-// ─── Collision: push units apart if overlapping ───
+// ─── Collision: push units apart if overlapping (spatial-hash accelerated) ───
 function resolveUnitCollisions() {
   const minDist = TILE_SIZE * UNIT_RADIUS * 2;
   const minDistSq = minDist * minDist;
+  const checked = new Set(); // avoid duplicate pair checks
   for (let i = 0; i < units.length; i++) {
-    for (let j = i + 1; j < units.length; j++) {
-      const a = units[i], b = units[j];
+    const a = units[i];
+    if (a.hp <= 0) continue;
+    // Query only nearby units from spatial grid
+    const nearby = gridUnits.query(a.x, a.y, minDist);
+    for (let n = 0; n < nearby.length; n++) {
+      const b = nearby[n];
+      if (b === a) continue;
+      // Deduplicate: use ordered pair key
+      const pairKey = a.id < b.id ? a.id + '|' + b.id : b.id + '|' + a.id;
+      if (checked.has(pairKey)) continue;
+      checked.add(pairKey);
       const dx = b.x - a.x, dy = b.y - a.y;
       const dSq = dx * dx + dy * dy;
       if (dSq < minDistSq && dSq > 0.01) {
@@ -4425,11 +4509,9 @@ function updateUnits(dt) {
       addParticles(nearest.x, nearest.y, isFast ? 'rgba(255,220,60,0.8)' : 'rgba(180,160,60,0.7)', isFast ? 6 : 4);
       const zocMult = isChampion ? 1.5 : 1;
       const zocPx = SPEAR_SLOW_RADIUS * TILE_SIZE * zocMult;
-      for (const e of enemies) {
-        const edx = e.x - u.x, edy = e.y - u.y;
-        if (edx * edx + edy * edy <= zocPx * zocPx) {
-          e.slowTimer = Math.max(e.slowTimer, isChampion ? SPEAR_SLOW_DUR * 1.5 : SPEAR_SLOW_DUR);
-        }
+      const zocNearby = gridEnemies.query(u.x, u.y, zocPx);
+      for (let zi = 0; zi < zocNearby.length; zi++) {
+        zocNearby[zi].slowTimer = Math.max(zocNearby[zi].slowTimer, isChampion ? SPEAR_SLOW_DUR * 1.5 : SPEAR_SLOW_DUR);
       }
       if (nearest.hp <= 0) {
         const idx = enemies.indexOf(nearest);
@@ -4455,31 +4537,28 @@ function updateUnits(dt) {
     }
   }
 
-  // ── SPEARMAN ZONE OF CONTROL: passive slow aura each frame ──
+  // ── SPEARMAN ZONE OF CONTROL: passive slow aura each frame (spatial-hash accelerated) ──
   for (const u of units) {
     if (u.type !== 'SPEARMAN' || u.hp <= 0) continue;
     const zocPx = SPEAR_SLOW_RADIUS * TILE_SIZE;
-    for (const e of enemies) {
-      const dx = e.x - u.x, dy = e.y - u.y;
-      if (dx * dx + dy * dy <= zocPx * zocPx) {
-        e.slowTimer = Math.max(e.slowTimer, 0.2);
-      }
+    const nearbyE = gridEnemies.query(u.x, u.y, zocPx);
+    for (let ne = 0; ne < nearbyE.length; ne++) {
+      nearbyE[ne].slowTimer = Math.max(nearbyE[ne].slowTimer, 0.2);
     }
   }
 
   // ── Resolve collisions between friendly units ──
   resolveUnitCollisions();
 }
-// ─── ENEMY RETARGETING: Enemies attack units — prefer isolated targets ───
+// ─── ENEMY RETARGETING: Enemies attack units — prefer isolated targets (spatial-hash accelerated) ───
 function findAdjacentUnit(eCol, eRow) {
   // Find player units within melee range of enemy position
   const ex = eCol * TILE_SIZE + TILE_SIZE / 2, ey = eRow * TILE_SIZE + TILE_SIZE / 2;
   const meleeDist = TILE_SIZE * 1.8; // slightly wider than 1 tile
+  const nearby = gridUnits.query(ex, ey, meleeDist);
   let candidates = [];
-  for (const u of units) {
-    if (u.hp <= 0) continue;
-    const dx = u.x - ex, dy = u.y - ey;
-    if (dx * dx + dy * dy <= meleeDist * meleeDist) candidates.push(u);
+  for (let i = 0; i < nearby.length; i++) {
+    if (nearby[i].hp > 0) candidates.push(nearby[i]);
   }
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => {
@@ -4762,26 +4841,26 @@ function checkFormations(){
   // Reset all formation flags
   for(const u of units){ u.shieldWall=false; u.protectedFire=false; }
 
-  // Shield Wall: 3+ melee units within 3 tiles of each other (distance-based)
+  // Shield Wall: 3+ melee units within 3 tiles of each other (spatial-hash accelerated)
   const meleeUnits = units.filter(u => isMeleeUnit(u.type) && u.hp > 0);
   const SHIELD_DIST = 3 * TILE_SIZE;
   for (const u of meleeUnits) {
+    const nearbyAll = gridUnits.query(u.x, u.y, SHIELD_DIST);
     let nearby = 0;
-    for (const v of meleeUnits) {
-      if (v === u) continue;
-      const dx = v.x - u.x, dy = v.y - u.y;
-      if (dx * dx + dy * dy <= SHIELD_DIST * SHIELD_DIST) nearby++;
+    for (let ni = 0; ni < nearbyAll.length; ni++) {
+      const v = nearbyAll[ni];
+      if (v !== u && isMeleeUnit(v.type) && v.hp > 0) nearby++;
     }
     if (nearby >= SHIELD_WALL_MIN - 1) u.shieldWall = true;
   }
 
-  // Protected Fire: ranged unit within 2 tiles behind a melee unit (distance-based)
+  // Protected Fire: ranged unit within 2 tiles behind a melee unit (spatial-hash accelerated)
   const PROT_DIST = 2 * TILE_SIZE;
   for (const u of units) {
     if (!isRangedUnit(u.type) || u.hp <= 0) continue;
-    for (const m of meleeUnits) {
-      const dx = m.x - u.x, dy = m.y - u.y;
-      if (dx * dx + dy * dy <= PROT_DIST * PROT_DIST) { u.protectedFire = true; break; }
+    const nearbyM = gridUnits.query(u.x, u.y, PROT_DIST);
+    for (let ni = 0; ni < nearbyM.length; ni++) {
+      if (isMeleeUnit(nearbyM[ni].type) && nearbyM[ni].hp > 0) { u.protectedFire = true; break; }
     }
   }
 }
@@ -4827,12 +4906,8 @@ function updateMorale(dt){
     let drainRate=0, recoverRate=0;
     const ux=u.x, uy=u.y;
 
-    // ── DRAIN: surrounded by enemies (3+ within 2 tiles) ──
-    let nearbyEnemies=0;
-    for(const e of enemies){
-      const dx=e.x-ux, dy=e.y-uy;
-      if(dx*dx+dy*dy<=(2*TILE_SIZE)*(2*TILE_SIZE))nearbyEnemies++;
-    }
+    // ── DRAIN: surrounded by enemies (3+ within 2 tiles) (spatial-hash accelerated) ──
+    const nearbyEnemies=gridEnemies.query(ux,uy,2*TILE_SIZE).length;
     if(nearbyEnemies>=3)drainRate+=MORALE_DRAIN_SURROUNDED;
 
     // ── DRAIN: low HP (below 25%) ──
@@ -7386,6 +7461,7 @@ function draw(now){
   lastTime=now;
 
   // Update
+  rebuildSpatialGrids(); // Rebuild spatial hash grids each frame for O(1) neighbor queries
   updateBuildTimer(dt);
   updateTrainingQueues(dt);
   updateHero(dt);
