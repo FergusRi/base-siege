@@ -37,7 +37,6 @@
   .hp-bar { width: 100px; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; }
   .hp-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
   .hp-text { font-size: 11px; opacity: 0.7; }
-  .hero-hp-wrap { display: flex; align-items: center; gap: 6px; }
   .wave-info { display: flex; align-items: center; gap: 6px; font-weight: 600; }
   .wave-num { color: #e8c56a; font-size: 15px; }
   .phase-badge { padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; transition: all 0.3s; }
@@ -297,7 +296,6 @@
   .kh-icon { font-size: 12px; width: 16px; text-align: center; }
   .kh-label { opacity: 0.45; font-size: 10px; min-width: 40px; }
   .kh-val { font-weight: 700; min-width: 20px; }
-  .kh-hero { color: #ffe066; }
   .kh-unit { color: #8ac0e8; }
   .kh-tower { color: #ffaa44; }
   .kh-trap { color: #e87a6a; }
@@ -323,7 +321,6 @@
   .upkeep-icon { font-size: 13px; }
   /* Inline style → CSS (Phase 6B) */
   .bar-emoji { font-size: 14px; }
-  #hero-hp-fill { width: 100%; background: linear-gradient(90deg, #4a4, #6c6); }
   #base-hp-fill { width: 100%; }
   #ui-morale { color: #e8c56a; }
   #ui-upkeep { color: #d87aa0; }
@@ -414,11 +411,6 @@
     </div>
   </div>
   <div class="bar-section">
-    <div class="hero-hp-wrap">
-      <span class="bar-emoji">⚔️</span>
-      <div class="hp-bar"><div class="hp-fill" id="hero-hp-fill"></div></div>
-      <span class="hp-text" id="hero-hp-text">50/50</span>
-    </div>
     <div class="base-hp-wrap">
       <span class="bar-emoji">🏘</span>
       <div class="hp-bar"><div class="hp-fill" id="base-hp-fill"></div></div>
@@ -572,7 +564,6 @@
 
 <!-- Kill Counter HUD -->
 <div class="glass-sm" id="kill-hud">
-  <div class="kh-row kh-hero"><span class="kh-icon">⚔️</span><span class="kh-label">Hero</span><span class="kh-val" id="kh-hero">0</span></div>
   <div class="kh-row kh-unit"><span class="kh-icon">🛡️</span><span class="kh-label">Units</span><span class="kh-val" id="kh-unit">0</span></div>
   <div class="kh-row kh-tower"><span class="kh-icon">🏗️</span><span class="kh-label">Tower</span><span class="kh-val" id="kh-tower">0</span></div>
   <div class="kh-row kh-trap"><span class="kh-icon">🪤</span><span class="kh-label">Trap</span><span class="kh-val" id="kh-trap">0</span></div>
@@ -627,7 +618,7 @@ function cavalryAttack(u, nearest){
   }
 }
 
-// │  §10  COMBAT (waves, enemies, hero, towers, projectiles)       │
+// │  §10  COMBAT (waves, enemies, towers, projectiles)             │
 // │  §11  UNIT AI & FORMATIONS                                     │
 // │  §12  ECONOMY, UPKEEP & FORMATIONS                             │
 // │  §13  MORALE & VETERANCY                                       │
@@ -653,10 +644,7 @@ const FIRST_BUILD_TIME=300; // 5 minutes first wave
 const BUILD_TIME=120;      // 2 minutes subsequent waves
 const CAM_LERP=0.1, MAX_ZOOM=2.0;
 function getMinZoom(){return 0.3;}
-const HERO_SPEED=8*TILE_SIZE;
-const HARVEST_RANGE=14, BUILD_RANGE=30;
-const HERO_ATK_DMG=8, HERO_ATK_RATE=0.4, HERO_ATK_RANGE=1.2*TILE_SIZE;
-const HERO_KNOCKDOWN_TIME=10, HERO_REVIVE_PCT=0.25;
+const HARVEST_RANGE=14;
 
 // ═══════════════════════════════════════════════════════
 //  §1b  SPATIAL HASH GRID (Performance O(n²) → O(n))
@@ -982,19 +970,9 @@ function updateSettlementPanel() {
   const pri = s.gatherPriority || 'all';
   const priIcon = RES_ICONS[pri] || '⚖️';
   document.getElementById('sp-priority').textContent = priIcon + ' Priority: ' + pri.charAt(0).toUpperCase() + pri.slice(1);
-  // Guard upgrade button
+  // Guard upgrade button (disabled — guard system being reworked for citizens)
   const guardBtn = document.getElementById('sp-guard');
-  const gLvl = hero.guardLevel || 0;
-  if (gLvl >= 3) {
-    guardBtn.textContent = '🛡️ Guard III (MAX)';
-    guardBtn.classList.add('disabled');
-  } else {
-    const nextG = GUARD_UPGRADES[gLvl + 1];
-    const gCostStr = Object.entries(nextG.cost).map(([r, a]) => a + r[0].toUpperCase()).join('+');
-    const gAfford = Object.entries(nextG.cost).every(([r, a]) => (game.resources[r] || 0) >= a);
-    guardBtn.textContent = '🛡️ ' + nextG.name + ' (' + gCostStr + ')';
-    guardBtn.classList.toggle('disabled', !gAfford);
-  }
+  if(guardBtn){guardBtn.style.display='none';}
 }
 
 function panelUpgrade() {
@@ -1014,21 +992,7 @@ function panelCyclePriority() {
 }
 
 function panelGuardUpgrade() {
-  if (!panelSettKey) return;
-  const nextLvl = (hero.guardLevel || 0) + 1;
-  if (nextLvl > 3) return;
-  const upg = GUARD_UPGRADES[nextLvl];
-  for (const [r, a] of Object.entries(upg.cost)) {
-    if ((game.resources[r] || 0) < a) {
-      addFloat("Can't afford!", hero.x, hero.y - TILE_SIZE, '#ff6666');
-      return;
-    }
-  }
-  for (const [r, a] of Object.entries(upg.cost)) game.resources[r] -= a;
-  hero.guardLevel = nextLvl;
-  addFloat('🛡️ ' + upg.name + ' unlocked!', hero.x, hero.y - TILE_SIZE, '#ffd700');
-  addParticles(hero.x, hero.y, 'rgba(255,215,0,0.7)', 8);
-  updateSettlementPanel();
+  // Guard upgrade disabled — being reworked for citizen guards
 }
 
 
@@ -1403,13 +1367,11 @@ let hqPlaced=false; // HQ placement state
 
 // ─── FOG OF WAR ───
 const FOG_UNEXPLORED=0, FOG_EXPLORED=1, FOG_VISIBLE=2;
-const HERO_FOG_RADIUS=6;   // hero reveals VISIBLE in tight radius (scout feel)
-const HERO_EXPLORE_RADIUS=20; // hero permanently reveals EXPLORED in wider radius
 const STRUCT_VIS_RADIUS=3;   // buildings reveal VISIBLE in this radius permanently
 const STRUCT_EXP_RADIUS=4;   // buildings reveal EXPLORED in this radius permanently
 let fogMap=[];  // fogMap[col][row] = FOG_UNEXPLORED | FOG_EXPLORED | FOG_VISIBLE
 // visionCount[c][r] = number of buildings granting permanent vision to this tile
-// When >0, tile stays VISIBLE even after hero/HQ vision decay
+// When >0, tile stays VISIBLE even after unit vision decay
 let visionCount=[];
 function initFogMap(){
   fogMap=[];
@@ -1449,7 +1411,7 @@ function modifyVision(cx, cy, visRadius, delta, expRadius) {
   markSpawnRingDirty();
 }
 function modifyVisionTracked(cx, cy, visRadius, expRadius) {
-  // Hero vision — tracks newly-visible tiles for decay
+  // Dynamic vision — tracks newly-visible tiles for decay
   const er = expRadius || visRadius;
   const maxR = Math.max(visRadius, er);
   for (let dc = -maxR; dc <= maxR; dc++) {
@@ -1512,16 +1474,37 @@ function removeStructureVision(col,row){
   const er=vr+2;
   modifyVision(col, row, vr, -1, er);
 }
-// Refresh dynamic vision sources (hero only) — call each frame
+// Unit vision radii — each unit type reveals fog differently
+const UNIT_VISION={
+  MILITIA:{vis:3,exp:5}, ARCHER:{vis:4,exp:6}, SPEARMAN:{vis:3,exp:5},
+  CAVALRY:{vis:5,exp:8}, CATAPULT:{vis:2,exp:4},
+};
+// Refresh dynamic vision sources (units + citizens) — call each frame
 // HQ + building vision is permanent via visionCount, no periodic refresh needed
 let fogFrameCounter=0;
 let fogChangeVersion=0;
+let unitVisionFrame=0;
 function refreshFogVision(){
   fogFrameCounter++;
   decayFogVisible();
-  // Hero vision (dynamic, moves with hero)
-  const hc=heroCol(),hr=heroRow();
-  revealFogTracked(hc,hr,HERO_FOG_RADIUS,HERO_EXPLORE_RADIUS);
+  // Staggered unit vision: update ~1/3 of units per frame for performance
+  const STAGGER=3;
+  for(let i=unitVisionFrame%STAGGER;i<units.length;i+=STAGGER){
+    const u=units[i];
+    if(u.hp<=0)continue;
+    const uc=Math.floor(u.x/TILE_SIZE),ur=Math.floor(u.y/TILE_SIZE);
+    const vis=UNIT_VISION[u.type]||{vis:3,exp:5};
+    revealFogTracked(uc,ur,vis.vis,vis.exp);
+  }
+  // Citizen vision (small radius)
+  if(unitVisionFrame%5===0){
+    for(const cit of citizens){
+      if(cit.safe)continue;
+      const cc=Math.floor(cit.x/TILE_SIZE),cr=Math.floor(cit.y/TILE_SIZE);
+      revealFogTracked(cc,cr,2,3);
+    }
+  }
+  unitVisionFrame++;
 }
 // Find nearest settlement to a given tile — returns {c,r} or null
 // Unified settlement finder — returns {c, r, dist, key} or null
@@ -2087,7 +2070,7 @@ function placeHQ(col,row){
   // Carve spawn paths from edges to settlement
   carveSpawnPaths();
   // Game state — settlement HP tracked per-structure now
-  // Hero is already positioned (random spawn) — don't move them
+
   // Reveal fog around settlement permanently (uses citizen block vision)
   addCitizenBlockVision(col,row);
   // Spawn enemy camps in fog on map edges
@@ -2743,26 +2726,9 @@ const game={
   selectedUnitIdx:-1, // for Tab cycling
 };
 
-const hero={
-  x:COLS/2*TILE_SIZE+TILE_SIZE/2,  // Will be repositioned when HQ placed
-  y:ROWS/2*TILE_SIZE+TILE_SIZE/2,
-  hp:50, maxHP:50,
-  atkCooldown:0,     // time until next attack
-  atkAnim:0,         // attack animation timer (flash)
-  stunTimer:0,       // knockdown timer (>0 = knocked out)
-  hitFlash:0,        // damage flash
-  kills:0,           // hero kill count
-  guardLevel:0,      // 0=none, 1/2/3 = Guard I/II/III
-};
+// Hero removed — God Mode (player is omniscient manager)
 
-// ─── HERO GUARD SYSTEM (Phase G) ───
-const GUARD_UPGRADES = [
-  null, // index 0 unused
-  { name:'Guard I',   maxGuards:2, cost:{metal:10} },
-  { name:'Guard II',  maxGuards:4, cost:{metal:20, gold:5} },
-  { name:'Guard III', maxGuards:6, cost:{metal:30, gold:10} },
-];
-let heroGuards = []; // references to units currently guarding the hero
+// Guard system removed — will be reworked for citizen guards later
 
 const structures={}; // "c,r" => { type, hp, maxHP, cooldown }
 const enemies=[];    // array of enemy objects
@@ -2832,9 +2798,7 @@ function buildSpawnRing(){
     const d=Math.sqrt(dc*dc+dr*dr);
     if(d>maxStructDist) maxStructDist=d;
   }
-  // Also consider hero position
-  const heroDist=Math.sqrt((heroCol()-BASE_CX)**2+(heroRow()-BASE_CY)**2);
-  if(heroDist>maxStructDist) maxStructDist=heroDist;
+
   
   // Scan radius = furthest structure + buffer + ring depth + margin
   const scanRadius=Math.ceil(maxStructDist+SPAWN_RING_BUFFER+SPAWN_RING_DEPTH+5);
@@ -3012,7 +2976,7 @@ function updateHint(){
   const h=document.getElementById('hint');
   if(game.phase==='MENU')return;
   // Note: unit movement during BUILD is handled by updateUnits(dt) in the main game loop
-  if(game.phase==='COMBAT'){const gC=heroGuards.length,gMax=hero.guardLevel>0?GUARD_UPGRADES[hero.guardLevel].maxGuards:0;h.textContent='⚔️ COMBAT — WASD move · Click attack · Tab cycle units'+(gMax>0?' · 🛡️'+gC+'/'+gMax+' guards':'')+' · G=dismiss guard';return;}
+  if(game.phase==='COMBAT'){h.textContent='⚔️ COMBAT — WASD pan · Click select · Right-click move · Tab cycle · H=home';return;}
   if(uiMode==='gather')h.textContent='WASD move · Click resources to gather · Click Settlement for priority · B build mode · SPACE start wave';
   else if(uiMode==='build'){
     if(selectedTool==='DEMOLISH')h.textContent='Click a structure to demolish · Esc back to gather';
@@ -3060,15 +3024,29 @@ function clampCam(){
   cam.tx=Math.max(0,Math.min(MAP_PX_W-vw,cam.tx));
   cam.ty=Math.max(0,Math.min(MAP_PX_H-vh,cam.ty));
 }
-function updateCamera(){
+const CAM_PAN_SPEED=12*TILE_SIZE; // RTS camera pan speed
+let lastMouseX=0, lastMouseY=0;
+function updateCamera(dt){
   const c=document.getElementById('game-canvas');
-  // During settlement placement — hero walks around to explore, camera follows hero
-  if(game.phase==='PLACE_HQ'){
-    // Hero movement handled by updateHero (we removed PLACE_HQ from its skip list)
-    // Camera follows hero
+  if(game.phase==='GAMEOVER'||game.phase==='MENU'){}
+  else{
+    // WASD / Arrow key panning (free RTS camera)
+    let pdx=0, pdy=0;
+    if(keys['w']||keys['W']||keys['ArrowUp'])    pdy=-1;
+    if(keys['s']||keys['S']||keys['ArrowDown'])   pdy=1;
+    if(keys['a']||keys['A']||keys['ArrowLeft'])   pdx=-1;
+    if(keys['d']||keys['D']||keys['ArrowRight'])  pdx=1;
+    if(pdx!==0&&pdy!==0){pdx*=0.707;pdy*=0.707;}
+    const spd=CAM_PAN_SPEED*(dt||0.016);
+    cam.tx+=pdx*spd;
+    cam.ty+=pdy*spd;
+    // Edge-of-screen panning
+    const edgeZone=30;
+    if(lastMouseX<edgeZone&&lastMouseX>0)       cam.tx-=spd*0.5;
+    if(lastMouseX>c.width-edgeZone&&lastMouseX<c.width) cam.tx+=spd*0.5;
+    if(lastMouseY<edgeZone&&lastMouseY>0)       cam.ty-=spd*0.5;
+    if(lastMouseY>c.height-edgeZone&&lastMouseY<c.height) cam.ty+=spd*0.5;
   }
-  cam.tx=hero.x-c.width/(2*cam.tZoom);
-  cam.ty=hero.y-c.height/(2*cam.tZoom);
   clampCam();
   cam.x+=(cam.tx-cam.x)*CAM_LERP;
   cam.y+=(cam.ty-cam.y)*CAM_LERP;
@@ -3078,7 +3056,7 @@ function updateCamera(){
 
 
 // ═══════════════════════════════════════════════════════════════
-//  §10  COMBAT (waves, enemies, hero, towers, projectiles)  
+//  §10  COMBAT (waves, enemies, towers, projectiles)  
 // ═══════════════════════════════════════════════════════════════
 
 function getWaveComposition(waveNum){
@@ -3299,7 +3277,7 @@ function startWave(){
     }
   }
   if(exposedCount>0){
-    addFloat(`⚠ ${exposedCount} citizen${exposedCount>1?'s':''} exposed!`,hero.x,hero.y-TILE_SIZE*2,'#ff6644');
+    addFloat(`⚠ ${exposedCount} citizen${exposedCount>1?'s':''} exposed!`,cam.x+canvas.width/(2*cam.zoom),cam.y+canvas.height/(2*cam.zoom)-TILE_SIZE*2,'#ff6644');
   }
   game.wave++;
   game.phase='PREVIEW';
@@ -3348,9 +3326,7 @@ function endWave(){
       structures[k].hp=Math.min(structures[k].maxHP, structures[k].hp+10);
     }
   }
-  // Hero full heal on wave clear
-  hero.hp=hero.maxHP;
-  hero.stunTimer=0;
+
 
   // Heal surviving units, reset charge, restore morale, apply rank bonuses
   for(const u of units){
@@ -3682,12 +3658,12 @@ function closeAftermath(){
     }
   }
   if(respawned>0){
-    addFloat(`+${respawned} Citizen${respawned>1?'s':''} respawned`,hero.x,hero.y-TILE_SIZE*3,'#c8e0ff');
+    addFloat(`+${respawned} Citizen${respawned>1?'s':''} respawned`,BASE_CX*TILE_SIZE,BASE_CY*TILE_SIZE-TILE_SIZE*3,'#c8e0ff');
   }
   const info=game._upkeepInfo;
   const upkeepText=info&&info.totalUpkeep>0?` | 🍖-${info.foodPaid} upkeep`:'';
-  addFloat(`+${2+game.wave} Wood, +${2+game.wave} Food${upkeepText}`, hero.x, hero.y-TILE_SIZE, '#e8c56a');
-  if(info&&info.unfed>0) addFloat(`⚠ ${info.unfed} starving unit${info.unfed>1?'s':''}!`, hero.x, hero.y, '#e87a6a');
+  addFloat(`+${2+game.wave} Wood, +${2+game.wave} Food${upkeepText}`, BASE_CX*TILE_SIZE, BASE_CY*TILE_SIZE-TILE_SIZE, '#e8c56a');
+  if(info&&info.unfed>0) addFloat(`⚠ ${info.unfed} starving unit${info.unfed>1?'s':''}!`, BASE_CX*TILE_SIZE, BASE_CY*TILE_SIZE, '#e87a6a');
   showBanner(`✅ WAVE ${game.wave} CLEARED`);
 }
 
@@ -3837,70 +3813,20 @@ function killEnemy(e,i,source,sourceUnit){
   enemies.splice(i,1);
 }
 
-// ═══════════════════════════════════════════
-//  §10 (cont.) — HERO COMBAT
-// ═══════════════════════════════════════════
+// Hero combat removed — God Mode (all combat is unit-based)
 
-function heroAttack(){
-  if(game.phase!=='COMBAT'||hero.atkCooldown>0||hero.stunTimer>0)return;
-  // Find nearest enemy within melee range (spatial-hash accelerated)
-  let nearest=null, nearDist=Infinity;
-  const heroNearby=gridEnemies.query(hero.x,hero.y,HERO_ATK_RANGE);
-  for(let hi=0;hi<heroNearby.length;hi++){
-    const e=heroNearby[hi];
-    const dx=e.x-hero.x, dy=e.y-hero.y, dSq=dx*dx+dy*dy;
-    if(dSq<nearDist){nearDist=dSq;nearest=e;}
+// ─── GAME OVER CHECK (God Mode) ───
+function checkGameOver(){
+  if(!hqPlaced||game.phase==='GAMEOVER'||game.phase==='MENU'||game.phase==='WIN')return;
+  // Count surviving settlements
+  let settlements=0;
+  for(const k in structures){
+    if(structures[k].type==='CITIZEN_BLOCK')settlements++;
   }
-  if(!nearest)return;
-
-  // Deal damage
-  hero.atkCooldown=HERO_ATK_RATE;
-  hero.atkAnim=0.2;
-  nearest.hp-=HERO_ATK_DMG;
-  nearest.hitFlash=1;
-  addFloat(`-${HERO_ATK_DMG}`,nearest.x,nearest.y-14,'#ffe066');
-  addParticles(nearest.x,nearest.y,'rgba(255,230,100,0.8)',6);
-  cam.shake=Math.max(cam.shake,2);
-
-  if(nearest.hp<=0){
-    const idx=enemies.indexOf(nearest);
-    if(idx>=0){killEnemy(nearest,idx,'hero');hero.kills++;}
-  }
-}
-
-function updateHeroCombat(dt){
-  hero.atkCooldown=Math.max(0,hero.atkCooldown-dt);
-  hero.atkAnim=Math.max(0,hero.atkAnim-dt);
-  hero.hitFlash=Math.max(0,hero.hitFlash-dt*4);
-
-  // Knockdown state
-  if(hero.stunTimer>0){
-    hero.stunTimer=Math.max(0,hero.stunTimer-dt);
-    if(hero.stunTimer<=0){
-      // Revive at 25% HP
-      hero.hp=Math.ceil(hero.maxHP*HERO_REVIVE_PCT);
-      hero.hitFlash=0;
-      addFloat('Revived!',hero.x,hero.y-TILE_SIZE,'#7aca7a');
-      addParticles(hero.x,hero.y,'rgba(120,200,120,0.8)',10);
-    }
-    return;
-  }
-}
-
-function damageHero(dmg){
-  if(hero.stunTimer>0)return; // already knocked down
-  hero.hp=Math.max(0,hero.hp-dmg);
-  hero.hitFlash=1;
-  addFloat(`-${dmg}`,hero.x,hero.y-14,'#ff4444');
-  addParticles(hero.x,hero.y,'rgba(255,80,60,0.7)',4);
-  cam.shake=Math.max(cam.shake,3);
-  if(hero.hp<=0){
-    // Knockdown
-    hero.stunTimer=HERO_KNOCKDOWN_TIME;
-    hero.hp=0;
-    addFloat('KNOCKED DOWN!',hero.x,hero.y-TILE_SIZE*1.5,'#ff2222');
-    addParticles(hero.x,hero.y,'rgba(255,40,30,0.9)',15);
-    cam.shake=Math.max(cam.shake,8);
+  const aliveCitizens=citizens.filter(c=>!c.dead).length;
+  if(settlements===0||aliveCitizens===0){
+    game.phase='GAMEOVER';
+    showGameOverScreen();
   }
 }
 
@@ -3925,14 +3851,8 @@ function updateWarchiefAuras(){
 function updateEnemyArcherRanged(e,eCol,eRow,dt){
   const def=ENEMY_TYPES.enemyArcher;
   const rangePx=def.range*TILE_SIZE;
-  // Find nearest player unit or hero in range
+  // Find nearest player unit in range
   let target=null, targetDist=Infinity, targetX=0, targetY=0;
-
-  // Check hero
-  if(hero.stunTimer<=0){
-    const hdx=hero.x-e.x, hdy=hero.y-e.y, hdSq=hdx*hdx+hdy*hdy;
-    if(hdSq<=rangePx*rangePx&&hdSq<targetDist){targetDist=hdSq;targetX=hero.x;targetY=hero.y;target='hero';}
-  }
   // Check player units (spatial-hash accelerated)
   const nearbyU=gridUnits.query(e.x,e.y,rangePx);
   for(let ni=0;ni<nearbyU.length;ni++){
@@ -3950,9 +3870,8 @@ function updateEnemyArcherRanged(e,eCol,eRow,dt){
     projectiles.push({
       x:e.x, y:e.y, tx:targetX, ty:targetY,
       speed:220, dmg:eDmg, age:0,
-      target:target==='hero'?null:target,
+      target:target,
       isEnemyProjectile:true,
-      heroTarget:target==='hero',
       color:'rgba(200,80,160,0.9)', trailColor:'rgba(200,80,160,0.3)',
     });
     return true; // signal: don't move this tick (standing and shooting)
@@ -4043,17 +3962,7 @@ function updateEnemies(dt){
       }
     }
 
-    // Enemy attacks hero if adjacent (within 1.2 tiles) and hero is alive
-    if(hero.stunTimer<=0&&e.type!=='siegeRam'){
-      const hdx=hero.x-e.x, hdy=hero.y-e.y;
-      const heroDistSq=hdx*hdx+hdy*hdy;
-      if(heroDistSq<(TILE_SIZE*1.3)*(TILE_SIZE*1.3)&&e.attackCooldown<=0){
-        let eDmg=eDef.dmg;
-        if(e.buffed) eDmg=Math.round(eDmg*ENEMY_TYPES.warchief.buffDmgMult);
-        damageHero(eDmg);
-        e.attackCooldown=e.attackRate;
-      }
-    }
+    // (Hero attack removed — enemies target units/structures only)
 
     // Enemy retargeting: attack adjacent units (30% chance per tick when cooldown ready)
     // Siege Rams skip — they only hit structures
@@ -4234,10 +4143,7 @@ function updateProjectiles(dt){
     if(distSq<36){
       // ── ENEMY PROJECTILES (enemy archer arrows) ──
       if(p.isEnemyProjectile){
-        if(p.heroTarget){
-          // Hit the hero
-          if(hero.stunTimer<=0) damageHero(p.dmg);
-        } else if(p.target&&p.target.hp>0){
+        if(p.target&&p.target.hp>0){
           // Hit a player unit
           damageUnit(p.target,p.dmg,null);
         }
@@ -4326,8 +4232,7 @@ function updateProjectiles(dt){
     }
     const speed=p.speed*dt;
     // Track target if alive
-    if(p.heroTarget&&hero.stunTimer<=0){p.tx=hero.x;p.ty=hero.y;}
-    else if(p.isEnemyProjectile&&p.target&&p.target.hp>0){
+    if(p.isEnemyProjectile&&p.target&&p.target.hp>0){
       // Enemy projectile targeting a player unit (uses col/row)
       p.tx=p.target.col*TILE_SIZE+TILE_SIZE/2;p.ty=p.target.row*TILE_SIZE+TILE_SIZE/2;
     }
@@ -4430,7 +4335,7 @@ function updateUnits(dt) {
     // ── BROKEN MORALE: skip combat AI (handled by updateFleeingUnits) ──
     if (u.moraleState === 'broken') continue;
 
-    // ── GUARD: skip path movement (handled by updateHeroGuards) ──
+    // ── GUARD: skip path movement (guards follow assigned target) ──
     if (u.isGuard && u.state === 'guard') {
       // Combat still handled below — just skip movement
     } else
@@ -4755,11 +4660,11 @@ const MORALE_DRAIN_SURROUNDED=12;  // when 3+ enemies within 2 tiles
 const MORALE_DRAIN_NEARBY_DEATH=25; // instant drop when friendly dies within 3 tiles
 const MORALE_DRAIN_LOW_HP=8;       // when HP below 25%
 // Recovery rates (per second)
-const MORALE_RECOVER_NEAR_HERO=10;  // within 3 tiles of hero
+const MORALE_RECOVER_NEAR_SETTLEMENT=8;  // within 5 tiles of settlement
 const MORALE_RECOVER_NEAR_BASE=5;   // within 4 tiles of base center
 const MORALE_RECOVER_ENEMY_KILL=15; // instant boost when enemy dies within 4 tiles
 const MORALE_RECOVER_FORMATION=6;   // in any formation (shield wall / protected fire)
-const HERO_MORALE_AURA=3;          // hero aura radius in tiles
+const SETTLEMENT_MORALE_AURA=5;    // settlement aura radius in tiles
 
 // ─── FORMATION POSITION CALCULATOR ───
 // Given drag start/end and unit count, returns [{x,y}] positions
@@ -4913,12 +4818,18 @@ function updateMorale(dt){
     // ── DRAIN: low HP (below 25%) ──
     if(u.hp/u.maxHP<0.25)drainRate+=MORALE_DRAIN_LOW_HP;
 
-    // ── RECOVER: near hero (3 tiles) ──
-    if(hero.stunTimer<=0){
-      const hdx=hero.x-ux, hdy=hero.y-uy;
-      if(hdx*hdx+hdy*hdy<=(HERO_MORALE_AURA*TILE_SIZE)*(HERO_MORALE_AURA*TILE_SIZE)){
-        recoverRate+=MORALE_RECOVER_NEAR_HERO;
+    // ── RECOVER: near settlement (morale aura) ──
+    {
+      let nearSettlement=false;
+      for(const k in structures){
+        if(structures[k].type!=='CITIZEN_BLOCK')continue;
+        const[sc,sr]=k.split(',').map(Number);
+        const sdx=sc*TILE_SIZE-ux, sdy=sr*TILE_SIZE-uy;
+        if(sdx*sdx+sdy*sdy<=(SETTLEMENT_MORALE_AURA*TILE_SIZE)*(SETTLEMENT_MORALE_AURA*TILE_SIZE)){
+          nearSettlement=true; break;
+        }
       }
+      if(nearSettlement) recoverRate+=MORALE_RECOVER_NEAR_SETTLEMENT;
     }
 
     // ── RECOVER: near base (4 tiles from center) ──
@@ -5036,7 +4947,7 @@ window.addEventListener('keydown',e=>{
     if(e.ctrlKey&&(e.key==='1'||e.key==='2'||e.key==='3')){
       const gi=parseInt(e.key)-1;
       controlGroups[gi]=selectedUnits.length>0?[...selectedUnits]:null;
-      addFloat(`Group ${e.key} saved (${selectedUnits.length})`,hero.x,hero.y-TILE_SIZE*2,'#64dcff');
+      addFloat(`Group ${e.key} saved (${selectedUnits.length})`,cam.x+canvas.width/(2*cam.zoom),cam.y+canvas.height/(2*cam.zoom),'#64dcff');
       e.preventDefault(); return;
     }
     if(!e.ctrlKey&&uiMode!=='build'&&(e.key==='1'||e.key==='2'||e.key==='3')){
@@ -5072,11 +4983,11 @@ window.addEventListener('keydown',e=>{
   }
 });
 window.addEventListener('keyup',e=>{keys[e.key]=false;});
-window.addEventListener('mousemove',e=>{mouseX=e.clientX;mouseY=e.clientY;});
+window.addEventListener('mousemove',e=>{mouseX=e.clientX;mouseY=e.clientY;lastMouseX=e.clientX;lastMouseY=e.clientY;});
 window.addEventListener('wheel',e=>{e.preventDefault();cam.tZoom=Math.max(getMinZoom(),Math.min(MAX_ZOOM,cam.tZoom+(e.deltaY>0?-0.08:0.08)));},{passive:false});
 
 // Touch
-let touchStartX=0,touchStartY=0,touchHeroX=0,touchHeroY=0;
+let touchStartX=0,touchStartY=0,touchCamTX=0,touchCamTY=0;
 // ─── DISMISS GUARD HOTKEY (G) ───
 window.addEventListener('keydown', e => {
   if ((e.key === 'g' || e.key === 'G') && !e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -5088,53 +4999,11 @@ window.addEventListener('keydown', e => {
   }
 });
 
-window.addEventListener('touchstart',e=>{if(e.touches.length===1){isTouching=true;touchStartX=e.touches[0].clientX;touchStartY=e.touches[0].clientY;touchHeroX=hero.x;touchHeroY=hero.y;}},{passive:false});
-window.addEventListener('touchmove',e=>{e.preventDefault();if(isTouching&&e.touches.length===1){hero.x=touchHeroX+(e.touches[0].clientX-touchStartX)/cam.zoom;hero.y=touchHeroY+(e.touches[0].clientY-touchStartY)/cam.zoom;clampHero();}},{passive:false});
+window.addEventListener('touchstart',e=>{if(e.touches.length===1){isTouching=true;touchStartX=e.touches[0].clientX;touchStartY=e.touches[0].clientY;touchCamTX=cam.tx;touchCamTY=cam.ty;}},{passive:false});
+window.addEventListener('touchmove',e=>{e.preventDefault();if(isTouching&&e.touches.length===1){cam.tx=touchCamTX-(e.touches[0].clientX-touchStartX)/cam.zoom;cam.ty=touchCamTY-(e.touches[0].clientY-touchStartY)/cam.zoom;clampCam();}},{passive:false});
 window.addEventListener('touchend',()=>{isTouching=false;});
 
-function heroCol(){return Math.floor(hero.x/TILE_SIZE);}
-function heroRow(){return Math.floor(hero.y/TILE_SIZE);}
-
-function clampHero(){
-  const m=TILE_SIZE*0.4;
-  hero.x=Math.max(m,Math.min(MAP_PX_W-m,hero.x));
-  hero.y=Math.max(m,Math.min(MAP_PX_H-m,hero.y));
-}
-
-function heroCanWalkTo(wx,wy){
-  const c=Math.floor(wx/TILE_SIZE),r=Math.floor(wy/TILE_SIZE);
-  if(c<0||c>=COLS||r<0||r>=ROWS)return false;
-  if(map[c][r]===T.WATER)return false;
-  const sk=c+','+r;
-  const s=structures[sk];
-  if(s){
-    // Hero can pass through gates and gatehouses
-    if(s.type==='GATE'||s.type==='GATEHOUSE') return true;
-    // Block on walls, towers, and other path-blocking structures
-    if(s.type==='WALL'||s.type==='TOWER'||s.type==='BALLISTA_TOWER'||s.type==='WATCHTOWER') return false;
-    const def=STRUCTS[s.type];
-    if(def&&def.blocksPath) return false;
-  }
-  return true;
-}
-
-function updateHero(dt){
-  if(game.phase==='GAMEOVER'||game.phase==='PREVIEW'||game.phase==='MENU'||game.phase==='WIN')return;
-  if(hero.stunTimer>0)return; // knocked down — can't move
-  let dx=0,dy=0;
-  if(keys['w']||keys['W'])dy=-1;
-  if(keys['s']||keys['S'])dy=1;
-  if(keys['a']||keys['A'])dx=-1;
-  if(keys['d']||keys['D'])dx=1;
-  if(dx===0&&dy===0)return;
-  if(dx!==0&&dy!==0){dx*=0.707;dy*=0.707;}
-  const speed=HERO_SPEED*dt;
-  const nx=hero.x+dx*speed,ny=hero.y+dy*speed;
-  if(heroCanWalkTo(nx,hero.y))hero.x=nx;
-  if(heroCanWalkTo(hero.x,ny))hero.y=ny;
-  clampHero();
-  updateHeroGuards(dt);
-}
+// Hero movement removed — WASD now pans camera (see updateCamera)
 
 // ─── CLICK ACTIONS ───
 const RES_COLORS={wood:'#7aca7a',stone:'#aaaabc',metal:'#7ab0d8',food:'#d87aa0',gold:'#e8c56a'};
@@ -5143,8 +5012,8 @@ function handleGather(col,row){
   const tile=map[col][row];
   const dep=DEPOSITS[tile];
   if(!dep)return;
-  const dist=Math.abs(col-heroCol())+Math.abs(row-heroRow());
-  if(dist>HARVEST_RANGE){addFloat('Too far!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
+  // God Mode: gather anywhere that's inside settlement radius or explored
+  if(!isInsideBuildRadius(col,row)&&fogMap[col][row]<FOG_EXPLORED){addFloat('Not explored!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
   // Multi-harvest: decrement HP
   if(depositHP[col]&&depositHP[col][row]>0){
     depositHP[col][row]--;
@@ -5233,8 +5102,6 @@ function handleBuild(col,row){
     const houseLimit=getHouseLimitForSettlement(ns.key);
     if(houseCount>=houseLimit){addFloat('House limit reached ('+houseLimit+')!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
   }
-  const dist=Math.abs(col-heroCol())+Math.abs(row-heroRow());
-  if(dist>BUILD_RANGE){addFloat('Too far!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
   if(!canAfford(selectedTool)){addFloat('Can\'t afford!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
   // Prevent sealing the base — must always leave a path
   if(wouldSealBase(col,row,selectedTool)){addFloat('Must leave a path to the base!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE,'#ff6666');return;}
@@ -5339,9 +5206,8 @@ function handleRepair(col,row){
   for(const[r,a] of Object.entries(cost)){
     if((game.resources[r]||0)<a){addFloat("Can't afford repair!",px,py,'#ff6666');return;}
   }
-  // Must be in hero range
-  const dist=Math.abs(col-heroCol())+Math.abs(row-heroRow());
-  if(dist>BUILD_RANGE){addFloat('Too far!',px,py,'#ff6666');return;}
+  // Must be inside settlement radius
+  if(!isInsideBuildRadius(col,row)){addFloat('Too far from settlement!',px,py,'#ff6666');return;}
   // Deduct cost and repair
   for(const[r,a] of Object.entries(cost)) game.resources[r]-=a;
   s.hp=s.maxHP;
@@ -5369,8 +5235,8 @@ document.getElementById('game-canvas').addEventListener('click',e=>{
     addFloat('🏘 Settlement Established!',col*TILE_SIZE+TILE_SIZE/2,row*TILE_SIZE-TILE_SIZE,'#e8c56a');
     return;
   }
-  // Hero attack during combat
-  if(game.phase==='COMBAT'){heroAttack();return;}
+  // During combat, clicks are handled by unit selection (no hero attack)
+  if(game.phase==='COMBAT')return;
   if(game.phase!=='BUILD')return;
   if(e.clientY<88)return;
   const z=cam.zoom;
@@ -5469,16 +5335,6 @@ document.getElementById('game-canvas').addEventListener('mouseup', e => {
   const col = Math.floor(wx / TILE_SIZE), row = Math.floor(wy / TILE_SIZE);
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) { formDragStart = null; formGhosts = []; return; }
 
-  // Check if right-clicking on hero — assign to guard
-  if (hero.guardLevel > 0 && selectedUnits.length > 0 && !isFormDragging) {
-    const hdx = hero.x - wx, hdy = hero.y - wy;
-    if (hdx * hdx + hdy * hdy < (TILE_SIZE * 1.2) * (TILE_SIZE * 1.2)) {
-      assignGuards(selectedUnits.filter(u => u.hp > 0 && u.moraleState !== 'broken'));
-      formDragStart = null; formDragEnd = null; isFormDragging = false; formGhosts = [];
-      return;
-    }
-  }
-
   // Check if clicking on enemy — attack-move
   let clickedEnemy = null;
   if (game.phase === 'COMBAT') {
@@ -5519,61 +5375,12 @@ document.getElementById('game-canvas').addEventListener('mouseup', e => {
   formGhosts = [];
 });
 
-// ─── HERO GUARD FUNCTIONS (Phase G) ───
-function assignGuards(unitsToAssign) {
-  const maxG = GUARD_UPGRADES[hero.guardLevel] ? GUARD_UPGRADES[hero.guardLevel].maxGuards : 0;
-  if (maxG <= 0) { addFloat('No guard upgrade!', hero.x, hero.y - TILE_SIZE, '#ff6666'); return; }
-  let added = 0;
-  for (const u of unitsToAssign) {
-    if (heroGuards.length >= maxG) break;
-    if (u.isGuard) continue;
-    u.isGuard = true;
-    u.path = null; u.state = 'guard';
-    heroGuards.push(u);
-    added++;
-  }
-  heroGuards = heroGuards.filter(g => g.hp > 0 && units.includes(g));
-  if (added > 0) {
-    addFloat('🛡️ +' + added + ' Guard' + (added > 1 ? 's' : ''), hero.x, hero.y - TILE_SIZE, '#ffd700');
-    addParticles(hero.x, hero.y, 'rgba(255,215,0,0.6)', 6);
-  } else if (heroGuards.length >= maxG) {
-    addFloat('Guard full! (' + maxG + '/' + maxG + ')', hero.x, hero.y - TILE_SIZE, '#ffaa44');
-  }
-}
-
+// Hero guard functions removed — will be replaced with citizen guard system
 function dismissGuards(unitsToDismiss) {
-  let removed = 0;
   for (const u of unitsToDismiss) {
     if (!u.isGuard) continue;
     u.isGuard = false;
     u.state = 'idle';
-    removed++;
-  }
-  heroGuards = heroGuards.filter(g => g.hp > 0 && g.isGuard && units.includes(g));
-  if (removed > 0) {
-    addFloat('🛡️ -' + removed + ' dismissed', hero.x, hero.y - TILE_SIZE, '#aaaacc');
-  }
-}
-
-function updateHeroGuards(dt) {
-  heroGuards = heroGuards.filter(g => g.hp > 0 && g.isGuard && units.includes(g));
-  if (heroGuards.length === 0) return;
-  const n = heroGuards.length;
-  const guardRadius = TILE_SIZE * 1.8;
-  for (let i = 0; i < n; i++) {
-    const g = heroGuards[i];
-    if (g.moraleState === 'broken') continue;
-    const angle = (Math.PI * 2 * i) / n;
-    const tx = hero.x + Math.cos(angle) * guardRadius;
-    const ty = hero.y + Math.sin(angle) * guardRadius;
-    const dx = tx - g.x, dy = ty - g.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist > TILE_SIZE * 0.5) {
-      const speed = (g.speed || 2.5) * TILE_SIZE * dt * 0.85;
-      if (dist <= speed) { g.x = tx; g.y = ty; }
-      else { g.x += (dx / dist) * speed; g.y += (dy / dist) * speed; }
-      g.path = null;
-    }
   }
 }
 
@@ -5649,8 +5456,10 @@ document.getElementById('game-canvas').addEventListener('mouseup', e => {
 
 document.getElementById('minimap').addEventListener('mousedown',e=>{
   const rect=e.target.getBoundingClientRect();
-  hero.x=(e.clientX-rect.left)/mmCanvas.width*MAP_PX_W;
-  hero.y=(e.clientY-rect.top)/mmCanvas.height*MAP_PX_H; clampHero();
+  const mmCanvas=document.getElementById('minimap');
+  cam.tx=(e.clientX-rect.left)/mmCanvas.width*MAP_PX_W-canvas.width/(2*cam.tZoom);
+  cam.ty=(e.clientY-rect.top)/mmCanvas.height*MAP_PX_H-canvas.height/(2*cam.tZoom);
+  clampCam();
 });
 
 
@@ -6745,89 +6554,7 @@ function drawProjectiles(){
 }
 
 
-// ─── DRAW HERO ───
-function drawHero(now){
-  if(game.phase==='MENU') return; // hero not visible on menu
-  const z=cam.zoom;
-  const hx=(hero.x-TILE_SIZE/2-cam.x)*z,hy=(hero.y-TILE_SIZE/2-cam.y)*z;
-  const sw=TILE_SIZE*z;
-  const isKnockedDown=hero.stunTimer>0;
-
-  // Glow (dimmed when knocked down)
-  const pulse=Math.sin(now*0.003)*0.2+0.5;
-  const glowAlpha=isKnockedDown?0.05:pulse*0.18;
-  const grad=ctx.createRadialGradient(hx+sw/2,hy+sw/2,0,hx+sw/2,hy+sw/2,sw*1.6);
-  grad.addColorStop(0,`rgba(${isKnockedDown?'180,60,40':255+',230,150'},${glowAlpha})`);
-  grad.addColorStop(1,`rgba(${isKnockedDown?'180,60,40':255+',230,150'},0)`);
-  ctx.fillStyle=grad;ctx.fillRect(hx+sw/2-sw*1.6,hy+sw/2-sw*1.6,sw*3.2,sw*3.2);
-
-  const p=z*2;
-
-  // Attack flash (hero body flashes bright gold on swing)
-  if(hero.atkAnim>0){
-    ctx.fillStyle=`rgba(255,240,120,${hero.atkAnim*3})`;
-    ctx.fillRect(hx+p-z,hy+p-z,sw-p*2+z*2,sw-p*2+z*2);
-  }
-
-  // Hero body — knocked down state: reddish, transparent
-  if(isKnockedDown){
-    const knockPulse=Math.sin(now*0.006)*0.15+0.4;
-    ctx.globalAlpha=knockPulse;
-    ctx.fillStyle='rgba(160,80,70,0.7)';ctx.fillRect(hx+p,hy+p,sw-p*2,sw-p*2);
-    ctx.strokeStyle='rgba(180,50,40,0.6)';ctx.lineWidth=z*2;
-    ctx.strokeRect(hx+p,hy+p,sw-p*2,sw-p*2);
-    // Skull/X marker
-    ctx.fillStyle='rgba(255,80,60,0.8)';ctx.font=`bold ${14*z}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText('💀',hx+sw/2,hy+sw/2);
-    ctx.globalAlpha=1;
-  } else {
-    // Damage flash
-    if(hero.hitFlash>0){
-      ctx.fillStyle=`rgba(255,60,40,${hero.hitFlash*0.5})`;
-      ctx.fillRect(hx+p-z,hy+p-z,sw-p*2+z*2,sw-p*2+z*2);
-    }
-    ctx.fillStyle='rgba(245,235,210,0.92)';ctx.fillRect(hx+p,hy+p,sw-p*2,sw-p*2);
-    ctx.strokeStyle=`rgba(220,180,60,${0.7+Math.sin(now*0.004)*0.15})`;ctx.lineWidth=z*2;
-    ctx.strokeRect(hx+p,hy+p,sw-p*2,sw-p*2);
-    ctx.strokeStyle='rgba(160,130,40,0.4)';ctx.lineWidth=z*1.5;ctx.beginPath();
-    ctx.moveTo(hx+sw/2,hy+p*2.5);ctx.lineTo(hx+sw/2,hy+sw-p*2.5);
-    ctx.moveTo(hx+p*2.5,hy+sw/2);ctx.lineTo(hx+sw-p*2.5,hy+sw/2);ctx.stroke();
-  }
-
-  // Hero HP bar above head (always visible)
-  const bw=sw*0.9, bh=4*z;
-  const bx=hx+(sw-bw)/2, by=hy-bh-z*3;
-  ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(bx,by,bw,bh);
-  const hpPct=hero.hp/hero.maxHP;
-  ctx.fillStyle=hpPct>0.6?'#4a4':hpPct>0.25?'#da4':'#d44';
-  ctx.fillRect(bx,by,bw*hpPct,bh);
-  ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=z*0.5;ctx.strokeRect(bx,by,bw,bh);
-
-  // Knockdown timer above HP bar
-  if(isKnockedDown){
-    ctx.fillStyle='rgba(255,80,60,0.9)';ctx.font=`bold ${11*z}px system-ui`;ctx.textAlign='center';
-    ctx.fillText(`💀 ${Math.ceil(hero.stunTimer)}s`,hx+sw/2,by-z*3);
-  }
-
-  // Range indicators
-  if(game.phase==='BUILD'){
-    if(selectedTool==='gather'){ctx.strokeStyle='rgba(120,200,120,0.08)';ctx.lineWidth=z;ctx.beginPath();ctx.arc(hx+sw/2,hy+sw/2,HARVEST_RANGE*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();}
-    else if(selectedTool!=='DEMOLISH'){ctx.strokeStyle='rgba(120,180,220,0.08)';ctx.lineWidth=z;ctx.beginPath();ctx.arc(hx+sw/2,hy+sw/2,BUILD_RANGE*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();}
-  }
-  // Attack range ring during combat (subtle)
-  if(game.phase==='COMBAT'&&!isKnockedDown){
-    const atkPulse=Math.sin(now*0.005)*0.04+0.06;
-    ctx.strokeStyle=`rgba(255,220,80,${atkPulse})`;ctx.lineWidth=z;
-    ctx.beginPath();ctx.arc(hx+sw/2,hy+sw/2,HERO_ATK_RANGE*z,0,Math.PI*2);ctx.stroke();
-    // Morale aura ring (golden glow showing 3-tile hero aura)
-    const auraPulse=Math.sin(now*0.003)*0.04+0.08;
-    ctx.strokeStyle=`rgba(255,210,80,${auraPulse})`;ctx.lineWidth=z*1.5;ctx.setLineDash([3*z,5*z]);
-    ctx.beginPath();ctx.arc(hx+sw/2,hy+sw/2,HERO_MORALE_AURA*TILE_SIZE*z,0,Math.PI*2);ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  ctx.textAlign='start';ctx.textBaseline='alphabetic';
-}
+// drawHero removed — God Mode
 
 // ─── DRAW GHOST PREVIEW ───
 // Cached seal check for ghost preview (avoid running A* every frame)
@@ -6904,7 +6631,7 @@ function drawGhostPreview(){
   {
     const isRes=isResourceBuilding(selectedTool);
     const tileOk=isRes?map[col][row]===T.GRASS:(map[col][row]===T.GRASS);
-    const basicValid=tileOk&&!structures[sk]&&(Math.abs(col-heroCol())+Math.abs(row-heroRow()))<=BUILD_RANGE&&canAfford(selectedTool);
+    const basicValid=tileOk&&!structures[sk]&&canAfford(selectedTool);
     const radiusOk=selectedTool==='CITIZEN_BLOCK'||isInsideBuildRadius(col,row);
     valid=basicValid&&!cachedWouldSeal(col,row,selectedTool)&&radiusOk;
     // Tier-gating check for ghost
@@ -7225,9 +6952,19 @@ function drawMinimap(){
       mmCtx.fillRect(bc*sx-2,br*sy-2,Math.max(sx+4,5),Math.max(sy+4,5));
     }
   }
-  // Hero
-  const hmc=(hero.x/TILE_SIZE)*sx,hmr=(hero.y/TILE_SIZE)*sy;
-  mmCtx.fillStyle='#fff';mmCtx.beginPath();mmCtx.arc(hmc,hmr,3,0,Math.PI*2);mmCtx.fill();
+  // Player units on minimap
+  for(const u of units){
+    if(u.hp<=0)continue;
+    const ux=(u.x/TILE_SIZE)*sx, uy=(u.y/TILE_SIZE)*sy;
+    mmCtx.fillStyle=u.selected?'#64dcff':'#88aacc';
+    mmCtx.fillRect(ux-1,uy-1,2,2);
+  }
+  // Citizens on minimap
+  for(const cit of citizens){
+    const cx2=(cit.x/TILE_SIZE)*sx, cy2=(cit.y/TILE_SIZE)*sy;
+    mmCtx.fillStyle='#c8c8c8';
+    mmCtx.fillRect(cx2-0.5,cy2-0.5,1.5,1.5);
+  }
   // Viewport
   const z=cam.zoom;
   mmCtx.strokeStyle='rgba(255,255,255,0.4)';mmCtx.lineWidth=1;
@@ -7252,13 +6989,7 @@ function updateUI(){
   fill.style.background=sPct>60?'linear-gradient(90deg,#4a4,#6c6)':sPct>30?'linear-gradient(90deg,#da4,#ec6)':'linear-gradient(90deg,#d44,#e66)';
   const sCount=getSettlementCount();
   document.getElementById('base-hp-text').textContent=`${sHP.hp}HP · ${sCount} settlement${sCount!==1?'s':''} · ${citizens.length}👷`;
-  // Hero HP bar
-  const hpPct=hero.hp/hero.maxHP*100;
-  const hFill=document.getElementById('hero-hp-fill');
-  hFill.style.width=hpPct+'%';
-  hFill.style.background=hpPct>60?'linear-gradient(90deg,#4a4,#6c6)':hpPct>30?'linear-gradient(90deg,#da4,#ec6)':'linear-gradient(90deg,#d44,#e66)';
-  const heroHPText=hero.stunTimer>0?`💀 ${Math.ceil(hero.stunTimer)}s`:`${hero.hp}/${hero.maxHP}`;
-  document.getElementById('hero-hp-text').textContent=heroHPText;
+
   document.getElementById('wave-num').textContent=game.wave;
   document.querySelectorAll('.tool-btn[data-tool]').forEach(btn=>{const t=btn.dataset.tool;if(STRUCTS[t])btn.style.opacity=canAfford(t)?'1':'0.5';});
   // Upkeep indicator — show during BUILD phase when units exist
@@ -7294,24 +7025,12 @@ function dismissStartScreen(){
   document.getElementById('start-screen').classList.add('hidden');
   game.phase='PLACE_HQ';
   document.getElementById('hq-placement-bar').classList.add('show');
-  // Spawn hero at random walkable location (not too close to edges)
-  const margin=60;
-  let attempts=0;
-  while(attempts<500){
-    const rc=margin+Math.floor(Math.random()*(COLS-2*margin));
-    const rr=margin+Math.floor(Math.random()*(ROWS-2*margin));
-    if(map[rc][rr]===T.GRASS||map[rc][rr]===T.TREE||map[rc][rr]===T.BERRY){
-      hero.x=rc*TILE_SIZE+TILE_SIZE/2;
-      hero.y=rr*TILE_SIZE+TILE_SIZE/2;
-      // Reveal fog around hero spawn
-      revealFog(rc,rr,HERO_FOG_RADIUS,HERO_EXPLORE_RADIUS);
-      // Center camera on hero
-      cam.x=hero.x-canvas.width/2; cam.y=hero.y-canvas.height/2;
-      cam.tx=cam.x; cam.ty=cam.y;
-      break;
-    }
-    attempts++;
-  }
+  // God Mode: reveal large area around map center for settlement placement
+  const cx=Math.floor(COLS/2), cy=Math.floor(ROWS/2);
+  revealFog(cx,cy,30,40);
+  // Center camera on map center
+  cam.x=cx*TILE_SIZE-canvas.width/2; cam.y=cy*TILE_SIZE-canvas.height/2;
+  cam.tx=cam.x; cam.ty=cam.y;
   // Hide start screen completely after fade
   setTimeout(()=>{document.getElementById('start-screen').style.display='none';},600);
 }
@@ -7323,7 +7042,7 @@ function showGameOverScreen(){
   stats.innerHTML=`
     <div class="go-stat"><div class="go-stat-val" style="color:#e87a6a">${game.wave}</div><div class="go-stat-label">Waves Survived</div></div>
     <div class="go-stat"><div class="go-stat-val" style="color:#e8c56a">${game.enemiesKilled}</div><div class="go-stat-label">Enemies Killed</div></div>
-    <div class="go-stat"><div class="go-stat-val" style="color:#ffe066">${hero.kills}</div><div class="go-stat-label">Hero Kills</div></div>
+    <div class="go-stat"><div class="go-stat-val" style="color:#ffe066">${citizens.length}</div><div class="go-stat-label">Citizens Alive</div></div>
     <div class="go-stat"><div class="go-stat-val" style="color:#8ac0e8">${unitKills}</div><div class="go-stat-label">Unit Kills</div></div>
     <div class="go-stat"><div class="go-stat-val" style="color:#ffaa44">${game.killsByTower}</div><div class="go-stat-label">Tower Kills</div></div>
     <div class="go-stat"><div class="go-stat-val" style="color:#7aca7a">${units.length}</div><div class="go-stat-label">Units Surviving</div></div>
@@ -7344,11 +7063,7 @@ function restartGame(){
   // Reset HQ placement
   hqPlaced=false;
   BASE_CX=Math.floor(COLS/2); BASE_CY=Math.floor(ROWS/2);
-  // Reset hero
-  hero.x=COLS/2*TILE_SIZE+TILE_SIZE/2; hero.y=ROWS/2*TILE_SIZE+TILE_SIZE/2;
-  hero.hp=50; hero.maxHP=50; hero.atkCooldown=0; hero.atkAnim=0;
-  hero.stunTimer=0; hero.hitFlash=0; hero.kills=0; hero.guardLevel=0;
-  heroGuards=[];
+
   // Clear entities
   enemies.length=0; units.length=0; projectiles.length=0;
   floats.length=0; particles.length=0; spawnQueue.length=0; citizens.length=0;
@@ -7413,7 +7128,6 @@ function updateKillHUD(){
   const hudEl=document.getElementById('kill-hud');
   if(game.phase==='COMBAT'||game.phase==='AFTERMATH'){
     hudEl.classList.add('show');
-    document.getElementById('kh-hero').textContent=hero.kills;
     document.getElementById('kh-unit').textContent=game.killsByUnit||0;
     document.getElementById('kh-tower').textContent=game.killsByTower;
     document.getElementById('kh-trap').textContent=game.killsByTrap;
@@ -7464,8 +7178,6 @@ function draw(now){
   rebuildSpatialGrids(); // Rebuild spatial hash grids each frame for O(1) neighbor queries
   updateBuildTimer(dt);
   updateTrainingQueues(dt);
-  updateHero(dt);
-  updateHeroCombat(dt);
   updateCitizens(dt);
   checkFormations(); // Update formation bonuses every frame
   if(game.phase==='PREVIEW'){
@@ -7474,12 +7186,13 @@ function draw(now){
   updateUnits(dt); // Runs in BUILD (movement only) and COMBAT (movement + fighting)
   if(game.phase==='COMBAT'){
     updateEnemies(dt);
+    checkGameOver();
     updateTowers(dt);
     updateMorale(dt);
     updateFleeingUnits(dt);
     updateProjectiles(dt);
   }
-  updateCamera();
+  updateCamera(dt);
   // Refresh fog of war vision (only when HQ is placed)
   if(hqPlaced||game.phase==='PLACE_HQ'){refreshFogVision();if(fogFrameCounter%10===0&&fogChangeVersion!==lastMmFogVersion){mmTerrainDirty=true;lastMmFogVersion=fogChangeVersion;}}
   updateFloats(dt);
@@ -7521,8 +7234,7 @@ function draw(now){
   drawCamps(now);
   drawEnemies(now);
   drawProjectiles();
-  drawHero(now);
-  // Fog of war overlay (drawn over terrain + entities, but hero always visible)
+  // Fog of war overlay
   drawFogOverlay();
   drawHQGhostPreview();
   drawGhostPreview();
@@ -7636,7 +7348,7 @@ function draw(now){
 function init(){
   generateMap();
   buildTileCache();
-  // Center camera on map center (hero will be repositioned when HQ placed)
+  // Center camera on map center
   cam.x=MAP_PX_W/2-canvas.width/2;cam.y=MAP_PX_H/2-canvas.height/2;
   cam.tx=cam.x;cam.ty=cam.y;
   // Start in MENU phase — hide game UI until dismissed
@@ -7651,14 +7363,14 @@ function init(){
 const _origDismiss=dismissStartScreen;
 dismissStartScreen=function(){
   _origDismiss();
-  // Fade in minimap and hint during PLACE_HQ (hero is exploring)
+  // Fade in minimap and hint during PLACE_HQ
   ['minimap','hint'].forEach(id=>{
     const el=document.getElementById(id);
     el.style.transition='opacity 0.5s';el.style.opacity='1';
   });
   // Set hint for exploration
   const h=document.getElementById('hint');
-  h.textContent='🏘 WASD to explore · Find a good spot · Click to place your first Settlement (FREE!)';
+  h.textContent='🏘 WASD to pan · Scroll to zoom · Find a good spot · Click to place your first Settlement (FREE!)';
 };
 
 // Transition from PLACE_HQ to BUILD after HQ is placed
